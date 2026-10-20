@@ -19,6 +19,7 @@
       <a href="#tools" data-nav="tools">Metronome &amp; Tuner</a>
       <a href="#log" data-nav="log">Practice log</a>
     </nav>
+    <button id="amp-top" class="small ghost amp-top" hidden title="The amp keeps running in other views">Amp on · turn off</button>
   </header>
 
   <!-- LIBRARY -->
@@ -124,6 +125,59 @@
         <label class="button">Load soundfont…<input id="pl-sf-file" type="file" accept=".sf2,.sf3" hidden></label>
         <button id="pl-sf-reset" class="ghost" hidden>Back to built-in sounds</button>
       </div>
+    </details>
+
+    <details class="panel amp" id="amp">
+      <summary>Amp: plug in your guitar <span id="amp-state" class="pill amp-on"></span></summary>
+      <p class="amp-warn"><b>Use headphones.</b> Through speakers the mic picks the amp back up and squeals. Plug the guitar into an <b>audio interface</b> (USB, e.g. Focusrite or Behringer) and use wired headphones on it; Bluetooth headphones add 150+ ms of delay, which makes playing along impossible.</p>
+      <div class="row">
+        <label>Input <select id="amp-device"></select></label>
+        <label title="Most interfaces send the guitar on input 1 only">Channel
+          <select id="amp-channel">
+            <option value="left">Input 1 (left)</option>
+            <option value="right">Input 2 (right)</option>
+            <option value="mix">Both</option>
+          </select>
+        </label>
+        <button id="amp-go" class="primary">Turn amp on</button>
+      </div>
+      <div class="row amp-status">
+        <div class="amp-meter" title="Input level (before the amp)"><div id="amp-meter-bar" class="amp-meter-bar"></div></div>
+        <span id="amp-meter-db" class="mono muted small-text">—</span>
+        <span id="amp-latency" class="muted small-text"></span>
+      </div>
+      <p id="amp-error" class="amp-error"></p>
+
+      <div class="row">
+        <label>Tone <select id="amp-preset"></select></label>
+        <span id="amp-dirty" class="muted small-text"></span>
+        <button id="amp-save" class="ghost small" title="Overwrite this tone with the current settings">Save</button>
+        <button id="amp-saveas" class="ghost small">Save as new…</button>
+        <button id="amp-rename" class="ghost small">Rename</button>
+        <button id="amp-delete" class="ghost small danger">Delete</button>
+        <label class="toggle"><input id="amp-song" type="checkbox"> <span id="amp-song-label">Load this tone with the song</span></label>
+      </div>
+      <div class="row">
+        <label>Amp <select id="amp-character"></select></label>
+        <label>Cabinet <select id="amp-cabinet"></select></label>
+      </div>
+      <div id="amp-knobs" class="amp-knobs"></div>
+
+      <div class="row amp-playalong">
+        <label class="toggle" title="Mutes the track shown in the tab so you play that part"><input id="amp-mute-track" type="checkbox"> Mute the tab's guitar (I'll play it)</label>
+        <label>Song volume <input id="amp-song-vol" type="range" min="0" max="100" step="1" value="100"> <span id="amp-song-vol-val" class="mono"></span></label>
+      </div>
+
+      <dialog id="amp-dialog">
+        <form method="dialog">
+          <h2 id="amp-dialog-title"></h2>
+          <input id="amp-dialog-name" placeholder="Tone name" maxlength="60">
+          <div class="row spread">
+            <button value="cancel" formnovalidate class="ghost">Cancel</button>
+            <button id="amp-dialog-ok" value="ok" class="primary">Save</button>
+          </div>
+        </form>
+      </dialog>
     </details>
 
     <details class="panel" id="mixer">

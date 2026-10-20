@@ -6,6 +6,7 @@ import { TONES, installTone, getTone, setTone } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
+import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -64,6 +65,7 @@ function ensureApi() {
   });
   api.playerReady.on(() => {
     readyForPlayback = true;
+    api.masterVolume = playAlongState().songVolume;
     setPlayButton();
   });
   api.soundFontLoad.on((e) => {
@@ -174,6 +176,27 @@ function buildTrackControls() {
     });
     list.append(row);
   });
+  guitarMuted = null; // a freshly loaded score has nothing muted
+  applyGuitarMute();
+}
+
+// Play-along (Amp panel): mute the track being shown, so you play that part yourself.
+let guitarMuted = null; // index of the track muted for play-along
+
+function setTrackMuted(i, on) {
+  const track = score?.tracks[i];
+  if (!track || !api) return;
+  api.changeTrackMute([track], on);
+  $('mixer-list').children[i]?.querySelector('[data-act=mute]')?.classList.toggle('on', on);
+}
+
+function applyGuitarMute() {
+  if (!score) return;
+  const want = playAlongState().muteGuitar ? trackIndex : null;
+  if (guitarMuted === want) return;
+  if (guitarMuted !== null) setTrackMuted(guitarMuted, false);
+  if (want !== null) setTrackMuted(want, true);
+  guitarMuted = want;
 }
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
@@ -254,6 +277,7 @@ export async function openPlayer(s) {
   $('pl-from-text').hidden = s.kind !== 'text';
   $('pl-text-link').href = `#song/${s.id}`;
   updateSong(s.id, { lastOpened: Date.now() });
+  ampSongOpened(s);
   let parsed;
   try {
     parsed = readScore(s);
@@ -408,6 +432,10 @@ function initSound() {
 
 export function initPlayer() {
   initSound();
+  initAmp({
+    setGuitarMuted: applyGuitarMute,
+    setSongVolume: (v) => { if (api) api.masterVolume = v; },
+  });
   $('pl-play').addEventListener('click', togglePlay);
   $('pl-stop').addEventListener('click', () => api?.stop());
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
@@ -421,6 +449,7 @@ export function initPlayer() {
     trackIndex = Number(e.target.value);
     applyStaveProfile();
     api.renderTracks([score.tracks[trackIndex]]);
+    applyGuitarMute();
     if (song) updateSong(song.id, { trackIndex });
   });
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
