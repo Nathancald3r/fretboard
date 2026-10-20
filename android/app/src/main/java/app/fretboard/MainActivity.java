@@ -93,7 +93,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     // The tab sites open in the tab browser (where downloads work); any other link in the browser.
-    private static final String[] TAB_SITES = {"ultimate-guitar.com", "gprotab.net", "911tabs.com", "musescore.com", "songsterr.com"};
+    private static final String[] TAB_SITES = {"gprotab.net", "911tabs.com"};
 
     private static boolean isTabSite(Uri uri) {
         String host = uri.getHost();
