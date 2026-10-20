@@ -120,8 +120,19 @@ public class BrowserActivity extends ComponentActivity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-                String scheme = r.getUrl().getScheme();
-                return !"https".equals(scheme) && !"http".equals(scheme); // ignore intent:, market: …
+                Uri u = r.getUrl();
+                String scheme = u.getScheme();
+                if ("https".equals(scheme) || "http".equals(scheme)) return false;
+                // intent: links (a site pushing its app) carry a web fallback; follow that, ignore the rest.
+                if ("intent".equals(scheme)) {
+                    String raw = u.toString();
+                    int i = raw.indexOf("S.browser_fallback_url=");
+                    if (i >= 0) {
+                        String f = Uri.decode(raw.substring(i + 23).split(";")[0]);
+                        if (f.startsWith("https://")) v.loadUrl(f);
+                    }
+                }
+                return true;
             }
 
             @Override
@@ -129,7 +140,26 @@ public class BrowserActivity extends ComponentActivity {
                 title.setText(Uri.parse(url).getHost());
             }
         });
+        s.setSupportMultipleWindows(true);
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView v, boolean dialog, boolean userGesture, android.os.Message resultMsg) {
+                // target=_blank / window.open: open it in this same browser.
+                WebView tmp = new WebView(BrowserActivity.this);
+                tmp.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView t, WebResourceRequest r) {
+                        String sc = r.getUrl().getScheme();
+                        if ("https".equals(sc) || "http".equals(sc)) web.loadUrl(r.getUrl().toString());
+                        t.destroy();
+                        return true;
+                    }
+                });
+                ((WebView.WebViewTransport) resultMsg.obj).setWebView(tmp);
+                resultMsg.sendToTarget();
+                return true;
+            }
+
             @Override
             public void onProgressChanged(WebView v, int p) {
                 progress.setProgress(p);
