@@ -272,7 +272,9 @@ function addClickTrack(midiFile) {
   if (!clickOn() || !sound || sound.program < 0 || !api.tickCache) return;
   let maxChannel = 0;
   for (const t of midiFile.tracks) for (const e of t.events) if (typeof e.channel === 'number') maxChannel = Math.max(maxChannel, e.channel);
-  let ch = maxChannel + 1;
+  // Not maxChannel + 1: alphaTab puts its own metronome there (one past the file's last
+  // channel), and its metronome code resets that channel's volume and instrument.
+  let ch = maxChannel + 2;
   if (ch === 9) ch = 10; // channel 10 (index 9) is the drum kit
   const bars = api.tickCache.masterBars.map((b) => ({ start: b.start, end: b.end, num: b.masterBar.timeSignatureNumerator, den: b.masterBar.timeSignatureDenominator }));
   const M = AT.midi;
@@ -422,6 +424,9 @@ function applyChordVisibility() {
   const on = chordsOn();
   api.settings.notation.elements.set(AT.NotationElement.EffectChordNames, on);
   api.settings.notation.elements.set(AT.NotationElement.ChordDiagrams, on);
+  // alphaTab draws a section's name on the same line as the bar's first chord, covering it.
+  // With chords shown, the section chips above the tab name the sections instead.
+  api.settings.notation.elements.set(AT.NotationElement.EffectMarker, !on);
 }
 
 // Chords in playback order (repeats included) with their absolute ticks.
