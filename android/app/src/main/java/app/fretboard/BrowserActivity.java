@@ -253,7 +253,9 @@ public class BrowserActivity extends ComponentActivity {
                 for (int n; (n = in.read(chunk)) > 0; ) buf.write(chunk, 0, n);
                 byte[] bytes = buf.toByteArray();
                 if (bytes.length > 30_000_000) throw new IllegalStateException("too big");
-                MainActivity.queueImport(name, Base64.encodeToString(bytes, Base64.NO_WRAP));
+                String page = web.getUrl() == null ? "" : web.getUrl();
+                String pageTitle = web.getTitle() == null ? "" : web.getTitle();
+                MainActivity.queueImport(name, Base64.encodeToString(bytes, Base64.NO_WRAP), page, pageTitle);
             }
             finish(); // back to Fretboard, which adds it
         } catch (Exception e) {

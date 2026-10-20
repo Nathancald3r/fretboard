@@ -72,8 +72,8 @@ public class MainActivity extends ComponentActivity {
     // Tab files downloaded in the tab browser, waiting to be added to the library.
     private static final java.util.ArrayList<String[]> pendingImports = new java.util.ArrayList<>();
 
-    static synchronized void queueImport(String name, String base64) {
-        pendingImports.add(new String[]{name, base64});
+    static synchronized void queueImport(String name, String base64, String url, String title) {
+        pendingImports.add(new String[]{name, base64, url, title});
     }
 
     private void flushImports() {
@@ -82,7 +82,7 @@ public class MainActivity extends ComponentActivity {
             if (pendingImports.isEmpty()) return;
             next = pendingImports.remove(0);
         }
-        web.evaluateJavascript("window.fretboardImport && window.fretboardImport(" + JSONObject.quote(next[0]) + "," + JSONObject.quote(next[1]) + ")", null);
+        web.evaluateJavascript("window.fretboardImport && window.fretboardImport(" + JSONObject.quote(next[0]) + "," + JSONObject.quote(next[1]) + "," + JSONObject.quote(next[2]) + "," + JSONObject.quote(next[3]) + ")", null);
         web.postDelayed(this::flushImports, 400);
     }
 

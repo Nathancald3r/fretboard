@@ -78,6 +78,8 @@ export function songFromRecord(rec, local = null) {
   }
   if (!SONG_KINDS.includes(song.kind)) song.kind = 'text';
   for (const k of NUMBER_FIELDS) if (song[k] !== undefined && !Number.isFinite(song[k])) delete song[k];
+  if (song.sourceUrl !== undefined && !(typeof song.sourceUrl === 'string' && /^https?:\/\//.test(song.sourceUrl))) delete song.sourceUrl;
+  if (song.versionNote !== undefined && typeof song.versionNote !== 'string') delete song.versionNote;
   if (song.skips !== undefined) song.skips = Array.isArray(song.skips) ? song.skips.filter((k) => Array.isArray(k) && k.length === 2 && k.every(Number.isFinite) && k[1] > k[0]) : [];
   if (song.recording?.kind === 'youtube' && !/^[\w-]{11}$/.test(song.recording.id)) delete song.recording;
   if (local) {

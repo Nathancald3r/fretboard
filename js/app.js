@@ -13,6 +13,7 @@ import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
 import { initSync } from './syncui.js';
+import { parseFilename } from './tabinfo.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -153,14 +154,16 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
       continue;
     }
     const buf = await file.arrayBuffer();
+    const fromName = parseFilename(file.name); // Ultimate Guitar's "Artist-Song-date" names
     const info = readScoreInfo(new Uint8Array(buf));
     if (!info.ok) { failed.push(file.name); continue; }
     ids.push(await putSong({
       kind: /\.(xml|musicxml|mxl)$/i.test(file.name) ? 'xml' : 'gp',
-      title: info.title?.trim() || base,
-      artist: info.artist?.trim() || '',
+      title: info.title?.trim() || fromName?.song || base,
+      artist: info.artist?.trim() || fromName?.artist || '',
       data: buf,
       fileName: file.name,
+      ...(file.source ? { sourceUrl: file.source.url, versionNote: file.source.title || '' } : {}),
       added: Date.now(),
     }));
     added++;
@@ -266,10 +269,12 @@ async function main() {
   initDrawer();
   initQuickImport({ importFiles, openEditor, toast, openSong: (id) => { location.hash = `song/${id}`; } });
   // The Android app's tab browser hands over each tab file it downloads (base64) to add here.
-  window.fretboardImport = async (name, base64) => {
+  window.fretboardImport = async (name, base64, url, pageTitle) => {
     const bin = atob(base64);
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-    const { ids } = await importFiles([new File([bytes], name)]);
+    const file = new File([bytes], name);
+    if (typeof url === 'string' && /^https?:\/\//.test(url)) file.source = { url, title: String(pageTitle || '').slice(0, 200) };
+    const { ids } = await importFiles([file]);
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);

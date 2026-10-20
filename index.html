@@ -115,6 +115,7 @@
       <div class="player-title">
         <h1 id="pl-title">—</h1>
         <span id="pl-artist" class="muted"></span>
+        <a id="pl-source" class="pill src" hidden target="_blank" rel="noopener noreferrer" title="Where this tab came from (Tab info)"></a>
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
       <span id="pl-info" class="muted small-text"></span>
@@ -156,6 +157,15 @@
          open these sheets above it. -->
     <div class="playdock">
       <div id="pl-sheets" class="sheets">
+        <section class="sheet" data-sheet="info" hidden>
+          <div class="sheet-head"><h2>Tab info</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">The file holds little beyond the notes, so say which version this is. Paste the tab's page link (from Ultimate Guitar, for example) and the app reads the site, type and version number from the address.</p>
+          <label class="block">Page link <input id="ti-url" type="url" placeholder="https://tabs.ultimate-guitar.com/tab/…" autocomplete="off"></label>
+          <p id="ti-parsed" class="small-text"></p>
+          <label class="block">Version note <textarea id="ti-note" rows="2" placeholder="e.g. Passion Live version, no acapella bridge"></textarea></label>
+          <dl id="ti-facts" class="facts small-text"></dl>
+        </section>
+
         <section class="sheet" data-sheet="view" hidden>
           <div class="sheet-head"><h2>View</h2><button class="ghost small" data-close>Close</button></div>
           <div class="row">
@@ -522,6 +532,7 @@
             </div>
             <div class="sheet-btns">
               <button class="ghost small" data-sheet-btn="playalong" title="Pick or change this song's linked YouTube video">Linked video</button>
+              <button class="ghost small" data-sheet-btn="info" title="Where this tab is from and which version it is">Tab info</button>
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>

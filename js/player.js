@@ -17,6 +17,7 @@ import {
   CLICK_SOUNDS, COUNT_SOUNDS, SUBDIVISIONS, COUNT_LENGTHS, loadClickSettings, saveClickSettings, sanitize,
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
 } from './click.js';
+import { parseSource, sourceLine, facts as tabFacts } from './tabinfo.js';
 import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, toggleRecording } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
@@ -73,6 +74,7 @@ function ensureApi() {
     baseTempo = s.masterBars[0]?.tempoAutomations?.[0]?.value || s.tempo || 120;
     $('pl-title').textContent = s.title || song?.title || 'Untitled';
     $('pl-artist').textContent = s.artist || song?.artist || '';
+    showTabInfo();
     buildTrackControls();
     updateBpm();
     buildSections();
@@ -433,6 +435,30 @@ function showChordSettings() {
     none: 'No chords found in this song.',
   }[chordSource];
   $('pl-chord').hidden = !chordsOn() || chordSource === 'none';
+}
+
+// Where the tab is from and which version: the line under the title and the Tab info sheet.
+function showTabInfo() {
+  const line = song ? sourceLine(song) : '';
+  const a = $('pl-source');
+  a.hidden = !line;
+  a.textContent = line;
+  const href = song?.sourceUrl && parseSource(song.sourceUrl) ? song.sourceUrl : '';
+  if (href) a.href = href; else a.removeAttribute('href');
+  if (document.activeElement !== $('ti-url')) $('ti-url').value = song?.sourceUrl || '';
+  if (document.activeElement !== $('ti-note')) $('ti-note').value = song?.versionNote || '';
+  const p = song?.sourceUrl ? parseSource(song.sourceUrl) : null;
+  $('ti-parsed').textContent = !song?.sourceUrl ? '' : !p ? 'That doesn’t look like a web link.'
+    : [p.site, p.type, p.version ? `version ${p.version}` : '', p.artist && p.song ? `${p.artist} – ${p.song}` : ''].filter(Boolean).join(' · ');
+  const dl = $('ti-facts');
+  dl.textContent = '';
+  for (const [k, v] of tabFacts(song, score)) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
 }
 
 function applyChordVisibility() {
@@ -1659,6 +1685,19 @@ export function initPlayer() {
   $('pl-speed-slide').addEventListener('input', (e) => slideSpeed(Number(e.target.value)));
   $('pl-speed-slide').addEventListener('change', (e) => e.target.blur());
   initTouchSelect();
+  $('ti-url').addEventListener('change', (e) => {
+    const v = e.target.value.trim();
+    if (!song) return;
+    song.sourceUrl = v && parseSource(v) ? v : '';
+    updateSong(song.id, { sourceUrl: song.sourceUrl });
+    showTabInfo();
+  });
+  $('ti-note').addEventListener('change', (e) => {
+    if (!song) return;
+    song.versionNote = e.target.value.trim().slice(0, 2000);
+    updateSong(song.id, { versionNote: song.versionNote });
+    showTabInfo();
+  });
   $('pl-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapTempo(); });
   $('pl-tap').addEventListener('keydown', (e) => { if (e.key === 'Enter') tapTempo(); });
   initModes({ enter: enterLive, leave: leaveLive });
