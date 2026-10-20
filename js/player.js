@@ -81,6 +81,7 @@ function ensureApi() {
   });
   api.renderStarted.on(() => { $('pl-loading').hidden = false; });
   api.renderFinished.on(() => { $('pl-loading').hidden = true; });
+  api.postRenderFinished?.on(drawSectionLabels);
   api.error.on((e) => {
     $('pl-loading').hidden = false;
     $('pl-loading').textContent = 'Could not load this file: ' + (e?.message || e);
@@ -1017,6 +1018,29 @@ function setShift(changes) {
 let sections = []; // [{ index (master bar), end (master bar after it), el }]
 let shownSection = null;
 
+// Each section's name at the bar it begins, drawn over the score (alphaTab's own marker is
+// switched off while chords show, since it covers the first chord).
+function drawSectionLabels() {
+  const layer = $('sec-labels');
+  layer.textContent = '';
+  const systems = api?.renderer?.boundsLookup?.staffSystems;
+  if (!systems || !sections.length) return;
+  const at = $('alphatab');
+  for (const sec of sections) {
+    const sys = systems.find((s) => s.bars.some((b) => b.index === sec.index));
+    const bar = sys?.bars.find((b) => b.index === sec.index);
+    if (!bar) continue;
+    const box = bar.realBounds || bar.visualBounds;
+    const top = Math.max(18, (sys.visualBounds || sys.realBounds).y);
+    const el = document.createElement('span');
+    el.className = 'sec-label';
+    el.textContent = sec.el.textContent.trim();
+    el.style.left = `${at.offsetLeft + box.x}px`;
+    el.style.top = `${at.offsetTop + top}px`;
+    layer.append(el);
+  }
+}
+
 function buildSections() {
   const nav = $('pl-sections');
   nav.textContent = '';
@@ -1607,6 +1631,7 @@ export function initPlayer() {
     output: () => api?.player?.output,
     playedBars,
     tempo: () => baseTempo,
+    seekToBar: (i) => seekToBar(i),
     sectionChoices: () => sections.map((sec) => ({ master: sec.index, name: sec.el.textContent.trim() })),
     songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,

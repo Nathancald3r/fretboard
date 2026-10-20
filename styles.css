@@ -158,7 +158,14 @@ body.in-player { overflow: hidden; }
 .loading { color: var(--muted); padding: 1rem; text-align: center; }
 .score-scroll {
   background: #fbfaf7; color: #111; border-radius: var(--radius);
-  overflow: auto; flex: 1 1 auto; min-height: 100px;
+  overflow: auto; flex: 1 1 auto; min-height: 100px; position: relative;
+}
+/* Section names at the bar each section begins (js/player.js drawSectionLabels): alphaTab's own
+   marker covers the chord names, so these sit in the gap above the line. */
+.sec-labels { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 3; }
+.sec-label {
+  position: absolute; transform: translateY(-100%); padding: 1px 8px; border-radius: 6px 6px 0 0;
+  background: var(--accent); color: var(--accent-ink); font: 700 12px/1.5 system-ui, sans-serif; white-space: nowrap;
 }
 #alphatab { min-height: 200px; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 /* alphaTab cursor & selection colors */
@@ -797,3 +804,11 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 }
 
 input[type=password] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .45rem .6rem; }
+/* Lining up the video: the scrubber, nudges and section chips */
+.scrub-row { flex-wrap: nowrap; align-items: center; }
+.scrub-row input[type=range] { flex: 1 1 auto; min-width: 0; height: 36px; }
+.scrub-row .mono { min-width: 4.2rem; text-align: right; }
+.scrub-nudges { flex-wrap: wrap; }
+.chips { flex-wrap: wrap; gap: .4rem; }
+.chips button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.step-title { margin: .6rem 0 .3rem; }

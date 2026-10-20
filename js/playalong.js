@@ -30,6 +30,7 @@ const sendPosition = (real) => {
   if (hit && media?.seekReal) { media.seekReal(hit[1]); return; }
   const o = hooks.output();
   if (typeof o?.updatePosition === 'function') o.updatePosition(toPlayed(real) + lead());
+  showScrub(real);
 };
 let media = null; // the active handler (file or YouTube)
 let on = false;
@@ -59,6 +60,8 @@ function fileHandler(rec) {
   return {
     kind: 'file',
     get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal() + lead()); },
+    get rawDuration() { return (el.duration || 0) * 1000; },
+    get isPlaying() { return !el.paused; },
     get playbackRate() { return el.playbackRate; },
     set playbackRate(v) { el.playbackRate = v; },
     get masterVolume() { return el.volume; },
@@ -130,6 +133,8 @@ async function youTubeHandler(rec) {
   return {
     kind: 'youtube',
     get backingTrackDuration() { return Math.max(0, (player.getDuration() || 0) * 1000 - skippedTotal() + lead()); },
+    get rawDuration() { return (player.getDuration() || 0) * 1000; },
+    get isPlaying() { return player.getPlayerState?.() === window.YT.PlayerState.PLAYING; },
     get playbackRate() { return rate; },
     set playbackRate(v) {
       // YouTube only offers some speeds (0.25 steps, or finer on newer players).
@@ -281,22 +286,73 @@ function setStart(sec) {
     : [[at, ms], ...pts.map(([p, t]) => [p, t + delta])];
   updateSong(song.id, { syncPoints: song.syncPoints });
   if (on) applySync(); else showSync();
-  if (on && media) media.seekTo(ms);
 }
 
-// The sections of the tab, to say where the video begins (a video with no intro starts at the verse).
-function fillStartBars() {
-  const sel = $('pa-start-bar');
-  const list = hooks.sectionChoices?.() || [];
-  const sig = list.map((s) => `${s.master}:${s.name}`).join('|');
-  if (sel.dataset.sig !== sig) {
-    sel.dataset.sig = sig;
-    sel.innerHTML = '';
-    sel.append(new Option('the start of the tab', '0'));
-    for (const s of list) if (s.master > 0) sel.append(new Option(s.name, String(s.master)));
+// Step 1 and 2 of lining up: scrub the video to where the music starts, pick the part of the
+// tab that begins there. A video with no intro starts at the verse, for example.
+let pendingMaster = 0;
+let scrubbing = false;
+let lastScrubShown = 0;
+const fmtT = (ms) => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(1).padStart(4, '0')}`;
+const chosenName = () => $('pa-start-chips').querySelector('.on')?.dataset.name || 'the start of the tab';
+
+function showScrub(real) {
+  if (scrubbing) return;
+  const t = performance.now();
+  if (t - lastScrubShown < 90) return;
+  lastScrubShown = t;
+  $('pa-scrub').value = real / 1000;
+  $('pa-scrub-time').textContent = fmtT(real);
+  $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶';
+  setLabel();
+}
+
+function setLabel() {
+  const t = media ? fmtT(media.nowReal()) : '';
+  $('pa-start-set').textContent = media ? `Set: ${t} = start of ${chosenName()}` : 'Set it';
+}
+
+function refreshScrub() {
+  const sl = $('pa-scrub');
+  sl.disabled = !media;
+  $('pa-scrub-play').disabled = !media;
+  if (media) {
+    sl.max = Math.max(1, (media.rawDuration || 300000) / 1000);
+    sl.value = media.nowReal() / 1000;
+    $('pa-scrub-time').textContent = fmtT(media.nowReal());
+    $('pa-scrub-play').textContent = media.isPlaying ? '⏸' : '▶';
   }
-  const want = String(song?.videoMaster || 0);
-  sel.value = [...sel.options].some((o) => o.value === want) ? want : '0';
+  setLabel();
+}
+
+function fillStartBars() {
+  const box = $('pa-start-chips');
+  const list = hooks.sectionChoices?.() || [];
+  const want = song?.videoMaster || 0;
+  const sig = `${want}|` + list.map((s) => `${s.master}:${s.name}`).join('|');
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    pendingMaster = want;
+    box.innerHTML = '';
+    const add = (master, name, label) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ghost small';
+      b.dataset.master = master;
+      b.dataset.name = name;
+      b.textContent = label;
+      b.classList.toggle('on', master === pendingMaster);
+      box.append(b);
+    };
+    add(0, 'the start of the tab', 'Start of tab');
+    for (const s of list) if (s.master > 0) add(s.master, s.name, `${s.name} · bar ${s.master + 1}`);
+    if (![...box.children].some((b) => b.classList.contains('on'))) box.firstElementChild.classList.add('on');
+  }
+  refreshScrub();
+  const pt = song?.syncPoints?.find(([p]) => p === startIdx());
+  $('pa-start-state').textContent = pt
+    ? `Now: the video's ${fmtT(pt[1])} is the start of ${list.find((s) => s.master === want)?.name || 'the tab'}.`
+    : media ? 'Not set yet: the video starts with the tab.' : 'Turn on “Play with the linked video” above, then scrub to find where the music starts.';
 }
 
 function setStartBar(master) {
@@ -314,8 +370,6 @@ function setStartBar(master) {
 function showSync() {
   showSkips();
   fillStartBars();
-  const zero = song?.syncPoints?.find(([p]) => p === startIdx());
-  if (document.activeElement !== $('pa-start')) $('pa-start').value = zero ? (zero[1] / 1000).toFixed(1) : '0';
   const pts = song?.syncPoints || [];
   const off = song?.syncOffset || 0;
   $('pa-sync-state').textContent = pts.length
@@ -428,6 +482,7 @@ function showState() {
   $('pa-video').hidden = !(on && rec?.kind === 'youtube');
   $('pa-video-title').textContent = rec?.kind === 'youtube' && rec.title ? rec.title : 'Linked video';
   $('pa-video-title').title = $('pa-video-title').textContent;
+  fillStartBars();
   const at = matches.findIndex((r) => rec?.kind === 'youtube' && r.id === rec.id);
   $('pa-video-prev').hidden = $('pa-video-next').hidden = matches.length < 2 || at < 0;
   $('pa-video-prev').disabled = at <= 0;
@@ -623,11 +678,50 @@ export function initPlayAlong(h) {
   $('pa-skip-from-now').addEventListener('click', () => nowSec($('pa-skip-from')));
   $('pa-skip-to-now').addEventListener('click', () => nowSec($('pa-skip-to')));
   $('pa-skip-add').addEventListener('click', () => addSkip(Number($('pa-skip-from').value), Number($('pa-skip-to').value)));
-  $('pa-start-bar').addEventListener('change', (e) => setStartBar(Number(e.target.value) || 0));
-  $('pa-start').addEventListener('change', (e) => setStart(Number(e.target.value) || 0));
-  $('pa-start-now').addEventListener('click', () => {
-    if (!media) { $('pa-tap-state').textContent = 'Turn on the linked video first, then find where the music starts.'; return; }
-    setStart((media.now() - (song.syncOffset || 0)) / 1000);
+  $('pa-start-chips').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    pendingMaster = Number(b.dataset.master);
+    $('pa-start-chips').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    setLabel();
+  });
+  let seekAt = 0;
+  const seekTo = (sec) => {
+    if (!media) return;
+    media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)));
+  };
+  $('pa-scrub').addEventListener('input', (e) => {
+    scrubbing = true;
+    const sec = Number(e.target.value);
+    $('pa-scrub-time').textContent = fmtT(sec * 1000);
+    const now = performance.now();
+    if (now - seekAt > 120) { seekAt = now; seekTo(sec); }
+  });
+  $('pa-scrub').addEventListener('change', (e) => { seekTo(Number(e.target.value)); scrubbing = false; setTimeout(setLabel, 150); });
+  document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
+    if (!media) return;
+    const to = media.nowReal() / 1000 + Number(b.dataset.scrub);
+    seekTo(to);
+    $('pa-scrub').value = Math.max(0, to);
+    $('pa-scrub-time').textContent = fmtT(Math.max(0, to) * 1000);
+    setTimeout(setLabel, 250);
+  }));
+  $('pa-scrub-play').addEventListener('click', () => {
+    if (!media) return;
+    if (media.isPlaying) media.pause(); else media.play();
+    setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
+  });
+  $('pa-start-set').addEventListener('click', () => {
+    if (!media) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first, then scrub to where the music starts.'; return; }
+    const sec = Math.max(0, (media.now() - (song.syncOffset || 0)) / 1000);
+    setStartBar(pendingMaster);
+    setStart(sec);
+    fillStartBars();
+  });
+  $('pa-start-test').addEventListener('click', () => {
+    if (!on) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first.'; return; }
+    hooks.seekToBar(startIdx());
+    setTimeout(() => hooks.play(), 300);
   });
   $('pa-clear').addEventListener('click', () => {
     if (!song) return;

@@ -138,6 +138,7 @@
     <div id="pl-loading" class="loading">Loading score…</div>
     <div id="score-scroll" class="score-scroll">
       <div id="alphatab"></div>
+      <div id="sec-labels" class="sec-labels" aria-hidden="true"></div>
     </div>
     <div id="count-overlay" class="count-overlay" hidden aria-live="polite"></div>
     <div id="pa-video" class="pa-video" hidden>
@@ -278,13 +279,25 @@
           </div>
           <p id="pa-error" class="amp-error"></p>
           <h3>Line the tab up with the video</h3>
-          <div class="row">
-            <label title="Which part of the tab the video begins with (a video with no intro starts at the verse)">Video begins with <select id="pa-start-bar"></select></label>
-            <label title="Where in the video that part begins: skip an intro, applause or talking">at <input id="pa-start" type="number" min="0" step="0.1" value="0" style="width:5.5rem"> s</label>
-            <button id="pa-start-now" class="ghost small" title="Pause the video where the music begins, then press this">Use the video's current time</button>
+          <p class="step-title"><b>1 · Find where the music starts.</b> Drag the bar to scrub the video, or use the nudges for the exact spot.</p>
+          <div class="row scrub-row">
+            <button id="pa-scrub-play" class="ghost small" aria-label="Play or pause the video">▶</button>
+            <input id="pa-scrub" type="range" min="0" max="300" step="0.1" value="0" aria-label="Video position" disabled>
+            <span id="pa-scrub-time" class="mono">0:00.0</span>
           </div>
+          <div class="row scrub-nudges">
+            <button class="ghost small" data-scrub="-5">−5 s</button><button class="ghost small" data-scrub="-1">−1</button><button class="ghost small" data-scrub="-0.1">−0.1</button>
+            <button class="ghost small" data-scrub="0.1">+0.1</button><button class="ghost small" data-scrub="1">+1</button><button class="ghost small" data-scrub="5">+5 s</button>
+          </div>
+          <p class="step-title"><b>2 · Which part of the tab begins there?</b></p>
+          <div id="pa-start-chips" class="row chips"></div>
+          <div class="row">
+            <button id="pa-start-set" class="primary">Set it</button>
+            <button id="pa-start-test" class="ghost small" title="Play the tab and the video together from that spot">▶ Test it</button>
+          </div>
+          <p id="pa-start-state" class="muted small-text"></p>
           <h3>Skip a part of the video</h3>
-          <p class="muted small-text">An interlude, applause or talking the tab doesn't have: pause the video where it begins and press <b>now</b>, then where it ends, then <b>Skip it</b>. Playback jumps over it, and the tab never waits for it.</p>
+          <p class="muted small-text">An interlude, applause or talking the tab doesn't have: scrub the video above to where it begins and press <b>now</b>, then to where it ends and press <b>now</b>, then <b>Skip it</b>. Playback jumps over it, and the tab never waits for it.</p>
           <div class="row">
             <label>From <input id="pa-skip-from" type="number" min="0" step="0.1" placeholder="s" style="width:5rem"></label>
             <button id="pa-skip-from-now" class="ghost small">now</button>
