@@ -88,17 +88,40 @@ async function onLibraryClick(e) {
 
   const song = await getSong(id);
   if (act === 'delete') {
-    if (!confirm(`Remove "${song.title}" from your library? Your practice log keeps its history.`)) return;
+    const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
+    if (!ok) return;
     await deleteSong(id);
+    toast(`Deleted “${song.title}”.`);
     renderLibrary();
   } else if (act === 'rename') {
     if (song.kind === 'text') { openEditor(song); return; }
-    const title = prompt('Title', song.title);
-    if (title === null) return;
-    const artist = prompt('Artist', song.artist || '');
-    await updateSong(id, { title: title.trim() || song.title, artist: (artist ?? song.artist).trim() });
+    const fields = await ask({ title: 'Rename', ok: 'Save', fields: { title: song.title, artist: song.artist || '' } });
+    if (!fields) return;
+    await updateSong(id, { title: fields.title.trim() || song.title, artist: fields.artist.trim() });
     renderLibrary();
   }
+}
+
+// In-page replacement for confirm()/prompt(). Resolves false/null on cancel,
+// true for a plain confirmation, or the edited { title, artist }.
+function ask({ title, text = '', ok = 'OK', fields = null }) {
+  const dialog = $('ask-dialog');
+  $('ask-title').textContent = title;
+  $('ask-text').textContent = text;
+  $('ask-text').hidden = !text;
+  $('ask-ok').textContent = ok;
+  $('ask-ok').classList.toggle('danger', ok === 'Delete');
+  $('ask-fields').hidden = !fields;
+  if (fields) { $('ask-name').value = fields.title; $('ask-artist').value = fields.artist; }
+  dialog.returnValue = '';
+  dialog.showModal();
+  (fields ? $('ask-name') : $('ask-ok')).focus();
+  return new Promise((resolve) => {
+    dialog.addEventListener('close', () => {
+      if (dialog.returnValue !== 'ok') resolve(fields ? null : false);
+      else resolve(fields ? { title: $('ask-name').value, artist: $('ask-artist').value } : true);
+    }, { once: true });
+  });
 }
 
 /* ---------- import ---------- */

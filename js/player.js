@@ -15,6 +15,7 @@ let song = null;
 let score = null;
 let baseTempo = 120;
 let readyForPlayback = false;
+let trackIndex = 0;
 
 const trainer = { on: false, loops: 0, start: 60, target: 100, step: 5, every: 2 };
 
@@ -118,13 +119,29 @@ function updateBpm() {
   $('pl-bpm').textContent = score ? `≈ ${Math.round((baseTempo * pct) / 100)} BPM` : '';
 }
 
+const hasTab = (track) => track.staves.some((st) => st.showTablature && st.tuning.length > 0);
+const isDrums = (track) => track.staves.some((st) => st.isPercussion);
+
+// What the track is, from its MIDI instrument, for tracks the file leaves unnamed.
+function instrumentOf(track) {
+  const program = track.playbackInfo?.program ?? -1;
+  if (isDrums(track)) return 'Drums';
+  if (program >= 24 && program <= 31) return 'Guitar';
+  if (program >= 32 && program <= 39) return 'Bass';
+  return '';
+}
+
+function trackLabel(track, i) {
+  if (track.name?.trim()) return track.name.trim();
+  const kind = instrumentOf(track);
+  return `Track ${i + 1}${kind ? ' · ' + kind : ''}`;
+}
+
 function buildTrackControls() {
   const select = $('pl-track');
   select.innerHTML = '';
-  score.tracks.forEach((t, i) => select.add(new Option(t.name || `Track ${i + 1}`, i)));
-  const saved = song?.trackIndex ?? defaultTrackIndex();
-  select.value = Math.min(saved, score.tracks.length - 1);
-  if (Number(select.value) !== 0) api.renderTracks([score.tracks[select.value]]);
+  score.tracks.forEach((t, i) => select.add(new Option(trackLabel(t, i) + (hasTab(t) ? '' : ' (no tab)'), i)));
+  select.value = trackIndex;
 
   const list = $('mixer-list');
   list.innerHTML = '';
@@ -134,7 +151,7 @@ function buildTrackControls() {
     row.innerHTML = `<span class="name"></span>
       <button class="small ghost" data-act="mute">Mute</button>
       <button class="small ghost" data-act="solo">Solo</button>`;
-    row.querySelector('.name').textContent = track.name || `Track ${i + 1}`;
+    row.querySelector('.name').textContent = trackLabel(track, i);
     row.addEventListener('click', (ev) => {
       const btn = ev.target.closest('button');
       if (!btn) return;
@@ -147,14 +164,42 @@ function buildTrackControls() {
   });
 }
 
-// Prefer the first guitar-looking track (skip drums, bass, vocals) when nothing is saved.
-function defaultTrackIndex() {
-  const i = score.tracks.findIndex((t) => {
-    const name = (t.name || '').toLowerCase();
-    const isDrums = t.staves?.[0]?.isPercussion;
-    return !isDrums && !/bass|drum|vocal|voice|percussion/.test(name);
-  });
-  return Math.max(0, i);
+// Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
+function defaultTrackIndex(sc) {
+  const playable = (t) => hasTab(t) && !isDrums(t) && instrumentOf(t) !== 'Bass'
+    && !/bass|drum|vocal|voice|sing|percussion/i.test(t.name || '');
+  for (const ok of [(t) => playable(t) && instrumentOf(t) === 'Guitar', playable, hasTab]) {
+    const i = sc.tracks.findIndex(ok);
+    if (i !== -1) return i;
+  }
+  return 0;
+}
+
+// "Tab only" on a track without tablature (vocals, drums, piano) has nothing to draw and
+// makes alphaTab fail, so such tracks fall back to standard notation.
+function applyStaveProfile() {
+  const track = score?.tracks[trackIndex];
+  const wanted = $('pl-stave').value;
+  const noTab = track && !hasTab(track);
+  $('pl-notab').hidden = !noTab;
+  const profile = noTab ? 'score' : wanted;
+  api.settings.display.staveProfile = { tab: AT.StaveProfile.Tab, default: AT.StaveProfile.Default, score: AT.StaveProfile.Score }[profile];
+  api.updateSettings();
+}
+
+function readScore(s) {
+  if (s.kind === 'text' || s.kind === 'tex') {
+    let tex = s.data;
+    if (s.kind === 'text') {
+      const converted = asciiTabToAlphaTex(s.data, { title: s.title, artist: s.artist, tempo: s.tempo || 100 });
+      if (!converted) throw new Error('No tab lines found in this text (chord sheets can’t be played).');
+      tex = converted.tex;
+    }
+    const importer = new AT.importer.AlphaTexImporter();
+    importer.initFromString(tex, api.settings);
+    return importer.readScore();
+  }
+  return AT.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(s.data), api.settings);
 }
 
 export async function openPlayer(s) {
@@ -175,16 +220,19 @@ export async function openPlayer(s) {
   setSpeed(s.speed || 100, false);
   $('pl-from-text').hidden = s.kind !== 'text';
   $('pl-text-link').href = `#song/${s.id}`;
-  if (s.kind === 'text') {
-    const converted = asciiTabToAlphaTex(s.data, { title: s.title, artist: s.artist, tempo: s.tempo || 100 });
-    if (!converted) {
-      $('pl-loading').textContent = 'No tab lines found in this text (chord sheets can’t be played).';
-      return;
-    }
-    api.tex(converted.tex);
-  } else if (s.kind === 'tex') api.tex(s.data);
-  else api.load(new Uint8Array(s.data));
   updateSong(s.id, { lastOpened: Date.now() });
+  let parsed;
+  try {
+    parsed = readScore(s);
+  } catch (e) {
+    $('pl-loading').textContent = /tab lines/.test(e?.message) ? e.message : 'Could not load this file: ' + (e?.message || e);
+    return;
+  }
+  const saved = s.trackIndex;
+  trackIndex = saved >= 0 && saved < parsed.tracks.length ? saved : defaultTrackIndex(parsed);
+  score = parsed;
+  applyStaveProfile();
+  api.renderScore(parsed, [trackIndex]);
 }
 
 export function closePlayer() {
@@ -217,9 +265,8 @@ function clearSelection() {
 
 function rerender() {
   api.settings.display.layoutMode = AT.LayoutMode[$('pl-layout').value];
-  api.settings.display.staveProfile = { tab: AT.StaveProfile.Tab, default: AT.StaveProfile.Default, score: AT.StaveProfile.Score }[$('pl-stave').value];
   api.settings.display.scale = Number($('pl-zoom').value);
-  api.updateSettings();
+  applyStaveProfile();
   api.render();
 }
 
@@ -234,9 +281,10 @@ export function initPlayer() {
   $('pl-countin').addEventListener('change', (e) => { if (api) api.countInVolume = e.target.checked ? 1 : 0; });
   $('pl-metro').addEventListener('change', (e) => { if (api) api.metronomeVolume = e.target.checked ? 1 : 0; });
   $('pl-track').addEventListener('change', (e) => {
-    const i = Number(e.target.value);
-    api.renderTracks([score.tracks[i]]);
-    if (song) updateSong(song.id, { trackIndex: i });
+    trackIndex = Number(e.target.value);
+    applyStaveProfile();
+    api.renderTracks([score.tracks[trackIndex]]);
+    if (song) updateSong(song.id, { trackIndex });
   });
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
 

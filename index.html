@@ -61,6 +61,7 @@
         <div id="pl-from-text" class="muted" hidden>
           Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
         </div>
+        <div id="pl-notab" class="muted" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track above.</div>
       </div>
       <div class="row">
         <select id="pl-track" title="Track"></select>
@@ -279,6 +280,22 @@
       <div class="row spread">
         <button value="cancel" formnovalidate class="ghost">Cancel</button>
         <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirm / rename (in-page, since some browsers block confirm() and prompt()) -->
+  <dialog id="ask-dialog">
+    <form method="dialog">
+      <h2 id="ask-title"></h2>
+      <p id="ask-text" class="muted"></p>
+      <div id="ask-fields" class="row">
+        <input id="ask-name" placeholder="Title">
+        <input id="ask-artist" placeholder="Artist">
+      </div>
+      <div class="row spread">
+        <button value="cancel" formnovalidate class="ghost">Cancel</button>
+        <button id="ask-ok" value="ok" class="primary">OK</button>
       </div>
     </form>
   </dialog>
