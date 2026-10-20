@@ -1,3 +1,5 @@
+// Only sites that give a Guitar Pro file for free are listed (MuseScore, Songsterr and
+// Ultimate Guitar's text tabs need paid plans or give no .gp).
 // Where to look for a song's tab online, as links to each site's search (none of them
 // lets another site read its results, so the search opens there). Tested in
 // tests/tabsources.test.mjs.
@@ -17,7 +19,7 @@ export function splitQuery(text) {
 export const TAB_SOURCES = [
   {
     id: 'ug-gp', label: 'Ultimate Guitar · Guitar Pro', primary: true,
-    note: 'The most Guitar Pro files; a free account downloads them',
+    note: 'The most Guitar Pro files; a free account downloads them. On a phone it opens in your browser: turn on Desktop site there, or it sends you to the app store',
     url: ({ artist, song }) => `https://www.ultimate-guitar.com/search.php?search_type=title&value=${enc(`${artist} ${song}`.trim())}&type=500`,
   },
   {
@@ -38,21 +40,6 @@ export const TAB_SOURCES = [
         ? `https://www.911tabs.com/tabs/${a[0]}/${a}/guitar_pro_tabs/${s}_guitar_pro_tab.htm`
         : `https://www.911tabs.com/search.php?search=${enc(`${artist} ${song}`.trim())}`;
     },
-  },
-  {
-    id: 'musescore', label: 'MuseScore',
-    note: 'Sheet music and tab; download as MusicXML (account needed, some scores need Pro)',
-    url: ({ artist, song }) => `https://musescore.com/sheetmusic?text=${enc(`${artist} ${song}`.trim())}`,
-  },
-  {
-    id: 'songsterr', label: 'Songsterr',
-    note: 'To look at; downloading needs Songsterr Plus',
-    url: ({ artist, song }) => `https://www.songsterr.com/?pattern=${enc(`${artist} ${song}`.trim())}`,
-  },
-  {
-    id: 'ug', label: 'Ultimate Guitar · all',
-    note: 'Text tabs and chords too (copy, then Paste from clipboard)',
-    url: ({ artist, song }) => `https://www.ultimate-guitar.com/search.php?search_type=title&value=${enc(`${artist} ${song}`.trim())}`,
   },
 ];
 

@@ -17,8 +17,6 @@ Then open http://localhost:8420. `npm install` copies alphaTab into `vendor/`. A
    - **Ultimate Guitar · Guitar Pro**: the most Guitar Pro files (a free account downloads most).
    - **GProTab**: free Guitar Pro files, no account.
    - **911tabs · Guitar Pro**: Guitar Pro files gathered from many sites, straight to the song's page.
-   - **MuseScore**: sheet music and tab; download as MusicXML (account needed, some scores need Pro).
-   - **Songsterr** to look at (downloads need Songsterr Plus), **Ultimate Guitar · all** for text tabs and chords.
 2. Download a Guitar Pro file (`.gp`, `.gp5`, `.gpx`, …) or MusicXML. With **auto-import** on (turn it on once under the buttons and pick your Downloads folder), Fretboard watches the folder for 20 minutes after you open a site and adds each tab file as it lands; a single new tab opens right away.
 3. Without auto-import, press **Import new downloads** back in Fretboard. The first time, pick your Downloads folder; after that one click imports every tab file downloaded in the last 14 days that isn't in the library yet. (Chrome and Edge on desktop. Elsewhere, drag the file onto the library or use **Import files**.)
 4. For a plain-text tab, copy it on the site and press **Paste from clipboard**, or import a `.txt` file.

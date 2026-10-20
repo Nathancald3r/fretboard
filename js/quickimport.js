@@ -88,7 +88,7 @@ async function showAuto() {
   if (!canWatch) {
     el.hidden = false;
     el.textContent = window.fretboardAndroid
-      ? 'Download the file in your browser, then press Import files and pick it from Downloads.'
+      ? 'GProTab and 911tabs add the file to your library by themselves. For Ultimate Guitar: in your browser tick Desktop site (⋮ menu), log in, tap Download Guitar Pro tab, then press Import files here and pick it from Downloads.'
       : 'Auto-import needs Chrome or Edge on a computer. Elsewhere, drop the downloaded file onto the library.';
     return;
   }
