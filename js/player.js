@@ -162,14 +162,27 @@ function setPlayButton() {
 let endTime = 0;
 let seeking = false;
 
+// alphaTab reports the position ~300 times a second; the screen only needs the clock when its
+// text changes and the chord / tempo / section / lyrics a few dozen times a second. (Each DOM
+// write repaints the blurred play bar, which is what costs a phone its smoothness.)
+let shownClock = '';
+let shownSeek = -1;
+let lastInfoAt = 0;
+
 function onPosition(e) {
   endTime = e.endTime;
-  $('pl-time').textContent = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
-  if (!seeking) $('pl-seek').value = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
-  showChordAt(e.currentTick);
-  showTempoAt(e.currentTick);
-  showSectionAt(e.currentTick);
-  showLyricsAt(e.currentTick);
+  const clock = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
+  if (clock !== shownClock) { shownClock = clock; $('pl-time').textContent = clock; }
+  const seek = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
+  if (!seeking && seek !== shownSeek) { shownSeek = seek; $('pl-seek').value = seek; }
+  const now = performance.now();
+  if (e.isSeek || now - lastInfoAt >= 40) {
+    lastInfoAt = now;
+    showChordAt(e.currentTick);
+    showTempoAt(e.currentTick);
+    showSectionAt(e.currentTick);
+    showLyricsAt(e.currentTick);
+  }
   measureLag.position(e.currentTime);
   singPosition(e);
   judgePosition(e);
@@ -1393,7 +1406,8 @@ function initFit() {
   window.visualViewport?.addEventListener('resize', fit);
   window.visualViewport?.addEventListener('scroll', fit);
   // Moving the window to another screen fires no event; check now and then.
-  setInterval(fit, 1500);
+  // (A phone has no second screen or taskbar, so there it only reacts to the events above.)
+  if (!matchMedia('(pointer: coarse)').matches) setInterval(fit, 1500);
   fit();
 }
 

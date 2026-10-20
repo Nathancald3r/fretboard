@@ -80,11 +80,16 @@ async function grantedFolder() {
   try { return (await dir.queryPermission({ mode: 'read' })) === 'granted' ? dir : null; } catch { return null; }
 }
 
+// Watching the Downloads folder is a desktop Chrome / Edge feature; the Android app picks files instead.
+const canWatch = 'showDirectoryPicker' in window && !window.fretboardAndroid;
+
 async function showAuto() {
   const el = $('find-auto');
-  if (!('showDirectoryPicker' in window)) {
+  if (!canWatch) {
     el.hidden = false;
-    el.textContent = 'Auto-import needs Chrome or Edge on a computer. Elsewhere, drop the downloaded file onto the library.';
+    el.textContent = window.fretboardAndroid
+      ? 'Download the file in your browser, then press Import files and pick it from Downloads.'
+      : 'Auto-import needs Chrome or Edge on a computer. Elsewhere, drop the downloaded file onto the library.';
     return;
   }
   const dir = await grantedFolder();
@@ -140,7 +145,7 @@ function stopWatch() {
 }
 
 export async function watchDownloads() {
-  if (!ctx || !('showDirectoryPicker' in window)) return;
+  if (!ctx || !canWatch) return;
   const since = watch?.since ?? Date.now() - 60e3; // a download that just finished counts
   clearInterval(watch?.timer);
   watch = { since, until: Date.now() + WATCH_MINUTES * 60e3, timer: setInterval(autoImport, WATCH_EVERY) };
@@ -154,7 +159,7 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   window.addEventListener('focus', autoImport);
   $('btn-clip').hidden = !navigator.clipboard?.readText;
   $('btn-clip').addEventListener('click', () => pasteFromClipboard(openEditor));
-  const folderSupported = 'showDirectoryPicker' in window;
+  const folderSupported = canWatch;
   $('btn-downloads').hidden = !folderSupported;
   $('btn-folder').hidden = !folderSupported;
   $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast).then(showAuto));

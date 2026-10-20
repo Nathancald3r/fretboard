@@ -34,7 +34,7 @@ a { color: var(--accent); }
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
   padding: .6rem 1rem;
-  background: #101216ee; backdrop-filter: blur(6px);
+  background: #101216;
   border-bottom: 1px solid var(--line);
 }
 .brand { font-weight: 800; white-space: nowrap; font-size: 1.15rem; color: var(--text); text-decoration: none; letter-spacing: .02em; }
@@ -120,7 +120,7 @@ body.in-player { overflow: hidden; }
 .playdock { position: fixed; left: 0; right: 0; bottom: var(--vv-bottom, 0px); z-index: 25; }
 .playbar {
   --pb: .5rem;
-  background: #101216f2; backdrop-filter: blur(6px); border-top: 1px solid var(--line);
+  background: #101216; border-top: 1px solid var(--line);
   padding: 0 1rem calc(var(--pb) + env(safe-area-inset-bottom, 0px) + var(--lift, 0px));
 }
 .playbar-row { display: flex; gap: .4rem .7rem; align-items: center; flex-wrap: wrap; }
