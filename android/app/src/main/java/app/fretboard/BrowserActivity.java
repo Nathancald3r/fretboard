@@ -115,7 +115,13 @@ public class BrowserActivity extends ComponentActivity {
         s.setGeolocationEnabled(false);
         s.setSafeBrowsingEnabled(true);
         // Some sites refuse the "wv" in a WebView's user agent.
-        s.setUserAgentString(s.getUserAgentString().replace("; wv", ""));
+        // Sites show an "open in our app" prompt to phones that swallows taps; ask for the desktop page.
+        s.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+        s.setSupportZoom(true);
+        s.setBuiltInZoomControls(true);
+        s.setDisplayZoomControls(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.setWebViewClient(new WebViewClient() {
             @Override
