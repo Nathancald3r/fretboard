@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fretboard</title>
   <meta name="theme-color" content="#14161a">
   <link rel="manifest" href="manifest.webmanifest">
@@ -94,6 +94,16 @@
           <div class="row">
             <label class="toggle"><input id="pl-chords" type="checkbox" checked> Show chords</label>
             <span id="pl-chords-src" class="muted small-text"></span>
+          </div>
+          <div class="row">
+            <label title="Raises the play bar so the Windows taskbar (or a phone's home bar) can't cover it">Space under the play bar <select id="pl-lift">
+              <option value="auto">Automatic</option>
+              <option value="0">None</option>
+              <option value="24">Small</option>
+              <option value="48">Taskbar height</option>
+              <option value="80">Large</option>
+            </select></label>
+            <span id="pl-lift-note" class="muted small-text"></span>
           </div>
           <p class="muted small-text keys-hint">
             <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·

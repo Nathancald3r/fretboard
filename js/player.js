@@ -525,6 +525,60 @@ function closeSheets() {
   return !!open;
 }
 
+/* ---------- keeping the play bar on screen ---------- */
+
+// How much of the bottom of the page the Windows taskbar covers, in CSS pixels. The
+// window can reach under the taskbar (or the taskbar is set to auto-hide and pops up
+// over the bottom edge as soon as the mouse goes there to click a button).
+function taskbarOverlap() {
+  const s = window.screen;
+  // Phones and tablets have no taskbar; their home bar is handled by safe-area-inset-bottom.
+  if (!s || !s.height || window.self !== window.top || matchMedia('(pointer: coarse)').matches) return 0;
+  const pageBottom = window.screenY + window.outerHeight; // on screen, in screen pixels
+  const workBottom = (s.availTop || 0) + s.availHeight;
+  // Maximized windows hang a few invisible border pixels off the screen; ignore those.
+  const covered = pageBottom - workBottom > 10 ? pageBottom - workBottom : 0;
+  // Nothing reserved at the bottom (auto-hide taskbar) and the page reaches the screen
+  // edge: keep a taskbar's height free so it doesn't cover the buttons.
+  const autoHide = workBottom >= s.height - 1 && pageBottom >= s.height - 2 ? 48 : 0;
+  // (Screen pixels; with the browser zoomed in this keeps a little more room than needed.)
+  return Math.round(Math.min(120, Math.max(covered, autoHide)));
+}
+
+function initFit() {
+  const root = document.documentElement.style;
+  const lift = $('pl-lift');
+  try { lift.value = localStorage.getItem('fretboard-lift') || 'auto'; } catch { /* ignore */ }
+  if (!lift.value) lift.value = 'auto';
+  let last = '';
+  const fit = () => {
+    const vv = window.visualViewport;
+    // The part of the page actually visible (phones shrink it for toolbars and keyboards).
+    const vh = vv ? vv.height : window.innerHeight;
+    const hidden = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+    const auto = lift.value === 'auto';
+    const px = auto ? taskbarOverlap() : Number(lift.value) || 0;
+    const key = `${vh}|${hidden}|${px}`;
+    if (key === last) return;
+    last = key;
+    root.setProperty('--vvh', vh + 'px');
+    root.setProperty('--vv-bottom', hidden + 'px');
+    root.setProperty('--lift', px + 'px');
+    $('pl-lift-note').textContent = auto ? (px ? `Keeping ${px}px free for the taskbar.` : 'Nothing is covering the bottom of this window.') : '';
+  };
+  lift.addEventListener('change', () => {
+    try { localStorage.setItem('fretboard-lift', lift.value); } catch { /* ignore */ }
+    fit();
+  });
+  window.addEventListener('resize', fit);
+  window.addEventListener('focus', fit);
+  window.visualViewport?.addEventListener('resize', fit);
+  window.visualViewport?.addEventListener('scroll', fit);
+  // Moving the window to another screen fires no event; check now and then.
+  setInterval(fit, 1500);
+  fit();
+}
+
 function initDock() {
   document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.addEventListener('click', () => { openSheet(b.dataset.sheetBtn); b.blur(); }));
   document.querySelectorAll('.sheet [data-close]').forEach((b) => b.addEventListener('click', () => openSheet(null)));
@@ -536,6 +590,7 @@ function initDock() {
   };
   new ResizeObserver(measure).observe(document.querySelector('.playbar'));
   new ResizeObserver(measure).observe(document.querySelector('.topbar'));
+  initFit();
 
   const seek = $('pl-seek');
   seek.addEventListener('input', () => {

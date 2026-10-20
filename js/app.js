@@ -42,6 +42,7 @@ async function route() {
   currentView = view;
 
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== view; });
+  document.body.classList.toggle('in-player', view === 'player');
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view));
 
   if (view === 'library') renderLibrary();

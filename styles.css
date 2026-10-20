@@ -37,7 +37,7 @@ a { color: var(--accent); }
   background: #101216ee; backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line);
 }
-.brand { font-weight: 800; font-size: 1.15rem; color: var(--text); text-decoration: none; letter-spacing: .02em; }
+.brand { font-weight: 800; white-space: nowrap; font-size: 1.15rem; color: var(--text); text-decoration: none; letter-spacing: .02em; }
 .brand::before { content: "♪ "; color: var(--accent); }
 .nav { display: flex; gap: .25rem; flex-wrap: wrap; }
 .nav a {
@@ -106,15 +106,20 @@ label { display: inline-flex; gap: .35rem; align-items: center; color: var(--mut
    the bottom (its height is measured into --dock-h by player.js). */
 .player-view {
   max-width: none; display: flex; flex-direction: column; gap: .5rem;
-  height: calc(100dvh - var(--top-h, 52px)); padding-bottom: calc(var(--dock-h, 110px) + .5rem);
+  height: calc(var(--vvh, 100svh) - var(--top-h, 52px)); padding-bottom: calc(var(--dock-h, 110px) + .5rem);
 }
+/* The player never scrolls the page: only the score scrolls, so the bar can't slide away. */
+body.in-player { overflow: hidden; }
 .player-head { display: flex; gap: .3rem 1rem; flex-wrap: wrap; align-items: baseline; }
 .player-head h1 { margin: 0; font-size: 1.25rem; }
 .player-head > div { flex-basis: 100%; }
-.playdock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; }
+/* --vv-bottom: browser UI (phone toolbars, on-screen keyboard) over the bottom of the page.
+   --lift: room kept free under the controls for the Windows taskbar or a phone's home bar. */
+.playdock { position: fixed; left: 0; right: 0; bottom: var(--vv-bottom, 0px); z-index: 25; }
 .playbar {
+  --pb: .5rem;
   background: #101216f2; backdrop-filter: blur(6px); border-top: 1px solid var(--line);
-  padding: 0 1rem .5rem;
+  padding: 0 1rem calc(var(--pb) + env(safe-area-inset-bottom, 0px) + var(--lift, 0px));
 }
 .playbar-row { display: flex; gap: .4rem .7rem; align-items: center; flex-wrap: wrap; }
 .playbar .big { min-width: 6rem; padding: .5rem 1rem; }
@@ -151,7 +156,7 @@ label { display: inline-flex; gap: .35rem; align-items: center; color: var(--mut
 .loading { color: var(--muted); padding: 1rem; text-align: center; }
 .score-scroll {
   background: #fbfaf7; color: #111; border-radius: var(--radius);
-  overflow: auto; flex: 1 1 auto; min-height: 200px;
+  overflow: auto; flex: 1 1 auto; min-height: 100px;
 }
 #alphatab { min-height: 200px; }
 /* alphaTab cursor & selection colors */
@@ -212,12 +217,22 @@ dialog .row input { flex: 1 1 200px; }
 
 @media (max-width: 640px) {
   .view { padding: .6rem; }
-  .speed input { width: 110px; }
-  .playbar { padding: 0 .5rem .4rem; }
+  .playbar { --pb: .4rem; padding-left: .5rem; padding-right: .5rem; }
   .seek { width: calc(100% + 1rem); margin: -1px -.5rem .4rem; }
   .playbar .toggle, #pl-clear-sel, #pl-bpm { font-size: .8rem; }
-  .playbar-end { margin-left: 0; width: 100%; }
-  #pl-track { flex: 1; max-width: none; }
+  .playbar-end { margin-left: 0; width: 100%; flex-wrap: nowrap; gap: .3rem; }
+  #pl-track { flex: 1 1 5rem; min-width: 0; max-width: none; }
+  /* Keep the bar to three short rows on a phone: no speed slider (− and + still work). */
+  .speed input { display: none; }
+  .playbar .big { min-width: 4.5rem; padding: .4rem .8rem; }
+  .sheet-btns { gap: .15rem; }
+  .sheet-btns button { padding: .3rem .4rem; font-size: .8rem; }
+  /* .view's smaller padding above must not eat the room kept for the play bar. */
+  .view.player-view { padding-bottom: calc(var(--dock-h, 110px) + .4rem); }
+  /* One-line top bar in the player: the menu scrolls sideways instead of wrapping. */
+  .in-player .topbar { flex-wrap: nowrap; gap: .8rem; padding: .4rem .6rem; }
+  .in-player .nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .in-player .nav a { white-space: nowrap; padding: .3rem .55rem; }
 }
 
 /* Scale diagram */

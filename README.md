@@ -22,7 +22,7 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 
 ## Features
 
-- **Player:** shows the tab with a cursor that follows playback. Everything for playback sits in a bar docked at the bottom that is always visible: a song position bar you can click to jump, play/stop, time, the current and next chord, speed, loop, count-in, click and the track picker. **Trainer**, **Tracks** (mute / solo), **View** (layout, tab/notation, zoom, chords), **Sound** and **Amp** open as panels above the bar (`Esc` closes them).
+- **Player:** shows the tab with a cursor that follows playback. Everything for playback sits in a bar docked at the bottom that is always visible: a song position bar you can click to jump, play/stop, time, the current and next chord, speed, loop, count-in, click and the track picker. **Trainer**, **Tracks** (mute / solo), **View** (layout, tab/notation, zoom, chords), **Sound** and **Amp** open as panels above the bar (`Esc` closes them). The bar keeps clear of the Windows taskbar (including an auto-hiding one) and a phone's home bar; if anything still covers it, **View → Space under the play bar** raises it.
 - **Chords:** chord names are drawn above the tab, and the play bar shows the chord now → next. They come from the file when it has them (Guitar Pro chord names); otherwise they are guessed per bar (or half bar) from the notes of all tracks, so treat those as a hint. Turn them off under **View**.
 - **Speed:** 25–150%, with an approximate BPM shown. The app remembers the speed and track for each song.
 - **Looping:** drag across the tab to select bars, then turn on **Loop**. Escape clears the selection.
