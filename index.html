@@ -75,6 +75,7 @@
           <option value="default">Tab + notation</option>
           <option value="score">Notation only</option>
         </select>
+        <select id="pl-tone" title="Tone: how bright or warm playback sounds"></select>
         <select id="pl-zoom" title="Zoom">
           <option value="0.7">70%</option><option value="0.85">85%</option>
           <option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option>
@@ -112,6 +113,16 @@
         <label>Step <input id="tr-step" type="number" min="1" max="25" value="5">%</label>
         <label>Every <input id="tr-every" type="number" min="1" max="20" value="2"> loops</label>
         <button id="tr-go" class="primary">Start trainer</button>
+      </div>
+    </details>
+
+    <details class="panel" id="sound">
+      <summary>Sound (instruments)</summary>
+      <p id="pl-sf-name" class="muted"></p>
+      <p class="muted small-text">For more realistic instruments, load a free General MIDI soundfont (.sf2 or .sf3), for example <i>GeneralUser GS</i> or <i>MuseScore General</i>. It is stored in this browser and used for every song.</p>
+      <div class="row">
+        <label class="button">Load soundfont…<input id="pl-sf-file" type="file" accept=".sf2,.sf3" hidden></label>
+        <button id="pl-sf-reset" class="ghost" hidden>Back to built-in sounds</button>
       </div>
     </details>
 

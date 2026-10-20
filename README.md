@@ -27,6 +27,7 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 - **Looping:** drag across the tab to select bars, then turn on **Loop**. Escape clears the selection.
 - **Speed trainer:** loops your selection and raises the tempo by a set step every N loops until it reaches the target.
 - **Count-in and click track** while a song plays.
+- **Tone:** Warm (default), Balanced, Dark or Bright EQ on the playback. Under **Sound**, you can load any `.sf2`/`.sf3` soundfont (for example GeneralUser GS or MuseScore General) for more realistic instruments. The app remembers it in this browser.
 - **Metronome:** subdivisions, accent on beat 1, tap tempo, and a speed builder that adds X BPM every N bars.
 - **Tuner:** uses your mic. It has 9 tunings and reference tones you can play.
 - **Text tabs:** chords, tab lines and section headers are highlighted. Text size and auto-scroll speed are adjustable. Tab lines can be played as a score (rhythm is guessed from the spacing).

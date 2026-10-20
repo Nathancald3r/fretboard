@@ -1,7 +1,8 @@
 // Guitar Pro / MusicXML / alphaTex player built on alphaTab:
 // playback, speed, A–B looping (drag-select bars), count-in, click, track mute/solo
 // and an automatic speed trainer.
-import { updateSong } from './db.js';
+import { updateSong, getValue, setValue } from './db.js';
+import { TONES, installTone, getTone, setTone } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
@@ -20,16 +21,21 @@ let trackIndex = 0;
 
 const trainer = { on: false, loops: 0, start: 60, target: 100, step: 5, every: 2 };
 
+// A soundfont the user loaded (better instrument samples) replaces the small built-in one.
+let customSoundFont = null; // { name, data: ArrayBuffer }
+const customSoundFontReady = getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
+
 const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING });
 
 function ensureApi() {
   if (api) return api;
+  installTone();
   api = new AT.AlphaTabApi($('alphatab'), {
     core: { fontDirectory: VENDOR + 'font/', scriptFile: VENDOR + 'alphaTab.js' },
     display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1 },
     player: {
       playerMode: AT.PlayerMode.EnabledSynthesizer,
-      soundFont: VENDOR + 'soundfont/sonivox.sf2',
+      soundFont: customSoundFont ? undefined : VENDOR + 'soundfont/sonivox.sf2',
       scrollElement: $('score-scroll'),
       enableCursor: true,
       enableUserInteraction: true,
@@ -37,6 +43,7 @@ function ensureApi() {
     },
   });
 
+  if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
   // Browsers can restore checkbox state on reload; make the player match what's shown.
   api.countInVolume = $('pl-countin').checked ? 1 : 0;
   api.metronomeVolume = $('pl-metro').checked ? 1 : 0;
@@ -236,6 +243,7 @@ export async function openPlayer(s) {
   $('pl-loading').textContent = 'Loading score…';
   $('pl-loading').hidden = false;
   stopTrainer();
+  await customSoundFontReady;
   ensureApi();
   api.stop();
   api.playbackRange = null;
@@ -361,7 +369,45 @@ function rerender() {
   api.render();
 }
 
+function showSoundFontName() {
+  $('pl-sf-name').textContent = customSoundFont
+    ? `Using “${customSoundFont.name}” (${Math.round(customSoundFont.data.byteLength / 1048576)} MB)`
+    : 'Using the small built-in sound set (Sonivox, 1 MB)';
+  $('pl-sf-reset').hidden = !customSoundFont;
+}
+
+async function useSoundFont(sf) {
+  customSoundFont = sf;
+  await setValue('soundFont', sf || undefined);
+  showSoundFontName();
+  if (!api) return;
+  readyForPlayback = false;
+  setPlayButton();
+  $('pl-play').textContent = 'Loading sounds…';
+  api.resetSoundFonts();
+  if (sf) api.loadSoundFont(sf.data, false);
+  else api.loadSoundFont(VENDOR + 'soundfont/sonivox.sf2', false);
+}
+
+function initSound() {
+  const tone = $('pl-tone');
+  Object.entries(TONES).forEach(([key, t]) => tone.add(new Option(t.label, key)));
+  tone.value = getTone();
+  tone.addEventListener('change', () => setTone(tone.value));
+  customSoundFontReady.then(showSoundFontName);
+  $('pl-sf-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/\.sf[23]$/i.test(file.name)) { $('pl-sf-name').textContent = 'That isn’t a .sf2 or .sf3 soundfont file.'; return; }
+    $('pl-sf-name').textContent = `Loading ${file.name}…`;
+    await useSoundFont({ name: file.name, data: await file.arrayBuffer() });
+  });
+  $('pl-sf-reset').addEventListener('click', () => useSoundFont(null));
+}
+
 export function initPlayer() {
+  initSound();
   $('pl-play').addEventListener('click', togglePlay);
   $('pl-stop').addEventListener('click', () => api?.stop());
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
