@@ -602,8 +602,15 @@ function showMix() {
 }
 
 function setMute(i, on = !mix[i].mute) {
-  // Unmuting a track that's muted for play-along turns that off instead.
-  if (!on && playAlongMuted(i) && !mix[i].mute) return;
+  // Unmuting a track that's muted for play-along (Amp or Sing) turns that off instead.
+  if (playAlongMuted(i) && !mix[i].mute) {
+    for (const id of ['amp-mute-track', 'sg-mute']) {
+      const box = $(id);
+      if (box.checked) { box.checked = false; box.dispatchEvent(new Event('change')); }
+    }
+    applyMix();
+    return;
+  }
   mix[i].mute = on;
   applyMix();
   saveMix();

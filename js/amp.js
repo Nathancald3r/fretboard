@@ -344,6 +344,7 @@ function showRunning() {
   $('amp-state').textContent = running ? (demo ? 'On · demo riff' : 'On') : '';
   $('amp-top').hidden = !running;
   document.querySelector('[data-sheet-btn=amp]')?.classList.toggle('live', running);
+  hooks.setGuitarMuted?.(); // "Mute the tab's guitar" applies only while the amp is on
   if (!running) {
     $('amp-meter-bar').style.width = '0';
     $('amp-meter-db').textContent = '—';
@@ -616,7 +617,7 @@ export async function initAmp(playerHooks = {}) {
 
 // For the player: current play-along choices (applied when a song or track loads).
 export const playAlongState = () => ({
-  muteGuitar: $('amp-mute-track').checked,
+  muteGuitar: running && $('amp-mute-track').checked, // only while you're playing through the amp
   songVolume: Number($('amp-song-vol').value) / 100,
 });
 
