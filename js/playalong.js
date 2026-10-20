@@ -308,9 +308,14 @@ function showScrub(real) {
   setLabel();
 }
 
-function setLabel() {
-  const t = media ? fmtT(media.nowReal()) : '';
-  $('pa-start-set').textContent = media ? `Set: ${t} = start of ${chosenName()}` : 'Set it';
+function setLabel() {}
+
+// The video's start time follows the scrubber once a part has been chosen.
+const hasStart = () => !!song?.syncPoints?.some(([p]) => p === startIdx()) && !!song?.videoMaster;
+function applyStartAt(realMs) {
+  if (!media || !song) return;
+  setStart(Math.max(0, (toPlayed(realMs) - (song.syncOffset || 0)) / 1000));
+  fillStartBars();
 }
 
 function refreshScrub() {
@@ -688,7 +693,11 @@ export function initPlayAlong(h) {
     if (!b) return;
     pendingMaster = Number(b.dataset.master);
     $('pa-start-chips').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-    setLabel();
+    if (!media) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first, then scrub to where the music starts.'; return; }
+    // The video is where the music starts: that part of the tab starts there, and the tab goes to it.
+    setStartBar(pendingMaster);
+    applyStartAt(media.nowReal());
+    hooks.seekToBar(startIdx());
   });
   let seekAt = 0;
   const seekTo = (sec) => {
@@ -710,43 +719,52 @@ export function initPlayAlong(h) {
   jog.addEventListener('pointerdown', (e) => {
     if (!media) return;
     jog.setPointerCapture(e.pointerId);
-    from = { x: e.clientX, sec: media.nowReal() / 1000, target: media.nowReal() / 1000 };
+    from = { x: e.clientX, sec: media.nowReal() / 1000, target: media.nowReal() / 1000, moved: false };
     scrubbing = true;
     jog.classList.add('on');
   });
-  jog.addEventListener('pointermove', (e) => { if (from) jogTo(e.clientX); });
+  jog.addEventListener('pointermove', (e) => {
+    if (!from) return;
+    if (Math.abs(e.clientX - from.x) > 6) from.moved = true;
+    if (from.moved) jogTo(e.clientX);
+  });
   const jogEnd = () => {
     if (!from) return;
-    seekTo(from.target);
+    const j = from;
     from = null;
     scrubbing = false;
     jog.classList.remove('on');
-    setTimeout(setLabel, 200);
+    if (!j.moved) {
+      // A tap on the time: play or pause the video there.
+      if (media.isPlaying) media.pause(); else media.play();
+      setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
+      return;
+    }
+    seekTo(j.target);
+    if (hasStart()) applyStartAt(j.target * 1000);
   };
   jog.addEventListener('pointerup', jogEnd);
   jog.addEventListener('pointercancel', jogEnd);
   jog.addEventListener('keydown', (e) => {
     const step = e.key === 'ArrowRight' ? 0.1 : e.key === 'ArrowLeft' ? -0.1 : 0;
-    if (step && media) { e.preventDefault(); seekTo(media.nowReal() / 1000 + (e.shiftKey ? step * 10 : step)); }
+    if (step && media) {
+      e.preventDefault();
+      const to = media.nowReal() / 1000 + (e.shiftKey ? step * 10 : step);
+      seekTo(to);
+      if (hasStart()) applyStartAt(Math.max(0, to) * 1000);
+    }
   });
   document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
     if (!media) return;
     const to = media.nowReal() / 1000 + Number(b.dataset.scrub);
     seekTo(to);
     $('pa-scrub-time').textContent = fmtT(Math.max(0, to) * 1000);
-    setTimeout(setLabel, 250);
+    if (hasStart()) applyStartAt(Math.max(0, to) * 1000);
   }));
   $('pa-scrub-play').addEventListener('click', () => {
     if (!media) return;
     if (media.isPlaying) media.pause(); else media.play();
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
-  });
-  $('pa-start-set').addEventListener('click', () => {
-    if (!media) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first, then scrub to where the music starts.'; return; }
-    const sec = Math.max(0, (media.now() - (song.syncOffset || 0)) / 1000);
-    setStartBar(pendingMaster);
-    setStart(sec);
-    fillStartBars();
   });
   $('pa-start-test').addEventListener('click', () => {
     if (!on) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first.'; return; }
