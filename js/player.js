@@ -513,6 +513,36 @@ function setBpm(bpm) {
   setSpeed((bpm / baseTempo) * 100);
 }
 
+// Hold the tempo number and drag sideways: right is faster, left slower, a BPM per 6 pixels.
+// A plain tap still lets you type.
+function scrubBpm(input) {
+  let start = null;
+  let moved = false;
+  input.addEventListener('pointerdown', (e) => {
+    if (isLive() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    start = { x: e.clientX, bpm: Math.round((baseTempo * speedPct) / 100), id: e.pointerId };
+    moved = false;
+  });
+  input.addEventListener('pointermove', (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dx = e.clientX - start.x;
+    if (!moved) {
+      if (Math.abs(dx) < 6) return;
+      moved = true;
+      input.setPointerCapture(e.pointerId);
+      input.blur();
+      input.classList.add('scrubbing');
+    }
+    setBpm(start.bpm + Math.round(dx / 6));
+  });
+  const end = () => { start = null; input.classList.remove('scrubbing'); };
+  input.addEventListener('pointerup', end);
+  input.addEventListener('pointercancel', end);
+  // A drag is not a tap: keep it from putting the cursor in the field.
+  input.addEventListener('click', (e) => { if (moved) { e.preventDefault(); input.blur(); moved = false; } });
+  input.addEventListener('focus', () => { if (moved) input.blur(); });
+}
+
 function updateBpm() {
   const bpm = Math.round((baseTempo * speedPct) / 100);
   if (document.activeElement !== $('pl-bpm-input')) $('pl-bpm-input').value = bpm;
@@ -1522,6 +1552,7 @@ export function initPlayer() {
   $('pl-bpm-input').addEventListener('change', (e) => { const v = Number(e.target.value); if (v > 0 && !isLive()) setBpm(v); e.target.blur(); updateBpm(); });
   $('pl-bpm-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
   $('pl-bpm-input').addEventListener('blur', updateBpm);
+  scrubBpm($('pl-bpm-input'));
   document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);

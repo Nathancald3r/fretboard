@@ -484,6 +484,9 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .bpm input { width: 3.4rem; text-align: center; font-weight: 700; font-size: 1rem; background: transparent; border: 1px solid transparent; padding: .15rem .2rem; -moz-appearance: textfield; }
 .bpm input::-webkit-inner-spin-button, .bpm input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .bpm input:hover, .bpm input:focus { border-color: var(--line); background: var(--bg); outline: none; }
+.bpm input { touch-action: pan-y; cursor: ew-resize; user-select: none; }
+.bpm input:focus { cursor: text; user-select: auto; }
+.bpm input.scrubbing { border-color: var(--accent, var(--line)); background: var(--bg); }
 .pill-btn { border-radius: 999px; padding: .15rem .55rem; font-size: .8rem; background: var(--panel-2); border-color: transparent; font-variant-numeric: tabular-nums; }
 .pill-btn.changed { color: var(--accent); }
 .pill-btn.on { border-color: var(--accent); }
