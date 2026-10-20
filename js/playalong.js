@@ -302,12 +302,29 @@ export function tapSync() {
 // Taps replace the sync points of the bars they cover (and only those).
 function finishTaps() {
   if (!taps || !taps.points.length) { taps = null; return; }
+  // A stray or double tap squeezes the tab (the cursor races through the bars around it).
+  // Drop any tap that makes a bar last under 55% or over 180% of its written length.
+  const bars = hooks.playedBars();
+  const msPerTick = 60000 / (hooks.tempo() * 960);
+  const fit = [];
+  let dropped = 0;
+  for (const pt of taps.points) {
+    const prev = fit.at(-1);
+    if (prev && pt[0] > prev[0]) {
+      const expect = (bars[pt[0]].start - bars[prev[0]].start) * msPerTick;
+      const ratio = (pt[1] - prev[1]) / expect;
+      if (ratio < 0.55 || ratio > 1.8) { dropped++; continue; }
+    }
+    fit.push(pt);
+  }
+  taps.points = fit;
+  const droppedNote = dropped ? ` Left out ${dropped} tap${dropped > 1 ? 's' : ''} that didn't fit the tempo.` : '';
   const first = taps.points[0][0];
   const last = taps.points.at(-1)[0];
   const kept = (song.syncPoints || []).filter(([p]) => p < first || p > last);
   song.syncPoints = [...kept, ...taps.points].sort((a, b) => a[0] - b[0]);
   updateSong(song.id, { syncPoints: song.syncPoints });
-  $('pa-tap-state').textContent = `Saved ${taps.points.length} bar${taps.points.length > 1 ? 's' : ''}.`;
+  $('pa-tap-state').textContent = `Saved ${taps.points.length} bar${taps.points.length > 1 ? 's' : ''}.${droppedNote}`;
   taps = null;
   applySync();
 }

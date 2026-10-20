@@ -1606,6 +1606,7 @@ export function initPlayer() {
     score: () => score,
     output: () => api?.player?.output,
     playedBars,
+    tempo: () => baseTempo,
     songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
