@@ -69,6 +69,39 @@ public class MainActivity extends ComponentActivity {
     private ActivityResultLauncher<String> micPermission;
     private WebViewAssetLoader assets;
 
+    // Tab files downloaded in the tab browser, waiting to be added to the library.
+    private static final java.util.ArrayList<String[]> pendingImports = new java.util.ArrayList<>();
+
+    static synchronized void queueImport(String name, String base64) {
+        pendingImports.add(new String[]{name, base64});
+    }
+
+    private void flushImports() {
+        String[] next;
+        synchronized (MainActivity.class) {
+            if (pendingImports.isEmpty()) return;
+            next = pendingImports.remove(0);
+        }
+        web.evaluateJavascript("window.fretboardImport && window.fretboardImport(" + JSONObject.quote(next[0]) + "," + JSONObject.quote(next[1]) + ")", null);
+        web.postDelayed(this::flushImports, 400);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) web.postDelayed(this::flushImports, 500);
+    }
+
+    // The tab sites open in the tab browser (where downloads work); any other link in the browser.
+    private static final String[] TAB_SITES = {"ultimate-guitar.com", "gprotab.net", "911tabs.com", "musescore.com", "songsterr.com"};
+
+    private static boolean isTabSite(Uri uri) {
+        String host = uri.getHost();
+        if (host == null) return false;
+        for (String site : TAB_SITES) if (host.equals(site) || host.endsWith("." + site)) return true;
+        return false;
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle state) {
@@ -276,6 +309,10 @@ public class MainActivity extends ComponentActivity {
         String scheme = uri.getScheme();
         if (!"https".equals(scheme) && !"http".equals(scheme)) return; // no intent:, file:, javascript: …
         try {
+            if (isTabSite(uri)) {
+                startActivity(new Intent(this, BrowserActivity.class).putExtra(BrowserActivity.EXTRA_URL, uri.toString()));
+                return;
+            }
             startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE));
         } catch (ActivityNotFoundException ignored) { /* no browser */ }
     }

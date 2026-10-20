@@ -265,6 +265,13 @@ async function main() {
   initKeys();
   initDrawer();
   initQuickImport({ importFiles, openEditor, toast, openSong: (id) => { location.hash = `song/${id}`; } });
+  // The Android app's tab browser hands over each tab file it downloads (base64) to add here.
+  window.fretboardImport = async (name, base64) => {
+    const bin = atob(base64);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    const { ids } = await importFiles([new File([bytes], name)]);
+    if (ids?.length === 1) location.hash = `song/${ids[0]}`;
+  };
   $('library-list').addEventListener('click', onLibraryClick);
   $('lib-filter').addEventListener('input', renderLibrary);
   window.addEventListener('hashchange', route);
