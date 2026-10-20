@@ -541,6 +541,10 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 /* YouTube video for play-along */
 .pa-video { position: fixed; right: 1rem; bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .8rem); z-index: 24; width: min(420px, 45vw); background: #000; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px #000a; }
 .pa-video.mini { width: 220px; }
+/* Hidden away: just the bar. The picture stays in the page (off to the side) so it keeps playing. */
+.pa-video.collapsed { width: auto; max-width: min(320px, 70vw); }
+.pa-video.collapsed .pa-video-frame { position: absolute; left: -9999px; top: 0; width: 420px; }
+.pa-video.collapsed #pa-video-size, .pa-video.collapsed #pa-video-prev, .pa-video.collapsed #pa-video-next { display: none; }
 .pa-video-bar { display: flex; gap: .2rem; align-items: center; padding: .15rem .3rem .15rem .6rem; background: var(--panel); color: var(--muted); }
 #pa-video-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pa-video-bar button { padding: .1rem .5rem; }

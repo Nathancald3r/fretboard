@@ -114,7 +114,7 @@
       <div class="player-title">
         <h1 id="pl-title">—</h1>
         <span id="pl-artist" class="muted"></span>
-        <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the recording">● Recording</span>
+        <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
       <span id="pl-info" class="muted small-text"></span>
       <span class="seg mode-seg" role="group" aria-label="Mode" title="Practice: every tool (loops, speed, trainer, note check). Live: for rehearsals and gigs, songs at full tempo, one after another.">
@@ -142,9 +142,10 @@
     <div id="pa-video" class="pa-video" hidden>
       <div class="pa-video-bar">
         <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
-        <span id="pa-video-title" class="small-text">Recording</span>
+        <span id="pa-video-title" class="small-text">Linked video</span>
         <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
-        <button id="pa-video-hide" class="ghost small" title="Smaller / bigger">⤡</button>
+        <button id="pa-video-size" class="ghost small" title="Smaller / bigger" aria-label="Smaller or bigger">⤡</button>
+        <button id="pa-video-hide" class="ghost small" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video">–</button>
       </div>
       <div class="pa-video-frame"></div>
     </div>
@@ -200,7 +201,7 @@
           <p class="muted small-text keys-hint">
             <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
             <kbd>↑</kbd> <kbd>↓</kbd> previous/next line · <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> tempo −/+ 5 BPM · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>B</kbd> click ·
-            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> recording on/off · <kbd>T</kbd> tap sync · <kbd>F</kbd> fretboard · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
+            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> linked video on/off · <kbd>T</kbd> tap sync · <kbd>F</kbd> fretboard · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
           </p>
         </section>
 
@@ -257,8 +258,8 @@
         </section>
 
         <section class="sheet" data-sheet="playalong" hidden>
-          <div class="sheet-head"><h2>Play along with the recording</h2><button class="ghost small" data-close>Close</button></div>
-          <p class="muted small-text">Play the real recording instead of the synth; the tab follows it, at any speed without changing pitch. Use your own audio file (MP3, M4A, WAV…) or a YouTube video: <b>Find it on YouTube</b> lists the likeliest matches, the artist's own recording first; click one to play it with the tab, or paste any link.</p>
+          <div class="sheet-head"><h2>Linked video</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">Link a YouTube video (or your own audio file) to this song. While it's linked, the song plays with the video's sound instead of the built-in guitar, and the tab follows it, at any speed without changing pitch. <b>Find it on YouTube</b> lists the likeliest matches, the artist's own version first; click one to link it, or paste any link. It stays linked to this song every time you open it, until you pick another or remove it.</p>
           <div class="row">
             <label class="button">Audio file…<input id="pa-file" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" hidden></label>
             <form id="pa-yt-form" class="row"><input id="pa-yt-url" placeholder="YouTube link" autocomplete="off"><button class="ghost">Use video</button></form>
@@ -271,11 +272,11 @@
           <ol id="pa-yt-results" class="yt-results" hidden></ol>
           <div class="row">
             <span id="pa-source" class="muted"></span>
-            <button id="pa-remove" class="ghost small danger" hidden>Remove</button>
-            <label class="toggle"><input id="pa-on" type="checkbox"> Play the recording (<kbd>R</kbd>)</label>
+            <button id="pa-remove" class="ghost small danger" hidden title="Unlink the video from this song">Unlink</button>
+            <label class="toggle"><input id="pa-on" type="checkbox"> Play with the linked video (<kbd>R</kbd>)</label>
           </div>
           <p id="pa-error" class="amp-error"></p>
-          <h3>Line the tab up with the recording</h3>
+          <h3>Line the tab up with the video</h3>
           <p class="muted small-text">Play it, and tap <kbd>T</kbd> (or the button) on beat 1 of every bar as you hear it, for as long as you like; pause to save. Untapped parts follow the written tempo from the last tap.</p>
           <div class="row">
             <button id="pa-tap" class="primary">Tap beat 1 (T)</button>
@@ -473,7 +474,7 @@
             <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
             <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
             <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
-            <button id="pa-toggle" class="tog rec" title="Play along with the recording (R)">● Rec</button>
+            <button id="pa-toggle" class="tog rec" title="Linked video (R): on = this song plays with its linked YouTube video; off = the built-in guitar sound. The first press lets you find a video.">Video</button>
           </div>
           <span id="tr-status" class="muted small-text practice-only"></span>
           <div class="playbar-end">
@@ -483,7 +484,7 @@
               <button id="pl-solo" class="ms solo" title="Solo this track (S)">S</button>
             </div>
             <div class="sheet-btns">
-              <button class="ghost small" data-sheet-btn="playalong">Recording</button>
+              <button class="ghost small" data-sheet-btn="playalong" title="Pick or change this song's linked YouTube video">Linked video</button>
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>

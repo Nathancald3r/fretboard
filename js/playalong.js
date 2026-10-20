@@ -70,19 +70,29 @@ export function youTubeId(text) {
   return m ? m[1] : null;
 }
 
+// One YouTube player for the whole session. Taking YouTube's player down and building a
+// new one (switching songs or videos) can throw inside YouTube's own code and leave the
+// new one stuck, so it's built once and given each song's video with cueVideoById.
+let ytPlayer = null;
+
 async function youTubeHandler(rec) {
   await loadYouTubeApi();
   const box = $('pa-video');
   box.hidden = false;
-  box.querySelector('.pa-video-frame').innerHTML = '<div id="pa-yt"></div>';
-  let player;
-  await new Promise((resolve) => {
-    player = new window.YT.Player('pa-yt', {
-      videoId: rec.id,
-      playerVars: { playsinline: 1, rel: 0, modestbranding: 1, controls: 1 },
-      events: { onReady: resolve },
+  let player = ytPlayer;
+  if (player) {
+    player.cueVideoById(rec.id);
+  } else {
+    box.querySelector('.pa-video-frame').innerHTML = '<div id="pa-yt"></div>';
+    await new Promise((resolve) => {
+      player = new window.YT.Player('pa-yt', {
+        videoId: rec.id,
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1, controls: 1 },
+        events: { onReady: resolve },
+      });
     });
-  });
+    ytPlayer = player;
+  }
   let timer = 0;
   let rate = 1;
   const poll = () => sendPosition(player.getCurrentTime() * 1000);
@@ -129,9 +139,8 @@ async function youTubeHandler(rec) {
     },
     destroy() {
       clearInterval(timer);
-      // YouTube's player can throw while tearing down (e.g. its frame already gone).
-      try { player.destroy(); } catch { /* ignore */ }
-      box.querySelector('.pa-video-frame').innerHTML = '';
+      player.removeEventListener('onStateChange', stateChange);
+      try { player.stopVideo(); } catch { /* ignore */ }
       box.hidden = true;
     },
   };
@@ -261,16 +270,16 @@ function showState() {
   $('pa-on').checked = on;
   $('pa-on').disabled = !song?.recording;
   const rec = song?.recording;
-  $('pa-source').textContent = !rec ? 'No recording yet.'
+  $('pa-source').textContent = !rec ? 'No video linked yet.'
     : rec.kind === 'youtube' ? `YouTube: ${rec.title ? `${rec.title}${rec.author ? ` (${rec.author})` : ''}` : rec.id}` : `Audio file: ${rec.name}`;
   $('pa-yt-search').href = song ? youTubeSearchUrl(song) : '#';
   document.querySelectorAll('#pa-yt-results button').forEach((b) => b.classList.toggle('on', rec?.kind === 'youtube' && b.dataset.id === rec.id));
   $('pa-remove').hidden = !rec;
   document.querySelector('[data-sheet-btn=playalong]')?.classList.toggle('live', on);
   $('pa-toggle').classList.toggle('on', on);
-  $('pa-toggle').title = on ? 'Playing the recording (click for the synth)' : 'Play along with the recording';
+  $('pa-toggle').title = on ? 'Playing with the linked video (click for the built-in guitar sound)' : 'Play with this song\u2019s linked video instead of the built-in guitar sound';
   $('pa-video').hidden = !(on && rec?.kind === 'youtube');
-  $('pa-video-title').textContent = rec?.kind === 'youtube' && rec.title ? rec.title : 'Recording';
+  $('pa-video-title').textContent = rec?.kind === 'youtube' && rec.title ? rec.title : 'Linked video';
   $('pa-video-title').title = $('pa-video-title').textContent;
   const at = matches.findIndex((r) => rec?.kind === 'youtube' && r.id === rec.id);
   $('pa-video-prev').hidden = $('pa-video-next').hidden = matches.length < 2 || at < 0;
@@ -279,6 +288,13 @@ function showState() {
   showSync();
 }
 
+// The linked video is used every time the song is opened, unless it was switched off here.
+const remember = (want) => {
+  if (!song?.recording) return;
+  song.videoOff = !want;
+  updateSong(song.id, { videoOff: !want });
+};
+
 async function setRecording(rec) {
   // YouTube to YouTube while playing along: same player, new video.
   if (on && media?.kind === 'youtube' && rec?.kind === 'youtube') {
@@ -286,7 +302,8 @@ async function setRecording(rec) {
     song.recording = rec;
     song.syncPoints = [];
     song.syncOffset = 0;
-    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0 });
+    song.videoOff = false;
+    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false });
     await media.cue(rec.id);
     applySync();
     showState();
@@ -297,7 +314,8 @@ async function setRecording(rec) {
   song.recording = rec;
   song.syncPoints = [];
   song.syncOffset = 0;
-  await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0 });
+  song.videoOff = false;
+  await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false });
   showState();
   if (rec) await setOn(true);
   else if (wasOn) showState();
@@ -305,6 +323,7 @@ async function setRecording(rec) {
 
 /* ---------- finding the recording on YouTube ---------- */
 
+let autoTried = false; // the linked video is switched on once per opened song
 let matches = []; // the last search's results, to step through from the video
 
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
@@ -395,6 +414,7 @@ export async function playAlongSongOpened(s) {
   if (on) await setOn(false);
   song = s;
   taps = null;
+  autoTried = false;
   finding++;
   $('pa-yt-results').hidden = true;
   $('pa-yt-results').innerHTML = '';
@@ -409,12 +429,15 @@ export async function playAlongSongOpened(s) {
 /** Toggle from the play bar. */
 export function toggleRecording() {
   if (!song?.recording) { hooks.showSheet('playalong'); findOnYouTube(); return; }
+  remember(!on);
   setOn(!on);
 }
 
 /** Re-apply sync points after the score changes (another track renders new bars). */
 export function playAlongScoreReady() {
-  if (on) applySync();
+  if (on) { applySync(); return; }
+  // First time this song's score is ready: use its linked video.
+  if (!autoTried && song?.recording && !song.videoOff) { autoTried = true; setOn(true); }
 }
 
 export function initPlayAlong(h) {
@@ -434,7 +457,7 @@ export function initPlayAlong(h) {
   });
   $('pa-remove').addEventListener('click', () => setRecording(null));
   $('pa-find').addEventListener('click', () => findOnYouTube());
-  $('pa-on').addEventListener('change', (e) => setOn(e.target.checked));
+  $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
   document.querySelectorAll('[data-nudge]').forEach((b) => b.addEventListener('click', () => {
@@ -450,7 +473,22 @@ export function initPlayAlong(h) {
     updateSong(song.id, { syncPoints: [], syncOffset: 0 });
     if (on) applySync(); else showSync();
   });
-  $('pa-video-hide').addEventListener('click', () => $('pa-video').classList.toggle('mini'));
+  // The picture: bigger / smaller, or hidden away (the sound keeps playing); remembered.
+  const box = $('pa-video');
+  const look = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
+  const save = (key, v) => { try { localStorage.setItem(key, v); } catch { /* ignore */ } };
+  const showLook = () => {
+    const hidden = box.classList.contains('collapsed');
+    $('pa-video-hide').textContent = hidden ? '▢' : '–';
+    $('pa-video-hide').title = hidden ? 'Show the video again' : 'Hide the picture (the sound keeps playing)';
+    $('pa-video-hide').setAttribute('aria-label', $('pa-video-hide').title);
+  };
+  box.classList.toggle('mini', look('fretboard-video-mini', '0') === '1');
+  box.classList.toggle('collapsed', look('fretboard-video-hidden', '0') === '1');
+  showLook();
+  $('pa-video-size').addEventListener('click', () => { save('fretboard-video-mini', box.classList.toggle('mini') ? '1' : '0'); });
+  $('pa-video-hide').addEventListener('click', () => { save('fretboard-video-hidden', box.classList.toggle('collapsed') ? '1' : '0'); showLook(); });
+  $('pa-video-title').addEventListener('click', () => { if (box.classList.contains('collapsed')) $('pa-video-hide').click(); });
   $('pa-video-prev').addEventListener('click', () => stepMatch(-1));
   $('pa-video-next').addEventListener('click', () => stepMatch(1));
 }
