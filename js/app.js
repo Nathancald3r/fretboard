@@ -9,10 +9,11 @@ import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
 import { initQuickImport } from './quickimport.js';
+import { initKeys, renderKeys } from './keys.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const VIEWS = ['library', 'player', 'text', 'scales', 'tools', 'log'];
+const VIEWS = ['library', 'player', 'text', 'scales', 'keys', 'tools', 'log'];
 let currentView = null;
 let editingId = null;
 
@@ -48,6 +49,7 @@ async function route() {
   if (view === 'library') renderLibrary();
   if (view === 'log') renderLog();
   if (view === 'scales') renderScales();
+  if (view === 'keys') renderKeys();
   if (view === 'player') openPlayer(song);
   if (view === 'text') openText(song);
   if (view !== 'text') window.scrollTo(0, 0);
@@ -250,6 +252,7 @@ async function main() {
   initEditor();
   initFind();
   initScales();
+  initKeys();
   initQuickImport({ importFiles, openEditor, toast });
   $('library-list').addEventListener('click', onLibraryClick);
   $('lib-filter').addEventListener('input', renderLibrary);

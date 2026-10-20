@@ -277,3 +277,59 @@ kbd { font: .78rem var(--mono); padding: 0 .35em; border: 1px solid var(--line);
 #amp-dialog { width: min(420px, 94vw); }
 #amp-dialog input { width: 100%; }
 .amp-top { margin-left: auto; border-color: var(--good); color: var(--good); }
+
+/* chords & keys */
+.cof-layout { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 1.25rem; align-items: start; }
+@media (max-width: 760px) { .cof-layout { grid-template-columns: 1fr; } .cof { max-width: 380px; margin: 0 auto; width: 100%; } }
+.cof svg { width: 100%; height: auto; display: block; }
+.cof-key { cursor: pointer; outline: none; }
+.cof-key path { fill: var(--panel-2); stroke: var(--bg); stroke-width: 2; transition: fill .15s; }
+.cof-key.minor path { fill: #20242b; }
+.cof-key.near path { fill: #3a3326; }
+.cof-key:hover path, .cof-key:focus-visible path { fill: #4a4030; }
+.cof-key.active path { fill: var(--accent); }
+.cof-key text { fill: var(--text); font: 700 15px system-ui, sans-serif; text-anchor: middle; pointer-events: none; }
+.cof-key.minor text { font-size: 12.5px; font-weight: 600; }
+.cof-key text.alt { font-size: 10px; font-weight: 500; fill: var(--muted); }
+.cof-key.active text { fill: var(--accent-ink); }
+.cof-sig { fill: var(--muted); font: 10px system-ui, sans-serif; text-anchor: middle; }
+.key-info h3 { margin: 0 0 .3rem; font-size: 1.15rem; }
+.key-info p { margin: .3rem 0 .6rem; }
+.degree-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; margin: .4rem 0 .6rem; }
+.degree { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .35rem .1rem; min-width: 0; }
+.degree .roman { font-size: .75rem; color: var(--accent); font-family: Georgia, serif; }
+.degree b { font-size: .95rem; white-space: nowrap; }
+.degree.active { border-color: var(--accent); background: #3a3326; }
+@media (max-width: 480px) { .degree-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.key-chord { display: flex; gap: .75rem; align-items: center; margin-bottom: .5rem; }
+.key-chord p { margin: 0; }
+.key-info input[type=number] { width: 4.5em; }
+.progressions { list-style: none; padding: 0; margin: .3rem 0 0; display: grid; gap: .35rem; }
+.progressions li { display: flex; gap: .6rem; align-items: center; }
+.prog-chord { display: inline-block; padding: 0 .25rem; border-radius: 4px; font-weight: 600; }
+.prog-chord.on { background: var(--accent); color: var(--accent-ink); }
+.chord-grid { display: flex; flex-wrap: wrap; gap: .6rem; }
+.chord-card { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .3rem .4rem .45rem; background: var(--panel-2); }
+.chord-box { width: 110px; height: auto; display: block; }
+.cb-title { fill: var(--text); font: 700 13px system-ui, sans-serif; text-anchor: middle; }
+.cb-nut { stroke: #d9dce1; stroke-width: 4; }
+.cb-fret { stroke: #5b616c; stroke-width: 1.2; }
+.cb-string { stroke: #9aa0aa; stroke-width: 1; }
+.cb-start { fill: var(--muted); font: 11px system-ui, sans-serif; text-anchor: end; }
+.cb-mark { fill: var(--muted); font: 12px system-ui, sans-serif; text-anchor: middle; }
+.cb-open { fill: none; stroke: #e8eaed; stroke-width: 1.5; }
+.cb-open.root { stroke: var(--accent); }
+.cb-barre { fill: #e8eaed; opacity: .35; }
+.cb-dot circle { fill: #e8eaed; }
+.cb-dot.root circle { fill: var(--accent); }
+.cb-dot text { fill: #14161a; font: 700 8.5px system-ui, sans-serif; text-anchor: middle; }
+.drill-shapes { display: flex; align-items: center; gap: .75rem; margin: .6rem 0; }
+.drill-arrow { font-size: 1.5rem; color: var(--muted); }
+.drill-chord { border-radius: var(--radius); outline: 3px solid transparent; transition: outline-color .1s; }
+.drill-chord.now { outline-color: var(--accent); }
+.drill-status { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.note-buttons { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
+.note-buttons button { min-width: 3.2rem; font-weight: 700; }
+.note-buttons button.right { background: var(--good); border-color: var(--good); color: #0c1a12; }
+.note-buttons button.wrong { background: var(--warn); border-color: var(--warn); color: #fff; }
+#fn-strings label { white-space: nowrap; }

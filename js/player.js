@@ -8,6 +8,8 @@ import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
 import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
+import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
+import { buildMelody } from './singcore.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -72,10 +74,17 @@ function ensureApi() {
   api.soundFontLoad.on((e) => {
     if (!readyForPlayback) $('pl-play').textContent = `Sound ${Math.round((e.loaded / e.total) * 100)}%`;
   });
-  api.playerStateChanged.on(setPlayButton);
+  api.playerStateChanged.on((e) => {
+    setPlayButton();
+    if (e?.stopped) singStopped();
+  });
   api.playerPositionChanged.on(onPosition);
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
-  api.playerFinished.on(() => { if (api.isLooping) onLoopCompleted(); });  api.playbackRangeChanged?.on(() => {
+  api.playerFinished.on(() => {
+    singFinished(api.isLooping);
+    if (api.isLooping) onLoopCompleted();
+  });
+  api.playbackRangeChanged?.on(() => {
     // A new selection restarts the trainer's loop count.
     trainer.loops = 0;
     updateTrainerStatus();
@@ -98,6 +107,7 @@ function onPosition(e) {
   $('pl-time').textContent = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
   if (!seeking) $('pl-seek').value = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
   showChordAt(e.currentTick);
+  singPosition(e);
 }
 
 /* ---------- chords ---------- */
@@ -270,11 +280,34 @@ function setTrackMuted(i, on) {
 
 function applyGuitarMute() {
   if (!score) return;
-  const want = playAlongState().muteGuitar ? trackIndex : null;
+  // The amp's play-along mutes the guitar you play; singing mode can mute the vocal you sing.
+  const want = playAlongState().muteGuitar || singWantsVocalMuted() ? trackIndex : null;
   if (guitarMuted === want) return;
   if (guitarMuted !== null) setTrackMuted(guitarMuted, false);
   if (want !== null) setTrackMuted(want, true);
   guitarMuted = want;
+}
+
+/* ---------- singing mode ---------- */
+
+const isVocal = (track) => /vocal|voice|vox|sing|choir|lyric/i.test(track?.name || '')
+  || [52, 53, 54, 85].includes(track?.playbackInfo?.program); // choir, voice oohs, synth voice, lead voice
+
+// The shown track's melody in playback order (repeats included), cached per score/track/bars.
+let melodyCache = { score: null, track: -1, bars: null, list: [] };
+function currentMelody() {
+  const bars = playedBars();
+  const c = melodyCache;
+  if (c.score !== score || c.track !== trackIndex || c.bars !== bars) {
+    melodyCache = { score, track: trackIndex, bars, list: score && bars.length ? buildMelody(score, trackIndex, bars) : [] };
+  }
+  return melodyCache.list;
+}
+
+function selectTrack(i) {
+  if (!score?.tracks[i]) return;
+  $('pl-track').value = i;
+  $('pl-track').dispatchEvent(new Event('change'));
 }
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
@@ -367,6 +400,7 @@ export async function openPlayer(s) {
   trackIndex = saved >= 0 && saved < parsed.tracks.length ? saved : defaultTrackIndex(parsed);
   score = parsed;
   prepareChords(parsed);
+  singSongChanged();
   applyChordVisibility();
   applyStaveProfile();
   api.renderScore(parsed, [trackIndex]);
@@ -619,6 +653,15 @@ export function initPlayer() {
     setGuitarMuted: applyGuitarMute,
     setSongVolume: (v) => { if (api) api.masterVolume = v; },
   });
+  initSing({
+    isPlaying: () => api?.playerState === PLAYING,
+    getMelody: currentMelody,
+    trackInfo: () => (score ? { name: trackLabel(score.tracks[trackIndex], trackIndex), vocal: isVocal(score.tracks[trackIndex]) } : {}),
+    findVocalTrack: () => (score ? score.tracks.findIndex(isVocal) : -1),
+    selectTrack,
+    vocalMuteChanged: applyGuitarMute,
+    showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
+  });
   $('pl-play').addEventListener('click', togglePlay);
   $('pl-stop').addEventListener('click', () => api?.stop());
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
@@ -634,6 +677,7 @@ export function initPlayer() {
     if (chordSource === 'file') { chordBars = fileChords(score, trackIndex); chordTimeline = { bars: null, list: [] }; }
     api.renderTracks([score.tracks[trackIndex]]);
     applyGuitarMute();
+    singTrackChanged();
     if (song) updateSong(song.id, { trackIndex });
   });
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));

@@ -35,6 +35,11 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 - **Text tabs:** chords, tab lines and section headers are highlighted. Text size and auto-scroll speed are adjustable. Tab lines can be played as a score (rhythm is guessed from the spacing).
 - **Nashville numbers:** switch a chord sheet's chords to numbers (G D/F# Em7 C in G → 1 5/7 6m7 4). The key is detected from the chords, or you can set it.
 - **Scales:** 12 scales (major, minor, pentatonics, blues, the modes, harmonic and melodic minor) in any key and every position, shown on a fretboard diagram with degrees or note names. **Practice in player** turns the position into an exercise (up and down, in 3s or in 4s) that you can loop and run through the speed trainer.
+- **Chords & keys:**
+  - **Circle of fifths:** click any key to see its key signature, its scale, and the seven chords in it. Each chord shows its Roman numeral and Nashville number, and you can switch to 7th chords. Click a chord to see and hear it, or play common progressions (pop, blues, jazz ii–V–I, minor rock) at any tempo.
+  - **Chord finder:** 15 chord types in every key. Shows open shapes plus E- and A-shape barre chords, with each dot labelled by its interval.
+  - **Chord changes:** a one-minute drill for any pair of chords. Your best and recent scores are saved for each pair.
+  - **Fretboard notes:** a quiz to name the highlighted note. You choose the strings, the frets and whether to include sharps and flats.
 - **Practice log:** counts the time a song is actually playing, or the time a text tab is open. Shows today, last 7 days, day streak, time per song and top speed.
 
 Keyboard shortcuts in the player: `Space` play/pause, `←` / `→` previous/next bar (`Shift` for 4 bars), `Home` back to the start (or the start of the selection), `End` last bar, `[` / `]` speed ±5%, `L` loop on/off, `C` count-in, `M` click, `Esc` close the open panel, or clear the selection. With count-in on, every start counts you in, including after jumping to a bar.

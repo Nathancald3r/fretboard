@@ -16,6 +16,7 @@
     <nav class="nav">
       <a href="#library" data-nav="library">Library</a>
       <a href="#scales" data-nav="scales">Scales</a>
+      <a href="#keys" data-nav="keys">Chords &amp; keys</a>
       <a href="#tools" data-nav="tools">Metronome &amp; Tuner</a>
       <a href="#log" data-nav="log">Practice log</a>
     </nav>
@@ -297,6 +298,66 @@
         <label>Tempo <input id="sc-tempo" type="number" min="30" max="260" value="80"> BPM</label>
         <button id="sc-play" class="primary">Practice in player</button>
       </div>
+    </section>
+  </main>
+
+  <!-- CHORDS & KEYS -->
+  <main id="view-keys" class="view" hidden>
+    <section class="panel">
+      <h2>Circle of fifths</h2>
+      <p class="muted small-text">Click a key. Going clockwise adds a sharp; counter-clockwise adds a flat. A key's six main chords are in the three wedges around it (outer: major, inner: minor).</p>
+      <div class="cof-layout">
+        <div id="cof" class="cof"></div>
+        <div id="key-info" class="key-info"></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Chord finder</h2>
+      <div class="row">
+        <label>Root <select id="cf-root"></select></label>
+        <label>Type <select id="cf-type"></select></label>
+      </div>
+      <p id="cf-notes" class="small-text"></p>
+      <div id="cf-shapes" class="chord-grid"></div>
+      <p class="muted small-text">Dots show the interval each finger plays (R = root). Click a shape to hear it. The E and A shapes are barre chords you can slide to any root.</p>
+    </section>
+    <section class="panel">
+      <h2>Chord changes</h2>
+      <p class="muted small-text">Switch between two chords as many times as you can, strumming once on each. Press <kbd>Space</kbd> (or Change) every time you land the next chord. A minute a day on your slowest pair cleans up changes faster than playing whole songs.</p>
+      <div class="row">
+        <label>Chord 1 <select id="cc-a"></select></label>
+        <label>Chord 2 <select id="cc-b"></select></label>
+        <label>Length
+          <select id="cc-len"><option value="30">30 s</option><option value="60">1 min</option><option value="120">2 min</option></select>
+        </label>
+        <button id="cc-random">Random pair</button>
+      </div>
+      <div id="cc-shapes" class="drill-shapes"></div>
+      <div class="row">
+        <button id="cc-start" class="primary">Start</button>
+        <button id="cc-tap" disabled>Change</button>
+        <span id="cc-status" class="drill-status"></span>
+      </div>
+      <p id="cc-best" class="muted small-text"></p>
+    </section>
+    <section class="panel">
+      <h2>Fretboard notes</h2>
+      <p class="muted small-text">Name the highlighted note. Click a button or type its letter (A–G). Knowing every note on the neck makes scales, chords and solos click.</p>
+      <div class="row">
+        <span id="fn-strings" class="row">Strings
+          <label><input type="checkbox" value="0" checked> E</label><label><input type="checkbox" value="1" checked> A</label>
+          <label><input type="checkbox" value="2" checked> D</label><label><input type="checkbox" value="3" checked> G</label>
+          <label><input type="checkbox" value="4" checked> B</label><label><input type="checkbox" value="5" checked> e</label>
+        </span>
+        <label>Frets
+          <select id="fn-range"><option value="0-5">0–5</option><option value="0-12">0–12</option><option value="5-12">5–12</option><option value="12-17">12–17</option></select>
+        </label>
+        <label><input type="checkbox" id="fn-naturals"> Natural notes only</label>
+        <label><input type="checkbox" id="fn-sound"> Play the note</label>
+      </div>
+      <div id="fn-board" class="fretboard"></div>
+      <div id="fn-answers" class="note-buttons"></div>
+      <p id="fn-score" class="small-text"></p>
     </section>
   </main>
 
