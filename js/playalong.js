@@ -319,8 +319,8 @@ function linkInScore() {
   return m ? { id: m[1], title: 'linked in the tab file', author: '', seconds: 0 } : null;
 }
 
-// Searches for the song and, with pick on (or no recording yet), uses the best match.
-async function findOnYouTube(pick) {
+// Searches for the song and lists the matches; the choice is the user's.
+async function findOnYouTube() {
   if (!song) return;
   const mine = ++finding;
   const state = $('pa-find-state');
@@ -346,7 +346,7 @@ async function findOnYouTube(pick) {
   results = results.slice(0, 6);
   matches = results;
   if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
-  state.textContent = 'Not the right one? Pick another:';
+  state.textContent = 'Best matches first. Click one to play it with the tab:';
   list.innerHTML = '';
   for (const r of results) {
     const li = document.createElement('li');
@@ -369,8 +369,7 @@ async function findOnYouTube(pick) {
     list.append(li);
   }
   list.hidden = false;
-  if (pick || !song.recording) await useVideo(results[0]);
-  else showState();
+  showState(); // nothing plays until you pick one
 }
 
 const useVideo = (r) => setRecording({ kind: 'youtube', id: r.id, title: r.title, author: r.author });
@@ -381,9 +380,9 @@ async function tryVideo(r) {
   if (!r) return;
   hooks.closeSheets();
   const reload = !(on && media?.kind === 'youtube'); // switching videos keeps the loaded MIDI
+  if (reload) hooks.playWhenLoaded(); // before the MIDI loads: that's what starts it
   await useVideo(r);
-  if (on && reload) hooks.playWhenLoaded();
-  else if (on) setTimeout(() => hooks.play(), 150);
+  if (on && !reload) setTimeout(() => hooks.play(), 150);
 }
 
 function stepMatch(step) {
@@ -409,7 +408,7 @@ export async function playAlongSongOpened(s) {
 
 /** Toggle from the play bar. */
 export function toggleRecording() {
-  if (!song?.recording) { hooks.showSheet('playalong'); findOnYouTube(true); return; }
+  if (!song?.recording) { hooks.showSheet('playalong'); findOnYouTube(); return; }
   setOn(!on);
 }
 
@@ -434,7 +433,7 @@ export function initPlayAlong(h) {
     await setRecording({ kind: 'youtube', id });
   });
   $('pa-remove').addEventListener('click', () => setRecording(null));
-  $('pa-find').addEventListener('click', () => findOnYouTube(true));
+  $('pa-find').addEventListener('click', () => findOnYouTube());
   $('pa-on').addEventListener('change', (e) => setOn(e.target.checked));
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
