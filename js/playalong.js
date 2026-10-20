@@ -185,7 +185,24 @@ function applySync() {
   showSync();
 }
 
+// Where the first bar begins in the video. Everything tapped later moves with it.
+function setStart(sec) {
+  if (!song) return;
+  const ms = Math.max(0, Math.round(sec * 1000));
+  const pts = song.syncPoints?.length ? song.syncPoints : [[0, 0]];
+  const first = pts.find(([p]) => p === 0);
+  const delta = ms - (first ? first[1] : 0);
+  song.syncPoints = first
+    ? pts.map(([p, t]) => [p, Math.max(0, t + delta)])
+    : [[0, ms], ...pts.map(([p, t]) => [p, t + delta])];
+  updateSong(song.id, { syncPoints: song.syncPoints });
+  if (on) applySync(); else showSync();
+  if (on && media) media.seekTo(ms);
+}
+
 function showSync() {
+  const zero = song?.syncPoints?.find(([p]) => p === 0);
+  if (document.activeElement !== $('pa-start')) $('pa-start').value = zero ? (zero[1] / 1000).toFixed(1) : '0';
   const pts = song?.syncPoints || [];
   const off = song?.syncOffset || 0;
   $('pa-sync-state').textContent = pts.length
@@ -466,6 +483,11 @@ export function initPlayAlong(h) {
     updateSong(song.id, { syncOffset: song.syncOffset });
     if (on) applySync(); else showSync();
   }));
+  $('pa-start').addEventListener('change', (e) => setStart(Number(e.target.value) || 0));
+  $('pa-start-now').addEventListener('click', () => {
+    if (!media) { $('pa-tap-state').textContent = 'Turn on the linked video first, then find where the music starts.'; return; }
+    setStart((media.now() - (song.syncOffset || 0)) / 1000);
+  });
   $('pa-clear').addEventListener('click', () => {
     if (!song) return;
     song.syncPoints = [];
