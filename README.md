@@ -22,7 +22,8 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 
 ## Features
 
-- **Player:** shows the tab with a cursor that follows playback. You can switch tracks, mute or solo tracks, switch between tab only / tab + notation / notation only, choose page or horizontal layout, and zoom.
+- **Player:** shows the tab with a cursor that follows playback. Everything for playback sits in a bar docked at the bottom that is always visible: a song position bar you can click to jump, play/stop, time, the current and next chord, speed, loop, count-in, click and the track picker. **Trainer**, **Tracks** (mute / solo), **View** (layout, tab/notation, zoom, chords), **Sound** and **Amp** open as panels above the bar (`Esc` closes them).
+- **Chords:** chord names are drawn above the tab, and the play bar shows the chord now → next. They come from the file when it has them (Guitar Pro chord names); otherwise they are guessed per bar (or half bar) from the notes of all tracks, so treat those as a hint. Turn them off under **View**.
 - **Speed:** 25–150%, with an approximate BPM shown. The app remembers the speed and track for each song.
 - **Looping:** drag across the tab to select bars, then turn on **Loop**. Escape clears the selection.
 - **Speed trainer:** loops your selection and raises the tempo by a set step every N loops until it reaches the target.
@@ -36,7 +37,7 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 - **Scales:** 12 scales (major, minor, pentatonics, blues, the modes, harmonic and melodic minor) in any key and every position, shown on a fretboard diagram with degrees or note names. **Practice in player** turns the position into an exercise (up and down, in 3s or in 4s) that you can loop and run through the speed trainer.
 - **Practice log:** counts the time a song is actually playing, or the time a text tab is open. Shows today, last 7 days, day streak, time per song and top speed.
 
-Keyboard shortcuts in the player: `Space` play/pause, `←` / `→` previous/next bar (`Shift` for 4 bars), `Home` back to the start (or the start of the selection), `End` last bar, `[` / `]` speed ±5%, `L` loop on/off, `C` count-in, `M` click, `Esc` clear selection. With count-in on, every start counts you in, including after jumping to a bar.
+Keyboard shortcuts in the player: `Space` play/pause, `←` / `→` previous/next bar (`Shift` for 4 bars), `Home` back to the start (or the start of the selection), `End` last bar, `[` / `]` speed ±5%, `L` loop on/off, `C` count-in, `M` click, `Esc` close the open panel, or clear the selection. With count-in on, every start counts you in, including after jumping to a bar.
 
 Everything is stored only in this browser (IndexedDB). Clearing site data deletes your library.
 

@@ -7,6 +7,7 @@ import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
 import { initAmp, ampSongOpened, playAlongState } from './amp.js';
+import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -89,8 +90,84 @@ function setPlayButton() {
   btn.textContent = api.playerState === PLAYING ? 'Pause' : 'Play';
 }
 
+let endTime = 0;
+let seeking = false;
+
 function onPosition(e) {
+  endTime = e.endTime;
   $('pl-time').textContent = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
+  if (!seeking) $('pl-seek').value = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
+  showChordAt(e.currentTick);
+}
+
+/* ---------- chords ---------- */
+
+// Per master bar: { all: [{ offset, name }] } from the file, or guessed from the notes.
+let chordBars = null;
+let chordSource = 'none'; // 'file' | 'guess' | 'none'
+let chordTimeline = { bars: null, list: [] };
+
+function prepareChords(sc) {
+  chordBars = null;
+  chordSource = 'none';
+  try {
+    if (scoreHasChords(sc)) {
+      chordSource = 'file';
+      chordBars = fileChords(sc, trackIndex);
+    } else {
+      const guessed = guessChords(sc);
+      if (guessed.some((b) => b.all.length)) {
+        injectChords(sc, guessed, AT.model.Chord);
+        chordSource = 'guess';
+        chordBars = guessed;
+      }
+    }
+  } catch (err) {
+    console.warn('Chord detection failed', err);
+  }
+  chordTimeline = { bars: null, list: [] };
+  showChordSettings();
+}
+
+const chordsOn = () => $('pl-chords').checked;
+
+function showChordSettings() {
+  $('pl-chords-src').textContent = {
+    file: 'Chord names come from the file.',
+    guess: 'This file has no chord names, so they are guessed from the notes of all tracks. Treat them as a hint.',
+    none: 'No chords found in this song.',
+  }[chordSource];
+  $('pl-chord').hidden = !chordsOn() || chordSource === 'none';
+}
+
+function applyChordVisibility() {
+  const on = chordsOn();
+  api.settings.notation.elements.set(AT.NotationElement.EffectChordNames, on);
+  api.settings.notation.elements.set(AT.NotationElement.ChordDiagrams, on);
+}
+
+// Chords in playback order (repeats included) with their absolute ticks.
+function chordList() {
+  const bars = playedBars();
+  if (chordTimeline.bars !== bars) {
+    const list = [];
+    for (const b of bars) {
+      for (const c of chordBars?.[b.masterBar.index]?.all || []) list.push({ tick: b.start + c.offset, name: c.name });
+    }
+    chordTimeline = { bars, list };
+  }
+  return chordTimeline.list;
+}
+
+function showChordAt(tick) {
+  if ($('pl-chord').hidden) return;
+  const list = chordList();
+  let i = -1;
+  for (let j = 0; j < list.length && list[j].tick <= tick; j++) i = j;
+  const now = list[i]?.name || '–';
+  const next = list.slice(i + 1).find((c) => c.name !== now)?.name || '';
+  if ($('pl-chord-now').textContent !== now) $('pl-chord-now').textContent = now;
+  if ($('pl-chord-next').textContent !== next) $('pl-chord-next').textContent = next;
 }
 
 function onLoopCompleted() {
@@ -112,10 +189,11 @@ function onLoopCompleted() {
 
 function updateTrainerStatus(message) {
   const el = $('tr-status');
-  if (message) { el.textContent = '· ' + message; return; }
+  document.querySelector('[data-sheet-btn=trainer]').classList.toggle('live', trainer.on);
+  if (message) { el.textContent = message; return; }
   if (!trainer.on) { el.textContent = ''; return; }
   const toNext = trainer.every - (trainer.loops % trainer.every);
-  el.textContent = `· running at ${Math.round(api.playbackSpeed * 100)}%, loop ${trainer.loops}, speeds up in ${toNext}`;
+  el.textContent = `Trainer: loop ${trainer.loops}, faster in ${toNext}`;
 }
 
 function setSpeed(percent, save = true) {
@@ -288,6 +366,8 @@ export async function openPlayer(s) {
   const saved = s.trackIndex;
   trackIndex = saved >= 0 && saved < parsed.tracks.length ? saved : defaultTrackIndex(parsed);
   score = parsed;
+  prepareChords(parsed);
+  applyChordVisibility();
   applyStaveProfile();
   api.renderScore(parsed, [trackIndex]);
 }
@@ -430,7 +510,55 @@ function initSound() {
   $('pl-sf-reset').addEventListener('click', () => useSoundFont(null));
 }
 
+/* ---------- bottom bar and its sheets ---------- */
+
+function openSheet(name) {
+  const opening = name && document.querySelector(`.sheet[data-sheet="${name}"]`).hidden;
+  document.querySelectorAll('.sheet').forEach((el) => { el.hidden = !(opening && el.dataset.sheet === name); });
+  document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.classList.toggle('on', opening && b.dataset.sheetBtn === name));
+}
+
+// Returns true if a sheet was open.
+function closeSheets() {
+  const open = document.querySelector('.sheet:not([hidden])');
+  if (open) openSheet(null);
+  return !!open;
+}
+
+function initDock() {
+  document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.addEventListener('click', () => { openSheet(b.dataset.sheetBtn); b.blur(); }));
+  document.querySelectorAll('.sheet [data-close]').forEach((b) => b.addEventListener('click', () => openSheet(null)));
+  // The score fills the space between the top bar and the play bar.
+  const root = document.documentElement.style;
+  const measure = () => {
+    root.setProperty('--dock-h', document.querySelector('.playbar').offsetHeight + 'px');
+    root.setProperty('--top-h', document.querySelector('.topbar').offsetHeight + 'px');
+  };
+  new ResizeObserver(measure).observe(document.querySelector('.playbar'));
+  new ResizeObserver(measure).observe(document.querySelector('.topbar'));
+
+  const seek = $('pl-seek');
+  seek.addEventListener('input', () => {
+    seeking = true;
+    if (endTime) $('pl-time').textContent = `${formatClock((seek.value / 1000) * endTime)} / ${formatClock(endTime)}`;
+  });
+  seek.addEventListener('change', () => {
+    seeking = false;
+    if (api && readyForPlayback && endTime) api.timePosition = (seek.value / 1000) * endTime;
+    seek.blur();
+  });
+
+  const chords = $('pl-chords');
+  chords.checked = localStorage.getItem('fretboard-chords') !== '0';
+  chords.addEventListener('change', () => {
+    try { localStorage.setItem('fretboard-chords', chords.checked ? '1' : '0'); } catch { /* ignore */ }
+    showChordSettings();
+    if (api && score) { applyChordVisibility(); api.updateSettings(); api.render(); }
+  });
+}
+
 export function initPlayer() {
+  initDock();
   initSound();
   initAmp({
     setGuitarMuted: applyGuitarMute,
@@ -448,6 +576,7 @@ export function initPlayer() {
   $('pl-track').addEventListener('change', (e) => {
     trackIndex = Number(e.target.value);
     applyStaveProfile();
+    if (chordSource === 'file') { chordBars = fileChords(score, trackIndex); chordTimeline = { bars: null, list: [] }; }
     api.renderTracks([score.tracks[trackIndex]]);
     applyGuitarMute();
     if (song) updateSong(song.id, { trackIndex });
@@ -492,7 +621,7 @@ export function initPlayer() {
       l: () => setLoop(!$('pl-loop').checked),
       c: () => { $('pl-countin').checked = !$('pl-countin').checked; $('pl-countin').dispatchEvent(new Event('change')); },
       m: () => { $('pl-metro').checked = !$('pl-metro').checked; $('pl-metro').dispatchEvent(new Event('change')); },
-      Escape: clearSelection,
+      Escape: () => { if (!closeSheets()) clearSelection(); },
     };
     const action = keys[e.key.length === 1 ? e.key.toLowerCase() : e.key];
     if (!action) return;

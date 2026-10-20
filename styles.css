@@ -102,15 +102,48 @@ label { display: inline-flex; gap: .35rem; align-items: center; color: var(--mut
 .empty { color: var(--muted); padding: 1rem 0; }
 
 /* player */
-.player-view { max-width: none; }
-.player-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
-.transport {
-  position: sticky; top: 52px; z-index: 10;
-  display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem .8rem;
+/* The player fills the window: a one-line title, the score, and the play bar docked at
+   the bottom (its height is measured into --dock-h by player.js). */
+.player-view {
+  max-width: none; display: flex; flex-direction: column; gap: .5rem;
+  height: calc(100dvh - var(--top-h, 52px)); padding-bottom: calc(var(--dock-h, 110px) + .5rem);
 }
-.speed { display: flex; gap: .4rem; align-items: center; }
-.speed input { width: 160px; }
+.player-head { display: flex; gap: .3rem 1rem; flex-wrap: wrap; align-items: baseline; }
+.player-head h1 { margin: 0; font-size: 1.25rem; }
+.player-head > div { flex-basis: 100%; }
+.playdock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; }
+.playbar {
+  background: #101216f2; backdrop-filter: blur(6px); border-top: 1px solid var(--line);
+  padding: 0 1rem .5rem;
+}
+.playbar-row { display: flex; gap: .4rem .7rem; align-items: center; flex-wrap: wrap; }
+.playbar .big { min-width: 6rem; padding: .5rem 1rem; }
+.playbar .toggle { font-size: .9rem; }
+.playbar-end { margin-left: auto; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+#pl-track { max-width: 15rem; }
+.sheet-btns { display: flex; gap: .25rem; }
+.sheet-btns button.on { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+.sheet-btns button.live::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: .35rem; border-radius: 50%; background: var(--good); vertical-align: middle; }
+/* Song position: a thin full-width bar on top of the play bar. */
+.seek { display: block; width: calc(100% + 2rem); margin: -1px -1rem .45rem; height: 6px; cursor: pointer; accent-color: var(--accent); }
+.chord-now {
+  display: flex; align-items: baseline; gap: .45rem; padding: .15rem .7rem; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); min-width: 5.5rem;
+}
+.chord-now b { font-size: 1.25rem; color: var(--accent); }
+.chord-now span:not(:empty)::before { content: "→ "; }
+.sheets { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; justify-content: center; pointer-events: none; }
+.sheet {
+  pointer-events: auto; width: min(1100px, calc(100% - 1rem)); max-height: min(65vh, 640px); overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+  padding: .8rem 1rem 1rem; box-shadow: 0 -10px 30px #0008;
+}
+.sheet > .row { margin: .5rem 0; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; position: sticky; top: -.8rem; background: var(--panel); padding: .2rem 0; z-index: 1; }
+.sheet-head h2 { margin: 0; }
+.speed { display: flex; gap: .3rem; align-items: center; }
+.speed input { width: 90px; }
+#tr-status:empty { display: none; }
 .trainer input[type=number] { width: 4rem; }
 .mixer-row { display: flex; gap: .6rem; align-items: center; padding: .25rem 0; border-bottom: 1px solid var(--line); }
 .mixer-row .name { flex: 1; }
@@ -118,7 +151,7 @@ label { display: inline-flex; gap: .35rem; align-items: center; color: var(--mut
 .loading { color: var(--muted); padding: 1rem; text-align: center; }
 .score-scroll {
   background: #fbfaf7; color: #111; border-radius: var(--radius);
-  overflow: auto; max-height: calc(100vh - 200px); min-height: 300px;
+  overflow: auto; flex: 1 1 auto; min-height: 200px;
 }
 #alphatab { min-height: 200px; }
 /* alphaTab cursor & selection colors */
@@ -180,8 +213,11 @@ dialog .row input { flex: 1 1 200px; }
 @media (max-width: 640px) {
   .view { padding: .6rem; }
   .speed input { width: 110px; }
-  .transport { top: 0; position: static; }
-  .score-scroll { max-height: none; }
+  .playbar { padding: 0 .5rem .4rem; }
+  .seek { width: calc(100% + 1rem); margin: -1px -.5rem .4rem; }
+  .playbar .toggle, #pl-clear-sel, #pl-bpm { font-size: .8rem; }
+  .playbar-end { margin-left: 0; width: 100%; }
+  #pl-track { flex: 1; max-width: none; }
 }
 
 /* Scale diagram */
@@ -205,11 +241,9 @@ button.primary.danger { background: var(--warn); border-color: var(--warn); colo
 .score-scroll { isolation: isolate; }
 .small-text { font-size: .85rem; }
 kbd { font: .78rem var(--mono); padding: 0 .35em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
-.keys-hint { margin: .3rem 0 .6rem; line-height: 1.9; }
+.keys-hint { margin: .6rem 0 0; line-height: 1.9; }
 
 /* amp simulator */
-.amp { display: block; }
-.amp > .row { margin: .5rem 0; }
 .amp-on:empty { display: none; }
 .amp-on { background: var(--good); color: #0b1f13; font-size: .75rem; font-weight: 700; margin-left: .4rem; }
 .amp-warn { border-left: 3px solid var(--accent); background: var(--panel-2); padding: .5rem .7rem; border-radius: 6px; margin: 0 0 .6rem; font-size: .9rem; }

@@ -309,6 +309,7 @@ function showRunning() {
   $('amp-go').classList.toggle('danger', running);
   $('amp-state').textContent = running ? (demo ? 'On · demo riff' : 'On') : '';
   $('amp-top').hidden = !running;
+  document.querySelector('[data-sheet-btn=amp]')?.classList.toggle('live', running);
   if (!running) {
     $('amp-meter-bar').style.width = '0';
     $('amp-meter-db').textContent = '—';
@@ -514,8 +515,15 @@ export async function initAmp(playerHooks = {}) {
   } catch { /* storage unavailable: built-ins only */ }
   renderControls();
   renderPresets();
-  listDevices();
-  navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
+  // Only look at audio devices once the Amp panel is opened, not on every page load.
+  $('amp-device').add(new Option('Default input', ''));
+  let listed = false;
+  document.querySelector('[data-sheet-btn=amp]').addEventListener('click', () => {
+    if (listed) return;
+    listed = true;
+    listDevices();
+    navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
+  });
 
   $('amp-go').addEventListener('click', async () => {
     if (running) { stop(); return; }

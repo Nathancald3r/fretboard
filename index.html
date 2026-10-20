@@ -56,138 +56,166 @@
   <!-- PLAYER -->
   <main id="view-player" class="view player-view" hidden>
     <div class="player-head">
-      <div>
-        <h1 id="pl-title">—</h1>
-        <div id="pl-artist" class="muted"></div>
-        <div id="pl-info" class="muted small-text"></div>
-        <div id="pl-from-text" class="muted" hidden>
-          Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
-        </div>
-        <div id="pl-notab" class="muted" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track above.</div>
+      <h1 id="pl-title">—</h1>
+      <span id="pl-artist" class="muted"></span>
+      <span id="pl-info" class="muted small-text"></span>
+      <div id="pl-from-text" class="muted small-text" hidden>
+        Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
       </div>
-      <div class="row">
-        <select id="pl-track" title="Track"></select>
-        <select id="pl-layout" title="Layout">
-          <option value="Page">Page</option>
-          <option value="Horizontal">Horizontal</option>
-        </select>
-        <select id="pl-stave" title="Notation">
-          <option value="tab">Tab only</option>
-          <option value="default">Tab + notation</option>
-          <option value="score">Notation only</option>
-        </select>
-        <select id="pl-tone" title="Tone: how bright or warm playback sounds"></select>
-        <select id="pl-zoom" title="Zoom">
-          <option value="0.7">70%</option><option value="0.85">85%</option>
-          <option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option>
-        </select>
-      </div>
+      <div id="pl-notab" class="muted small-text" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track below.</div>
     </div>
-
-    <div class="transport">
-      <button id="pl-play" class="primary big" disabled title="Play / pause (Space). With Count-in on, every start counts you in.">Loading…</button>
-      <button id="pl-stop" class="ghost" title="Stop">Stop</button>
-      <div class="speed">
-        <button id="pl-slower" class="ghost small" title="Slower ([)">−5</button>
-        <input id="pl-speed" type="range" min="25" max="150" step="1" value="100">
-        <button id="pl-faster" class="ghost small" title="Faster (])">+5</button>
-        <span id="pl-speed-val" class="pill">100%</span>
-        <span id="pl-bpm" class="muted"></span>
-      </div>
-      <label class="toggle" title="Loop the selected bars (L). Drag across the tab to select."><input id="pl-loop" type="checkbox"> Loop</label>
-      <button id="pl-clear-sel" class="ghost small">Clear selection</button>
-      <label class="toggle"><input id="pl-countin" type="checkbox"> Count-in</label>
-      <label class="toggle"><input id="pl-metro" type="checkbox"> Click</label>
-      <span id="pl-time" class="mono muted">0:00 / 0:00</span>
-    </div>
-    <p class="muted small-text keys-hint">
-      <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
-      <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> speed · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>M</kbd> click · <kbd>Esc</kbd> clear selection
-    </p>
-
-    <details class="trainer panel" id="trainer">
-      <summary>Speed trainer <span id="tr-status" class="muted"></span></summary>
-      <p class="muted">Select bars to loop (drag across the tab), then start. The tempo rises after every few clean loops.</p>
-      <div class="row">
-        <label>Start <input id="tr-start" type="number" min="25" max="150" value="60">%</label>
-        <label>Target <input id="tr-target" type="number" min="25" max="150" value="100">%</label>
-        <label>Step <input id="tr-step" type="number" min="1" max="25" value="5">%</label>
-        <label>Every <input id="tr-every" type="number" min="1" max="20" value="2"> loops</label>
-        <button id="tr-go" class="primary">Start trainer</button>
-      </div>
-    </details>
-
-    <details class="panel" id="sound">
-      <summary>Sound (instruments)</summary>
-      <p id="pl-sf-name" class="muted"></p>
-      <p class="muted small-text">For more realistic instruments, load a free General MIDI soundfont (.sf2 or .sf3), for example <i>GeneralUser GS</i> or <i>MuseScore General</i>. It is stored in this browser and used for every song.</p>
-      <div class="row">
-        <label class="button">Load soundfont…<input id="pl-sf-file" type="file" accept=".sf2,.sf3" hidden></label>
-        <button id="pl-sf-reset" class="ghost" hidden>Back to built-in sounds</button>
-      </div>
-    </details>
-
-    <details class="panel amp" id="amp">
-      <summary>Amp: plug in your guitar <span id="amp-state" class="pill amp-on"></span></summary>
-      <p class="amp-warn"><b>Use headphones.</b> Through speakers the mic picks the amp back up and squeals. Plug the guitar into an <b>audio interface</b> (USB, e.g. Focusrite or Behringer) and use wired headphones on it; Bluetooth headphones add 150+ ms of delay, which makes playing along impossible.</p>
-      <div class="row">
-        <label>Input <select id="amp-device"></select></label>
-        <label title="Most interfaces send the guitar on input 1 only">Channel
-          <select id="amp-channel">
-            <option value="left">Input 1 (left)</option>
-            <option value="right">Input 2 (right)</option>
-            <option value="mix">Both</option>
-          </select>
-        </label>
-        <button id="amp-go" class="primary">Turn amp on</button>
-      </div>
-      <div class="row amp-status">
-        <div class="amp-meter" title="Input level (before the amp)"><div id="amp-meter-bar" class="amp-meter-bar"></div></div>
-        <span id="amp-meter-db" class="mono muted small-text">—</span>
-        <span id="amp-latency" class="muted small-text"></span>
-      </div>
-      <p id="amp-error" class="amp-error"></p>
-
-      <div class="row">
-        <label>Tone <select id="amp-preset"></select></label>
-        <span id="amp-dirty" class="muted small-text"></span>
-        <button id="amp-save" class="ghost small" title="Overwrite this tone with the current settings">Save</button>
-        <button id="amp-saveas" class="ghost small">Save as new…</button>
-        <button id="amp-rename" class="ghost small">Rename</button>
-        <button id="amp-delete" class="ghost small danger">Delete</button>
-        <label class="toggle"><input id="amp-song" type="checkbox"> <span id="amp-song-label">Load this tone with the song</span></label>
-      </div>
-      <div class="row">
-        <label>Amp <select id="amp-character"></select></label>
-        <label>Cabinet <select id="amp-cabinet"></select></label>
-      </div>
-      <div id="amp-knobs" class="amp-knobs"></div>
-
-      <div class="row amp-playalong">
-        <label class="toggle" title="Mutes the track shown in the tab so you play that part"><input id="amp-mute-track" type="checkbox"> Mute the tab's guitar (I'll play it)</label>
-        <label>Song volume <input id="amp-song-vol" type="range" min="0" max="100" step="1" value="100"> <span id="amp-song-vol-val" class="mono"></span></label>
-      </div>
-
-      <dialog id="amp-dialog">
-        <form method="dialog">
-          <h2 id="amp-dialog-title"></h2>
-          <input id="amp-dialog-name" placeholder="Tone name" maxlength="60">
-          <div class="row spread">
-            <button value="cancel" formnovalidate class="ghost">Cancel</button>
-            <button id="amp-dialog-ok" value="ok" class="primary">Save</button>
-          </div>
-        </form>
-      </dialog>
-    </details>
-
-    <details class="panel" id="mixer">
-      <summary>Tracks (mute / solo)</summary>
-      <div id="mixer-list"></div>
-    </details>
 
     <div id="pl-loading" class="loading">Loading score…</div>
     <div id="score-scroll" class="score-scroll">
       <div id="alphatab"></div>
+    </div>
+
+    <!-- Everything about playback lives in the bar at the bottom; the buttons on its right
+         open these sheets above it. -->
+    <div class="playdock">
+      <div id="pl-sheets" class="sheets">
+        <section class="sheet" data-sheet="view" hidden>
+          <div class="sheet-head"><h2>View</h2><button class="ghost small" data-close>Close</button></div>
+          <div class="row">
+            <label>Layout <select id="pl-layout">
+              <option value="Page">Page</option>
+              <option value="Horizontal">Horizontal</option>
+            </select></label>
+            <label>Notation <select id="pl-stave">
+              <option value="tab">Tab only</option>
+              <option value="default">Tab + notation</option>
+              <option value="score">Notation only</option>
+            </select></label>
+            <label>Zoom <select id="pl-zoom">
+              <option value="0.7">70%</option><option value="0.85">85%</option>
+              <option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option>
+            </select></label>
+          </div>
+          <div class="row">
+            <label class="toggle"><input id="pl-chords" type="checkbox" checked> Show chords</label>
+            <span id="pl-chords-src" class="muted small-text"></span>
+          </div>
+          <p class="muted small-text keys-hint">
+            <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
+            <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> speed · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>M</kbd> click · <kbd>Esc</kbd> close panel / clear selection
+          </p>
+        </section>
+
+        <section class="sheet" data-sheet="trainer" hidden>
+          <div class="sheet-head"><h2>Speed trainer</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">Select bars to loop (drag across the tab), then start. The tempo rises after every few clean loops.</p>
+          <div class="row trainer">
+            <label>Start <input id="tr-start" type="number" min="25" max="150" value="60">%</label>
+            <label>Target <input id="tr-target" type="number" min="25" max="150" value="100">%</label>
+            <label>Step <input id="tr-step" type="number" min="1" max="25" value="5">%</label>
+            <label>Every <input id="tr-every" type="number" min="1" max="20" value="2"> loops</label>
+            <button id="tr-go" class="primary">Start trainer</button>
+          </div>
+        </section>
+
+        <section class="sheet" data-sheet="mixer" hidden>
+          <div class="sheet-head"><h2>Tracks</h2><button class="ghost small" data-close>Close</button></div>
+          <div id="mixer-list"></div>
+        </section>
+
+        <section class="sheet" data-sheet="sound" hidden>
+          <div class="sheet-head"><h2>Sound</h2><button class="ghost small" data-close>Close</button></div>
+          <div class="row">
+            <label title="How bright or warm playback sounds">Tone <select id="pl-tone"></select></label>
+          </div>
+          <p id="pl-sf-name" class="muted"></p>
+          <p class="muted small-text">For more realistic instruments, load a free General MIDI soundfont (.sf2 or .sf3), for example <i>GeneralUser GS</i> or <i>MuseScore General</i>. It is stored in this browser and used for every song.</p>
+          <div class="row">
+            <label class="button">Load soundfont…<input id="pl-sf-file" type="file" accept=".sf2,.sf3" hidden></label>
+            <button id="pl-sf-reset" class="ghost" hidden>Back to built-in sounds</button>
+          </div>
+        </section>
+
+        <section class="sheet amp" data-sheet="amp" id="amp" hidden>
+          <div class="sheet-head"><h2>Amp: plug in your guitar <span id="amp-state" class="pill amp-on"></span></h2><button class="ghost small" data-close>Close</button></div>
+          <p class="amp-warn"><b>Use headphones.</b> Through speakers the mic picks the amp back up and squeals. Plug the guitar into an <b>audio interface</b> (USB, e.g. Focusrite or Behringer) and use wired headphones on it; Bluetooth headphones add 150+ ms of delay, which makes playing along impossible.</p>
+          <div class="row">
+            <label>Input <select id="amp-device"></select></label>
+            <label title="Most interfaces send the guitar on input 1 only">Channel
+              <select id="amp-channel">
+                <option value="left">Input 1 (left)</option>
+                <option value="right">Input 2 (right)</option>
+                <option value="mix">Both</option>
+              </select>
+            </label>
+            <button id="amp-go" class="primary">Turn amp on</button>
+          </div>
+          <div class="row amp-status">
+            <div class="amp-meter" title="Input level (before the amp)"><div id="amp-meter-bar" class="amp-meter-bar"></div></div>
+            <span id="amp-meter-db" class="mono muted small-text">—</span>
+            <span id="amp-latency" class="muted small-text"></span>
+          </div>
+          <p id="amp-error" class="amp-error"></p>
+
+          <div class="row">
+            <label>Tone <select id="amp-preset"></select></label>
+            <span id="amp-dirty" class="muted small-text"></span>
+            <button id="amp-save" class="ghost small" title="Overwrite this tone with the current settings">Save</button>
+            <button id="amp-saveas" class="ghost small">Save as new…</button>
+            <button id="amp-rename" class="ghost small">Rename</button>
+            <button id="amp-delete" class="ghost small danger">Delete</button>
+            <label class="toggle"><input id="amp-song" type="checkbox"> <span id="amp-song-label">Load this tone with the song</span></label>
+          </div>
+          <div class="row">
+            <label>Amp <select id="amp-character"></select></label>
+            <label>Cabinet <select id="amp-cabinet"></select></label>
+          </div>
+          <div id="amp-knobs" class="amp-knobs"></div>
+
+          <div class="row amp-playalong">
+            <label class="toggle" title="Mutes the track shown in the tab so you play that part"><input id="amp-mute-track" type="checkbox"> Mute the tab's guitar (I'll play it)</label>
+            <label>Song volume <input id="amp-song-vol" type="range" min="0" max="100" step="1" value="100"> <span id="amp-song-vol-val" class="mono"></span></label>
+          </div>
+
+          <dialog id="amp-dialog">
+            <form method="dialog">
+              <h2 id="amp-dialog-title"></h2>
+              <input id="amp-dialog-name" placeholder="Tone name" maxlength="60">
+              <div class="row spread">
+                <button value="cancel" formnovalidate class="ghost">Cancel</button>
+                <button id="amp-dialog-ok" value="ok" class="primary">Save</button>
+              </div>
+            </form>
+          </dialog>
+        </section>
+      </div>
+
+      <div class="playbar">
+        <input id="pl-seek" class="seek" type="range" min="0" max="1000" value="0" step="1" title="Song position (click to jump)">
+        <div class="playbar-row">
+          <button id="pl-play" class="primary big" disabled title="Play / pause (Space). With Count-in on, every start counts you in.">Loading…</button>
+          <button id="pl-stop" class="ghost" title="Stop">■</button>
+          <span id="pl-time" class="mono muted">0:00 / 0:00</span>
+          <div id="pl-chord" class="chord-now" title="Chord now → next" hidden><b id="pl-chord-now">–</b><span id="pl-chord-next" class="muted"></span></div>
+          <div class="speed">
+            <button id="pl-slower" class="ghost small" title="Slower ([)">−</button>
+            <input id="pl-speed" type="range" min="25" max="150" step="1" value="100" title="Speed">
+            <button id="pl-faster" class="ghost small" title="Faster (])">+</button>
+            <span id="pl-speed-val" class="pill">100%</span>
+            <span id="pl-bpm" class="muted small-text"></span>
+          </div>
+          <label class="toggle" title="Loop the selected bars (L). Drag across the tab to select."><input id="pl-loop" type="checkbox"> Loop</label>
+          <button id="pl-clear-sel" class="ghost small" title="Clear the bar selection (Esc)">Clear</button>
+          <label class="toggle" title="Count-in (C)"><input id="pl-countin" type="checkbox"> Count-in</label>
+          <label class="toggle" title="Click track (M)"><input id="pl-metro" type="checkbox"> Click</label>
+          <span id="tr-status" class="muted small-text"></span>
+          <div class="playbar-end">
+            <select id="pl-track" title="Track shown in the tab"></select>
+            <div class="sheet-btns">
+              <button class="ghost small" data-sheet-btn="trainer">Trainer</button>
+              <button class="ghost small" data-sheet-btn="mixer">Tracks</button>
+              <button class="ghost small" data-sheet-btn="view">View</button>
+              <button class="ghost small" data-sheet-btn="sound">Sound</button>
+              <button class="ghost small" data-sheet-btn="amp">Amp</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
