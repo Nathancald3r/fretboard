@@ -261,10 +261,11 @@ const clickOn = () => $('pl-metro').classList.contains('on');
 function addClickTrack(midiFile) {
   clickChannel = -1;
   const sound = CLICK_SOUNDS[click.sound];
-  if (!sound || sound.program < 0 || !api.tickCache) return;
+  if (!clickOn() || !sound || sound.program < 0 || !api.tickCache) return;
   let maxChannel = 0;
   for (const t of midiFile.tracks) for (const e of t.events) if (typeof e.channel === 'number') maxChannel = Math.max(maxChannel, e.channel);
-  const ch = maxChannel + 1;
+  let ch = maxChannel + 1;
+  if (ch === 9) ch = 10; // channel 10 (index 9) is the drum kit
   const bars = api.tickCache.masterBars.map((b) => ({ start: b.start, end: b.end, num: b.masterBar.timeSignatureNumerator, den: b.masterBar.timeSignatureDenominator }));
   const M = AT.midi;
   const mine = [new M.ProgramChangeEvent(0, 0, ch, sound.program), new M.ControlChangeEvent(0, 0, ch, 7, 127), new M.ControlChangeEvent(0, 0, ch, 10, 64)];
@@ -283,6 +284,16 @@ function addClickTrack(midiFile) {
     mine.forEach((e) => midiFile.addEvent(e));
   }
   clickChannel = ch;
+}
+
+// The click button: the click lives in the MIDI only while it's on, so switching it adds
+// or removes it there (classic metronome: alphaTab's own, by volume).
+function toggleClick() {
+  toggleButton('pl-metro', !clickOn());
+  applyClickVolume();
+  const sound = CLICK_SOUNDS[click.sound];
+  const inMidi = clickChannel >= 0;
+  if (sound && sound.program >= 0 && inMidi !== clickOn()) rebuildClick();
 }
 
 function applyClickVolume() {
@@ -1401,6 +1412,7 @@ export function initPlayer() {
     score: () => score,
     output: () => api?.player?.output,
     playedBars,
+    songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
   });
@@ -1424,7 +1436,7 @@ export function initPlayer() {
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
-  $('pl-metro').addEventListener('click', () => { toggleButton('pl-metro', !clickOn()); applyClickVolume(); });
+  $('pl-metro').addEventListener('click', toggleClick);
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
 
   // Sections: click jumps there, double-click loops the section.
@@ -1508,7 +1520,7 @@ export function initPlayer() {
       ']': () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5),
       l: () => setLoop(!$('pl-loop').classList.contains('on')),
       c: () => toggleButton('pl-countin', !countInOn()),
-      b: () => { toggleButton('pl-metro', !clickOn()); applyClickVolume(); },
+      b: toggleClick,
       m: () => score && setMute(trackIndex),
       s: () => score && setSolo(trackIndex),
       t: () => { if (!tapSync() && recordingOn()) openSheet('playalong'); },

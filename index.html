@@ -248,11 +248,17 @@
 
         <section class="sheet" data-sheet="playalong" hidden>
           <div class="sheet-head"><h2>Play along with the recording</h2><button class="ghost small" data-close>Close</button></div>
-          <p class="muted small-text">Play the real recording instead of the synth; the tab follows it, at any speed without changing pitch. Use your own audio file (MP3, M4A, WAV…) or a YouTube link.</p>
+          <p class="muted small-text">Play the real recording instead of the synth; the tab follows it, at any speed without changing pitch. Use your own audio file (MP3, M4A, WAV…) or a YouTube video: <b>Find it on YouTube</b> picks the artist's own recording (their channel, VEVO or “official”), or paste any link.</p>
           <div class="row">
             <label class="button">Audio file…<input id="pa-file" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" hidden></label>
             <form id="pa-yt-form" class="row"><input id="pa-yt-url" placeholder="YouTube link" autocomplete="off"><button class="ghost">Use video</button></form>
           </div>
+          <div class="row">
+            <button id="pa-find" class="primary" title="Searches YouTube for this song and picks the artist's own recording">Find it on YouTube</button>
+            <a id="pa-yt-search" class="small-text" target="_blank" rel="noopener">Search on youtube.com ↗</a>
+            <span id="pa-find-state" class="muted small-text"></span>
+          </div>
+          <ol id="pa-yt-results" class="yt-results" hidden></ol>
           <div class="row">
             <span id="pa-source" class="muted"></span>
             <button id="pa-remove" class="ghost small danger" hidden>Remove</button>

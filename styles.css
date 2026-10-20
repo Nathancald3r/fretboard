@@ -530,6 +530,16 @@ button:active:not(:disabled) { transform: scale(.96); }
 .pa-video-frame { aspect-ratio: 16 / 9; }
 .pa-video-frame iframe, .pa-video-frame > div { width: 100%; height: 100%; display: block; border: 0; }
 #pa-yt-form input { width: 16rem; }
+.yt-results { list-style: none; margin: .3rem 0 .6rem; padding: 0; display: grid; gap: .25rem; }
+.yt-results button {
+  width: 100%; display: flex; gap: .6rem; align-items: center; text-align: left; padding: .35rem .5rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+}
+.yt-results button:hover { border-color: var(--accent); }
+.yt-results button.on { border-color: var(--good); }
+.yt-results img { width: 64px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; flex: none; }
+.yt-results .yt-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt-results .yt-meta { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .search { flex: 1 1 160px; }

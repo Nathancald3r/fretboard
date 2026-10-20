@@ -3,6 +3,7 @@
 // Sync: tap T on beat 1 of each bar as you hear it; every tap becomes a sync point, so the
 // tab follows the band's real tempo (including drift) between tapped bars.
 import { updateSong } from './db.js';
+import { findRecording, youTubeSearchUrl } from './ytsearch.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -112,7 +113,13 @@ async function youTubeHandler(rec) {
     play() { player.playVideo(); },
     pause() { player.pauseVideo(); },
     now: () => player.getCurrentTime() * 1000,
-    destroy() { clearInterval(timer); player.destroy(); box.hidden = true; },
+    destroy() {
+      clearInterval(timer);
+      // YouTube's player can throw while tearing down (e.g. its frame already gone).
+      try { player.destroy(); } catch { /* ignore */ }
+      box.querySelector('.pa-video-frame').innerHTML = '';
+      box.hidden = true;
+    },
   };
 }
 
@@ -241,7 +248,9 @@ function showState() {
   $('pa-on').disabled = !song?.recording;
   const rec = song?.recording;
   $('pa-source').textContent = !rec ? 'No recording yet.'
-    : rec.kind === 'youtube' ? `YouTube video ${rec.id}` : `Audio file: ${rec.name}`;
+    : rec.kind === 'youtube' ? `YouTube: ${rec.title ? `${rec.title}${rec.author ? ` (${rec.author})` : ''}` : rec.id}` : `Audio file: ${rec.name}`;
+  $('pa-yt-search').href = song ? youTubeSearchUrl(song) : '#';
+  document.querySelectorAll('#pa-yt-results button').forEach((b) => b.classList.toggle('on', rec?.kind === 'youtube' && b.dataset.id === rec.id));
   $('pa-remove').hidden = !rec;
   document.querySelector('[data-sheet-btn=playalong]')?.classList.toggle('live', on);
   $('pa-toggle').classList.toggle('on', on);
@@ -262,11 +271,85 @@ async function setRecording(rec) {
   else if (wasOn) showState();
 }
 
+/* ---------- finding the recording on YouTube ---------- */
+
+const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+let finding = 0;
+
+// A YouTube link written in the file itself (Guitar Pro notices, copyright, instructions…).
+function linkInScore() {
+  const s = hooks.score?.();
+  if (!s) return null;
+  const text = [s.notices, s.instructions, s.copyright, s.words, s.music, s.album, s.tab, s.title, s.subTitle].join(' ');
+  const m = /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:\S*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/.exec(text);
+  return m ? { id: m[1], title: 'linked in the tab file', author: '', seconds: 0 } : null;
+}
+
+// Searches for the song and, with pick on (or no recording yet), uses the best match.
+async function findOnYouTube(pick) {
+  if (!song) return;
+  const mine = ++finding;
+  const state = $('pa-find-state');
+  const list = $('pa-yt-results');
+  $('pa-error').textContent = '';
+  state.textContent = 'Searching YouTube…';
+  $('pa-find').disabled = true;
+  let results = [];
+  try {
+    const linked = linkInScore();
+    results = await findRecording(song, hooks.songSeconds?.() || 0).catch((e) => { if (!linked) throw e; return []; });
+    if (linked) results.unshift(linked);
+  } catch (e) {
+    if (mine === finding) {
+      state.textContent = '';
+      $('pa-error').textContent = `${e?.message || e} Use “Search on youtube.com”, then paste the link.`;
+      $('pa-find').disabled = false;
+    }
+    return;
+  }
+  if (mine !== finding) return;
+  $('pa-find').disabled = false;
+  results = results.slice(0, 6);
+  if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
+  state.textContent = 'Not the right one? Pick another:';
+  list.innerHTML = '';
+  for (const r of results) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.dataset.id = r.id;
+    b.title = r.title;
+    const img = document.createElement('img');
+    img.src = `https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`;
+    img.alt = '';
+    img.loading = 'lazy';
+    const t = document.createElement('span');
+    t.className = 'yt-title';
+    t.textContent = r.title;
+    const meta = document.createElement('span');
+    meta.className = 'yt-meta';
+    meta.textContent = [r.author, r.seconds ? clock(r.seconds) : ''].filter(Boolean).join(' · ');
+    b.append(img, t, meta);
+    b.addEventListener('click', () => useVideo(r));
+    li.append(b);
+    list.append(li);
+  }
+  list.hidden = false;
+  if (pick || !song.recording) await useVideo(results[0]);
+  else showState();
+}
+
+const useVideo = (r) => setRecording({ kind: 'youtube', id: r.id, title: r.title, author: r.author });
+
 /** Called by the player when a song is opened (before its score renders). */
 export async function playAlongSongOpened(s) {
   if (on) await setOn(false);
   song = s;
   taps = null;
+  finding++;
+  $('pa-yt-results').hidden = true;
+  $('pa-yt-results').innerHTML = '';
+  $('pa-find-state').textContent = '';
+  $('pa-find').disabled = false;
   $('pa-tap-state').textContent = '';
   $('pa-rate-note').textContent = '';
   showState();
@@ -274,7 +357,7 @@ export async function playAlongSongOpened(s) {
 
 /** Toggle from the play bar. */
 export function toggleRecording() {
-  if (!song?.recording) { hooks.showSheet('playalong'); return; }
+  if (!song?.recording) { hooks.showSheet('playalong'); findOnYouTube(true); return; }
   setOn(!on);
 }
 
@@ -299,6 +382,7 @@ export function initPlayAlong(h) {
     await setRecording({ kind: 'youtube', id });
   });
   $('pa-remove').addEventListener('click', () => setRecording(null));
+  $('pa-find').addEventListener('click', () => findOnYouTube(true));
   $('pa-on').addEventListener('change', (e) => setOn(e.target.checked));
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
