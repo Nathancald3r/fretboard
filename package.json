@@ -1,0 +1,15 @@
+{
+  "name": "fretboard-practice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal guitar tab practice player built on alphaTab",
+  "scripts": {
+    "postinstall": "node scripts/vendor.mjs",
+    "start": "node server.mjs",
+    "test": "node tests/asciitab.test.mjs"
+  },
+  "dependencies": {
+    "@coderline/alphatab": "1.8.4"
+  }
+}

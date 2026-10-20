@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fretboard</title>
+  <meta name="theme-color" content="#14161a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/alphatab/alphaTab.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#library">Fretboard</a>
+    <nav class="nav">
+      <a href="#library" data-nav="library">Library</a>
+      <a href="#tools" data-nav="tools">Metronome &amp; Tuner</a>
+      <a href="#log" data-nav="log">Practice log</a>
+    </nav>
+  </header>
+
+  <!-- LIBRARY -->
+  <main id="view-library" class="view">
+    <section class="panel find">
+      <h2>Find tabs online</h2>
+      <p class="muted">Opens the site's search in a new tab. Download Guitar Pro files there (a free Ultimate Guitar account is enough for most), then import them below.</p>
+      <form id="find-form" class="row">
+        <input id="find-query" type="search" placeholder="Song or artist" required>
+        <button type="submit" data-site="ug-gp">Ultimate Guitar · Guitar Pro</button>
+        <button type="submit" data-site="ug" class="ghost">Ultimate Guitar · all</button>
+        <button type="submit" data-site="songsterr" class="ghost">Songsterr</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="row spread">
+        <h2>Your library</h2>
+        <div class="row">
+          <input id="lib-filter" type="search" placeholder="Filter library">
+          <button id="btn-paste" class="ghost">Paste text tab</button>
+          <label class="button">Import files<input id="file-input" type="file" multiple hidden
+            accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.gp8,.xml,.musicxml,.mxl,.cap,.capx,.txt"></label>
+        </div>
+      </div>
+      <div id="drop-zone" class="drop-zone">Drop Guitar Pro, MusicXML or .txt tab files here</div>
+      <div id="library-list" class="cards"></div>
+    </section>
+  </main>
+
+  <!-- PLAYER -->
+  <main id="view-player" class="view player-view" hidden>
+    <div class="player-head">
+      <div>
+        <h1 id="pl-title">—</h1>
+        <div id="pl-artist" class="muted"></div>
+        <div id="pl-from-text" class="muted" hidden>
+          Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
+        </div>
+      </div>
+      <div class="row">
+        <select id="pl-track" title="Track"></select>
+        <select id="pl-layout" title="Layout">
+          <option value="Page">Page</option>
+          <option value="Horizontal">Horizontal</option>
+        </select>
+        <select id="pl-stave" title="Notation">
+          <option value="tab">Tab only</option>
+          <option value="default">Tab + notation</option>
+          <option value="score">Notation only</option>
+        </select>
+        <select id="pl-zoom" title="Zoom">
+          <option value="0.7">70%</option><option value="0.85">85%</option>
+          <option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button id="pl-play" class="primary big" disabled title="Play / pause (Space)">Loading…</button>
+      <button id="pl-stop" class="ghost" title="Stop">Stop</button>
+      <div class="speed">
+        <button id="pl-slower" class="ghost small" title="Slower ([)">−5</button>
+        <input id="pl-speed" type="range" min="25" max="150" step="1" value="100">
+        <button id="pl-faster" class="ghost small" title="Faster (])">+5</button>
+        <span id="pl-speed-val" class="pill">100%</span>
+        <span id="pl-bpm" class="muted"></span>
+      </div>
+      <label class="toggle" title="Loop the selected bars (L). Drag across the tab to select."><input id="pl-loop" type="checkbox"> Loop</label>
+      <button id="pl-clear-sel" class="ghost small">Clear selection</button>
+      <label class="toggle"><input id="pl-countin" type="checkbox"> Count-in</label>
+      <label class="toggle"><input id="pl-metro" type="checkbox"> Click</label>
+      <span id="pl-time" class="mono muted">0:00 / 0:00</span>
+    </div>
+
+    <details class="trainer panel" id="trainer">
+      <summary>Speed trainer <span id="tr-status" class="muted"></span></summary>
+      <p class="muted">Select bars to loop (drag across the tab), then start. The tempo rises after every few clean loops.</p>
+      <div class="row">
+        <label>Start <input id="tr-start" type="number" min="25" max="150" value="60">%</label>
+        <label>Target <input id="tr-target" type="number" min="25" max="150" value="100">%</label>
+        <label>Step <input id="tr-step" type="number" min="1" max="25" value="5">%</label>
+        <label>Every <input id="tr-every" type="number" min="1" max="20" value="2"> loops</label>
+        <button id="tr-go" class="primary">Start trainer</button>
+      </div>
+    </details>
+
+    <details class="panel" id="mixer">
+      <summary>Tracks (mute / solo)</summary>
+      <div id="mixer-list"></div>
+    </details>
+
+    <div id="pl-loading" class="loading">Loading score…</div>
+    <div id="score-scroll" class="score-scroll">
+      <div id="alphatab"></div>
+    </div>
+  </main>
+
+  <!-- TEXT TAB -->
+  <main id="view-text" class="view" hidden>
+    <div class="player-head">
+      <div>
+        <h1 id="tx-title">—</h1>
+        <div id="tx-artist" class="muted"></div>
+      </div>
+      <div class="row">
+        <label title="Text tabs have no tempo, so set it here">Tempo <input id="tx-tempo" type="number" min="30" max="260" value="100"> BPM</label>
+        <button id="tx-play" class="primary" title="Turn the tab lines into a playable score (rhythm is guessed from spacing)">Play as tab</button>
+        <button id="tx-edit" class="ghost">Edit</button>
+      </div>
+    </div>
+    <div class="transport">
+      <button id="tx-scroll" class="primary big">Auto-scroll</button>
+      <label>Scroll speed <input id="tx-speed" type="range" min="1" max="20" value="5"></label>
+      <label>Text size <input id="tx-size" type="range" min="10" max="26" value="15"></label>
+      <span id="tx-time" class="mono muted"></span>
+    </div>
+    <pre id="tx-body" class="text-tab"></pre>
+  </main>
+
+  <!-- TOOLS -->
+  <main id="view-tools" class="view" hidden>
+    <section class="panel">
+      <h2>Metronome</h2>
+      <div class="metro">
+        <div class="bpm-display"><span id="mt-bpm-val">100</span><small>BPM</small></div>
+        <div class="row">
+          <button class="ghost small" data-bpm="-5">−5</button>
+          <button class="ghost small" data-bpm="-1">−1</button>
+          <input id="mt-bpm" type="range" min="30" max="260" value="100">
+          <button class="ghost small" data-bpm="1">+1</button>
+          <button class="ghost small" data-bpm="5">+5</button>
+        </div>
+        <div class="row">
+          <label>Beats per bar
+            <select id="mt-beats">
+              <option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option>
+            </select>
+          </label>
+          <label>Subdivision
+            <select id="mt-sub">
+              <option value="1">Quarter</option><option value="2">Eighths</option>
+              <option value="3">Triplets</option><option value="4">Sixteenths</option>
+            </select>
+          </label>
+          <label class="toggle"><input id="mt-accent" type="checkbox" checked> Accent beat 1</label>
+        </div>
+        <div id="mt-dots" class="dots"></div>
+        <div class="row">
+          <button id="mt-go" class="primary big">Start</button>
+          <button id="mt-tap" class="ghost big">Tap tempo</button>
+        </div>
+        <details>
+          <summary>Speed builder</summary>
+          <div class="row">
+            <label>Add <input id="mt-inc" type="number" min="1" max="20" value="2"> BPM</label>
+            <label>every <input id="mt-inc-bars" type="number" min="1" max="64" value="8"> bars</label>
+            <label>up to <input id="mt-inc-max" type="number" min="30" max="260" value="140"> BPM</label>
+            <label class="toggle"><input id="mt-inc-on" type="checkbox"> On</label>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Tuner</h2>
+      <div class="row">
+        <label>Tuning
+          <select id="tn-tuning"></select>
+        </label>
+        <button id="tn-go" class="primary">Start tuner (uses mic)</button>
+      </div>
+      <div class="tuner">
+        <div id="tn-note" class="tn-note">–</div>
+        <div id="tn-freq" class="muted mono">— Hz</div>
+        <div class="meter"><div class="meter-mid"></div><div id="tn-needle" class="needle"></div></div>
+        <div id="tn-cents" class="muted mono">± 0 cents</div>
+      </div>
+      <p class="muted">Reference tones (tap to hear):</p>
+      <div id="tn-strings" class="row"></div>
+    </section>
+  </main>
+
+  <!-- LOG -->
+  <main id="view-log" class="view" hidden>
+    <section class="stats" id="log-stats"></section>
+    <section class="panel">
+      <h2>By song</h2>
+      <div id="log-songs"></div>
+    </section>
+    <section class="panel">
+      <h2>Recent sessions</h2>
+      <div id="log-sessions"></div>
+    </section>
+  </main>
+
+  <!-- Text tab editor -->
+  <dialog id="tab-dialog">
+    <form method="dialog" id="tab-form">
+      <h2 id="tab-dialog-title">Paste text tab</h2>
+      <div class="row">
+        <input id="tf-title" placeholder="Title" required>
+        <input id="tf-artist" placeholder="Artist">
+      </div>
+      <textarea id="tf-body" rows="18" placeholder="Paste the tab or chords here…" required></textarea>
+      <div class="row spread">
+        <button value="cancel" formnovalidate class="ghost">Cancel</button>
+        <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
