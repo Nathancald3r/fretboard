@@ -22,12 +22,13 @@ import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
+import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
 const VENDOR = new URL('../vendor/alphatab/', import.meta.url).href;
 const PLAYING = 1;
-const MIN_SPEED = 25;
+const MIN_SPEED = 10;
 const MAX_SPEED = 200;
 
 let api = null;
@@ -102,6 +103,12 @@ function ensureApi() {
       applyClickVolume();
       playAlongScoreReady();
       if (restoreTick !== null) { api.tickPosition = restoreTick; restoreTick = null; }
+      // Live: the song was opened by the last one ending, so start it after a short gap.
+      if (pendingAutoPlay) {
+        pendingAutoPlay = false;
+        const id = song?.id;
+        setTimeout(() => { if (isLive() && song?.id === id && api.playerState !== PLAYING) startPlayback(); }, LIVE_GAP_MS);
+      }
     });
   } catch { /* see above */ }
   api.playerStateChanged.on((e) => {
@@ -117,6 +124,7 @@ function ensureApi() {
     singFinished(api.isLooping);
     judgeFinished(api.isLooping);
     if (api.isLooping) onLoopCompleted();
+    else if (isLive()) liveNextSong();
     else if (!recordingOn()) nextInSetlistHint();
   });
   api.playbackRangeChanged?.on(() => {
@@ -494,6 +502,30 @@ function updateBpm() {
   $('pl-speed-pct').textContent = pct + '%';
   $('pl-speed-pct').classList.toggle('changed', speedPct !== 100);
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === speedPct));
+  if (document.activeElement !== $('pl-speed-slide')) $('pl-speed-slide').value = Math.min(100, speedPct);
+}
+
+// The speed slider clicks to these.
+const SPEED_STOPS = [10, 25, 50, 75, 100];
+function slideSpeed(v) {
+  const stop = SPEED_STOPS.find((s) => Math.abs(s - v) <= 3);
+  if (stop !== undefined && stop !== v) $('pl-speed-slide').value = stop;
+  setSpeed(stop ?? v);
+}
+
+// Tap tempo: the average gap between the last few taps.
+let tapTimes = [];
+function tapTempo() {
+  const now = performance.now();
+  tapTimes = tapTimes.filter((t) => now - t < 2500).concat(now).slice(-6);
+  const b = $('pl-tap');
+  b.classList.remove('flash');
+  void b.offsetWidth;
+  b.classList.add('flash');
+  if (tapTimes.length < 2) { b.textContent = 'Tap…'; return; }
+  const gap = (tapTimes[tapTimes.length - 1] - tapTimes[0]) / (tapTimes.length - 1);
+  b.textContent = 'Tap';
+  setBpm(Math.round(60000 / gap));
 }
 
 // Songs that change tempo: show the tempo where the cursor is.
@@ -783,6 +815,34 @@ function showSetlist() {
   $('pl-next-song').dataset.id = ctx.nextId ?? '';
 }
 
+// Live: at the end of a song, go on to the next one in the setlist.
+let pendingAutoPlay = false;
+function liveNextSong() {
+  const ctx = song && setlistContext(song.id);
+  if (ctx?.nextId == null) return;
+  pendingAutoPlay = liveAutoPlay();
+  location.hash = `song/${ctx.nextId}`;
+}
+
+function goSetlist(step) {
+  const ctx = song && setlistContext(song.id);
+  const id = ctx && (step > 0 ? ctx.nextId : ctx.prevId);
+  if (id != null) location.hash = `song/${id}`;
+}
+
+function enterLive() {
+  stopTrainer();
+  setLoop(false);
+  clearSelection();
+  closeSheets();
+  if (song) setSpeed(100, false);
+}
+
+function leaveLive() {
+  pendingAutoPlay = false;
+  if (song) setSpeed(song.speed || 100, false);
+}
+
 function nextInSetlistHint() {
   const ctx = song && setlistContext(song.id);
   if (ctx?.nextId != null) $('pl-next-song').classList.add('pulse');
@@ -809,7 +869,8 @@ export async function openPlayer(s) {
   api.playbackRange = null;
   setLoop(false);
   timer.begin(s);
-  setSpeed(s.speed || 100, false);
+  if (!isLive()) pendingAutoPlay = false;
+  setSpeed(isLive() ? 100 : s.speed || 100, false);
   $('pl-from-text').hidden = s.kind !== 'text';
   $('pl-text-link').href = `#song/${s.id}`;
   updateSong(s.id, { lastOpened: Date.now() });
@@ -1427,9 +1488,14 @@ export function initPlayer() {
   $('pl-stop').addEventListener('click', () => { cancelCountIn(); api?.stop(); });
   $('pl-back').addEventListener('click', backToStart);
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
+  $('pl-speed-slide').addEventListener('input', (e) => slideSpeed(Number(e.target.value)));
+  $('pl-speed-slide').addEventListener('change', (e) => e.target.blur());
+  $('pl-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapTempo(); });
+  $('pl-tap').addEventListener('keydown', (e) => { if (e.key === 'Enter') tapTempo(); });
+  initModes({ enter: enterLive, leave: leaveLive });
   $('pl-slower').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) - 5));
   $('pl-faster').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5));
-  $('pl-bpm-input').addEventListener('change', (e) => { const v = Number(e.target.value); if (v > 0) setBpm(v); e.target.blur(); });
+  $('pl-bpm-input').addEventListener('change', (e) => { const v = Number(e.target.value); if (v > 0 && !isLive()) setBpm(v); e.target.blur(); updateBpm(); });
   $('pl-bpm-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
   $('pl-bpm-input').addEventListener('blur', updateBpm);
   document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
@@ -1516,9 +1582,15 @@ export function initPlayer() {
       Home: backToStart,
       Backspace: backToStart,
       End: () => seekToBar(playedBars().length - 1),
-      '[': () => setBpm(Math.round((baseTempo * speedPct) / 100) - 5),
-      ']': () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5),
-      l: () => setLoop(!$('pl-loop').classList.contains('on')),
+      '[': () => !isLive() && setBpm(Math.round((baseTempo * speedPct) / 100) - 5),
+      ']': () => !isLive() && setBpm(Math.round((baseTempo * speedPct) / 100) + 5),
+      y: () => !isLive() && tapTempo(),
+      // Page-turner pedals send Page Down / Page Up.
+      PageDown: () => stepLines(1),
+      PageUp: () => stepLines(-1),
+      n: () => goSetlist(1),
+      p: () => goSetlist(-1),
+      l: () => !isLive() && setLoop(!$('pl-loop').classList.contains('on')),
       c: () => toggleButton('pl-countin', !countInOn()),
       b: toggleClick,
       m: () => score && setMute(trackIndex),

@@ -52,8 +52,7 @@
       <p class="muted">Each button opens that site's search in a new tab. Download the Guitar Pro (or MusicXML) file there and it's added to your library by itself when auto-import is on; otherwise press <b>Import new downloads</b> below. For text tabs, copy the tab on the page and press <b>Paste from clipboard</b>.</p>
       <form id="find-form">
         <div class="row">
-          <input id="find-artist" type="search" placeholder="Artist" autocomplete="off">
-          <input id="find-query" type="search" placeholder="Song" autocomplete="off">
+          <input id="find-query" type="search" placeholder="Song, or Artist - Song" autocomplete="off">
         </div>
         <div id="find-sources" class="row find-sources"></div>
       </form>
@@ -118,6 +117,10 @@
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the recording">● Recording</span>
       </div>
       <span id="pl-info" class="muted small-text"></span>
+      <span class="seg mode-seg" role="group" aria-label="Mode" title="Practice: every tool (loops, speed, trainer, note check). Live: for rehearsals and gigs, songs at full tempo, one after another.">
+        <button data-mode="practice">Practice</button><button data-mode="live">Live</button>
+      </span>
+      <label class="live-only small-text" title="When a song ends, open the next one in the setlist and start it"><input id="lv-auto" type="checkbox" checked> Auto-play next song</label>
       <div id="pl-setlist" class="setlist-nav" hidden>
         <button id="pl-prev-song" class="ghost small" title="Previous song in the setlist">‹ Prev</button>
         <span id="pl-setlist-name" class="small-text"></span>
@@ -200,7 +203,7 @@
           <div class="sheet-head"><h2>Speed</h2><button class="ghost small" data-close>Close</button></div>
           <p class="muted small-text">Changes the tempo only: the pitch stays the same, for the synth and for recordings.</p>
           <div class="row">
-            <input id="pl-speed" class="wide-range" type="range" min="25" max="200" step="1" value="100" aria-label="Speed">
+            <input id="pl-speed" class="wide-range" type="range" min="10" max="200" step="1" value="100" aria-label="Speed">
             <span id="pl-speed-val" class="muted small-text"></span>
           </div>
           <div class="row chips">
@@ -396,12 +399,12 @@
         </section>
 
         <section class="sheet judge" data-sheet="judge" hidden>
-          <div class="sheet-head"><h2>Practice mode <span id="pj-state-pill" class="pill amp-on"></span></h2><button class="ghost small" data-close>Close</button></div>
+          <div class="sheet-head"><h2>Note check <span id="pj-state-pill" class="pill amp-on"></span></h2><button class="ghost small" data-close>Close</button></div>
           <p class="amp-warn"><b>Use headphones, or plug in through an audio interface.</b> Through speakers the microphone hears the song too, and its notes count as yours.</p>
           <p id="pj-track" class="muted"></p>
           <div class="row">
             <label>Input <select id="pj-device"></select></label>
-            <button id="pj-go" class="primary">Start practice mode</button>
+            <button id="pj-go" class="primary">Start note check</button>
             <label class="toggle" title="Mutes the track shown, so you play that part yourself"><input id="pj-mute" type="checkbox" checked> Mute the track (I'll play it)</label>
           </div>
           <div class="row">
@@ -422,7 +425,7 @@
             <p id="pj-breakdown" class="small-text"></p>
             <div class="row"><span id="pj-history" class="muted small-text"></span><button id="pj-reset" class="ghost small">Clear scores</button></div>
           </div>
-          <p class="muted small-text">Start practice mode, press Play and play the track shown (guitar, bass, keys or any pitched part). The play bar shows the note or chord to play now, and each one is judged as you go: <b>✓ hit</b> (played in time), <b>✗ wrong</b> (another note or chord) or <b>○ missed</b> (nothing played). Single notes are checked by pitch (any octave counts), chords by which notes ring out. Each song or loop gets a score; loop a hard part and slow it down to get it clean.</p>
+          <p class="muted small-text">Start note check, press Play and play the track shown (guitar, bass, keys or any pitched part). The play bar shows the note or chord to play now, and each one is judged as you go: <b>✓ hit</b> (played in time), <b>✗ wrong</b> (another note or chord) or <b>○ missed</b> (nothing played). Single notes are checked by pitch (any octave counts), chords by which notes ring out. Each song or loop gets a score; loop a hard part and slow it down to get it clean.</p>
         </section>
       </div>
 
@@ -441,28 +444,33 @@
             <span id="pl-time" class="mono muted small-text">0:00 / 0:00</span>
           </div>
           <div id="pl-chord" class="chord-now" title="Chord now → next" hidden><b id="pl-chord-now">–</b><span id="pl-chord-next" class="muted"></span></div>
-          <div id="pj-live" class="judge-now" hidden title="Practice mode: the note or chord to play now and how the last one went (click for the score)">
+          <div id="pj-live" class="judge-now practice-only" hidden title="Note check: the note or chord to play now and how the last one went (click for the score)">
             <b id="pj-target" class="mono">–</b><span id="pj-verdict"></span><span id="pj-dots" class="judge-dots"></span><span id="pj-streak" class="pill" hidden></span>
           </div>
-          <div id="sg-live" class="sing-now" hidden title="Singing mode: the written note and how you're singing it (click for the score)">
+          <div id="sg-live" class="sing-now practice-only" hidden title="Singing mode: the written note and how you're singing it (click for the score)">
             <canvas id="sg-lane" class="sing-lane"></canvas>
             <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
           </div>
-          <div class="speed" title="Tempo. Type a BPM, or − / + ( [ ] ) for 5 BPM steps. Pitch never changes.">
-            <button id="pl-slower" class="icon-btn small" aria-label="Slower">−</button>
+          <div class="speed" title="Tempo. Type a BPM, tap it, or − / + ( [ ] ) for 5 BPM steps. Pitch never changes.">
+            <button id="pl-slower" class="icon-btn small practice-only" aria-label="Slower">−</button>
             <label class="bpm"><input id="pl-bpm-input" type="number" min="10" max="400" step="1" inputmode="numeric" aria-label="Tempo in BPM"><span>BPM</span></label>
-            <button id="pl-faster" class="icon-btn small" aria-label="Faster">+</button>
-            <button id="pl-speed-pct" class="pill-btn" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
+            <button id="pl-faster" class="icon-btn small practice-only" aria-label="Faster">+</button>
+            <button id="pl-tap" class="pill-btn practice-only" title="Tap tempo: tap the beat 3 or 4 times (or press the Y key)">Tap</button>
+            <div class="speed-slide practice-only" title="Speed: drag; it clicks to 10, 25, 50, 75 and 100%">
+              <input id="pl-speed-slide" type="range" min="10" max="100" step="1" value="100" aria-label="Speed">
+              <div class="speed-stops" aria-hidden="true"><span style="left:0%">10</span><span style="left:16.67%">25</span><span style="left:44.44%">50</span><span style="left:72.22%">75</span><span style="left:100%">100</span></div>
+            </div>
+            <button id="pl-speed-pct" class="pill-btn practice-only" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
             <span id="pl-tempo-now" class="muted small-text"></span>
           </div>
           <div class="toggles">
-            <button id="pl-loop" class="tog" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
-            <button id="pl-clear-sel" class="icon-btn small" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
+            <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
+            <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
             <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
             <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
             <button id="pa-toggle" class="tog rec" title="Play along with the recording (R)">● Rec</button>
           </div>
-          <span id="tr-status" class="muted small-text"></span>
+          <span id="tr-status" class="muted small-text practice-only"></span>
           <div class="playbar-end">
             <div class="track-chip">
               <button id="pl-track-btn" class="track-btn" data-sheet-btn="mixer" title="Tracks: pick, mute, solo, volume"><span id="pl-track-icon"></span><span id="pl-track-name">Tracks</span><span class="caret">▾</span></button>
@@ -474,8 +482,8 @@
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>
-              <button class="ghost small" data-sheet-btn="sing">Sing</button>
-              <button class="ghost small" data-sheet-btn="judge" title="Practice mode: play the part and get each note judged">Practice</button>
+              <button class="ghost small practice-only" data-sheet-btn="sing">Sing</button>
+              <button class="ghost small practice-only" data-sheet-btn="judge" title="Note check: play the part and get each note judged">Note check</button>
             </div>
           </div>
         </div>

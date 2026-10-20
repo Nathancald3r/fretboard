@@ -243,7 +243,7 @@ function showLive(tick) {
 }
 
 function showRunning() {
-  $('pj-go').textContent = running ? 'Stop practice mode' : 'Start practice mode';
+  $('pj-go').textContent = running ? 'Stop note check' : 'Start note check';
   $('pj-go').classList.toggle('danger', running);
   $('pj-live').hidden = !running;
   $('pj-state-pill').textContent = running ? (demo ? 'On · test player' : 'On') : '';
@@ -266,7 +266,7 @@ function showTrack() {
   const info = hooks.trackInfo?.() || {};
   let text;
   if (!info.name) text = 'Open a song to practise it.';
-  else if (info.drums) text = `“${info.name}” is a drum track; practice mode judges pitched parts. Pick another track in the track list.`;
+  else if (info.drums) text = `“${info.name}” is a drum track; note check judges pitched parts. Pick another track in the track list.`;
   else if (!targets.length) text = `“${info.name}” has no notes to play.`;
   else text = `Judging “${info.name}”: ${targets.length} notes and chords. Pick another track in the track list to practise that part.`;
   $('pj-track').textContent = text;

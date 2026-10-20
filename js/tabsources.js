@@ -7,13 +7,11 @@ const enc = encodeURIComponent;
 const slug911 = (s) => s.toLowerCase().replace(/^the\s+/, '').replace(/&/g, 'and').replace(/['’.]/g, '')
   .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
-// "Artist - Song" typed in the song box, with no artist given, is split.
-export function splitQuery(artist, song) {
-  artist = (artist || '').trim();
-  song = (song || '').trim();
-  const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(song);
-  if (!artist && dash) [, artist, song] = dash;
-  return { artist, song };
+// One search box: "Artist - Song" is split for the sites that search titles only.
+export function splitQuery(text) {
+  const t = (text || '').trim();
+  const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(t);
+  return dash ? { artist: dash[1], song: dash[2] } : { artist: '', song: t };
 }
 
 export const TAB_SOURCES = [
@@ -24,7 +22,7 @@ export const TAB_SOURCES = [
   },
   {
     id: 'gprotab', label: 'GProTab',
-    note: 'Free Guitar Pro files, no account needed',
+    note: 'Free Guitar Pro files, no account needed (searches song titles: type just the title, or Artist - Song)',
     // Its search takes a song title or an artist, not both.
     url: ({ artist, song }) => (song
       ? `https://gprotab.net/en/search?type=song&q=${enc(song)}`
@@ -58,4 +56,4 @@ export const TAB_SOURCES = [
   },
 ];
 
-export const sourceUrl = (id, artist, song) => TAB_SOURCES.find((s) => s.id === id)?.url(splitQuery(artist, song));
+export const sourceUrl = (id, text) => TAB_SOURCES.find((s) => s.id === id)?.url(splitQuery(text));

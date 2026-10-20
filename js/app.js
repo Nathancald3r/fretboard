@@ -236,10 +236,9 @@ function initFind() {
   }
   $('find-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const artist = $('find-artist').value;
-    const song = $('find-query').value;
-    if (!artist.trim() && !song.trim()) { $('find-query').focus(); return; }
-    window.open(sourceUrl(e.submitter?.dataset.site || 'ug-gp', artist, song), '_blank', 'noopener');
+    const query = $('find-query').value;
+    if (!query.trim()) { $('find-query').focus(); return; }
+    window.open(sourceUrl(e.submitter?.dataset.site || 'ug-gp', query), '_blank', 'noopener');
     watchDownloads();
   });
 }
