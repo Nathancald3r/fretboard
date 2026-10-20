@@ -63,6 +63,25 @@ function ensureApi() {
   });
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
+  // The beat cursor glides to the next beat and stops there. alphaTab's own cursor aims two
+  // beats ahead (over twice the time) and counts on the next beat's update to correct it,
+  // so whenever an update comes late it runs ahead of the notes being played.
+  api.customCursorHandler = {
+    onAttach() {},
+    onDetach() {},
+    placeBeatCursor(cursor, beatBounds, x) {
+      const bar = beatBounds.barBounds.masterBarBounds.visualBounds;
+      cursor.transitionToX(0, x);
+      cursor.setBounds(x, bar.y, 1, bar.h);
+    },
+    placeBarCursor(cursor, beatBounds) {
+      const bar = beatBounds.barBounds.masterBarBounds.visualBounds;
+      cursor.setBounds(bar.x, bar.y, bar.w, bar.h);
+    },
+    transitionBeatCursor(cursor, _beatBounds, _fromX, toX, duration) {
+      cursor.transitionToX(duration, toX);
+    },
+  };
   applyClickVolume();
 
   api.scoreLoaded.on((s) => {
