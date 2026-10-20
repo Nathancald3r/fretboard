@@ -49,13 +49,15 @@
   <main id="view-library" class="view">
     <section class="panel find">
       <h2>Find tabs online</h2>
-      <p class="muted">Opens the site's search in a new tab. Download the Guitar Pro file there (a free Ultimate Guitar account is enough for most), then press <b>Import new downloads</b> below. For text tabs, copy the tab on the page and press <b>Paste from clipboard</b>.</p>
-      <form id="find-form" class="row">
-        <input id="find-query" type="search" placeholder="Song or artist" required>
-        <button type="submit" data-site="ug-gp">Ultimate Guitar · Guitar Pro</button>
-        <button type="submit" data-site="ug" class="ghost">Ultimate Guitar · all</button>
-        <button type="submit" data-site="songsterr" class="ghost">Songsterr</button>
+      <p class="muted">Each button opens that site's search in a new tab. Download the Guitar Pro (or MusicXML) file there and it's added to your library by itself when auto-import is on; otherwise press <b>Import new downloads</b> below. For text tabs, copy the tab on the page and press <b>Paste from clipboard</b>.</p>
+      <form id="find-form">
+        <div class="row">
+          <input id="find-artist" type="search" placeholder="Artist" autocomplete="off">
+          <input id="find-query" type="search" placeholder="Song" autocomplete="off">
+        </div>
+        <div id="find-sources" class="row find-sources"></div>
       </form>
+      <p id="find-auto" class="small-text muted" hidden></p>
     </section>
 
     <section class="panel">

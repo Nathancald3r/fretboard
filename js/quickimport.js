@@ -58,15 +58,105 @@ async function changeFolder(toast) {
     const dir = await window.showDirectoryPicker({ id: 'tab-downloads', startIn: 'downloads', mode: 'read' });
     await setValue('downloadsDir', dir);
     toast(`Will check “${dir.name}” for new tabs.`);
+    showAuto();
   } catch { /* cancelled */ }
 }
 
-export function initQuickImport({ importFiles, openEditor, toast }) {
+/* ---------- auto-import while looking for tabs ---------- */
+
+// After a tab site is opened, the folder is checked every few seconds (and whenever you
+// come back to this tab) for a while, and each new tab file is added as it lands. Reading
+// the folder needs permission, which the browser only asks for after a click, so it's
+// given once with "Turn on auto-import" (Chrome can remember it).
+const WATCH_MINUTES = 20;
+const WATCH_EVERY = 3000;
+let ctx = null; // { importFiles, toast, openSong }
+let watch = null; // { since, until, timer }
+let busy = false;
+
+async function grantedFolder() {
+  const dir = await getValue('downloadsDir').catch(() => null);
+  if (!dir) return null;
+  try { return (await dir.queryPermission({ mode: 'read' })) === 'granted' ? dir : null; } catch { return null; }
+}
+
+async function showAuto() {
+  const el = $('find-auto');
+  if (!('showDirectoryPicker' in window)) {
+    el.hidden = false;
+    el.textContent = 'Auto-import needs Chrome or Edge on a computer. Elsewhere, drop the downloaded file onto the library.';
+    return;
+  }
+  const dir = await grantedFolder();
+  el.hidden = false;
+  el.innerHTML = '';
+  if (dir) {
+    const on = document.createElement('span');
+    on.className = 'find-auto-on';
+    on.textContent = watch ? `● Watching “${dir.name}” for new tab files…` : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
+    el.append(on);
+  } else {
+    el.append('Auto-import is off. ');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost small';
+    b.textContent = 'Turn on auto-import';
+    b.title = 'Pick your Downloads folder once; new tab files there are then added by themselves';
+    b.addEventListener('click', async () => {
+      try { await folderHandle(); } catch { return; }
+      await showAuto();
+    });
+    el.append(b);
+  }
+}
+
+async function autoImport() {
+  if (!watch || busy) return;
+  if (Date.now() > watch.until) { stopWatch(); return; }
+  const dir = await grantedFolder();
+  if (!dir) return;
+  busy = true;
+  try {
+    const seen = new Set((await getValue('importedFiles')) || []);
+    const fresh = [];
+    for await (const entry of dir.values()) {
+      if (entry.kind !== 'file' || !TAB_FILE.test(entry.name)) continue;
+      const file = await entry.getFile();
+      if (file.lastModified >= watch.since && !seen.has(fileKey(file))) fresh.push(file);
+    }
+    if (!fresh.length) return;
+    fresh.forEach((f) => seen.add(fileKey(f)));
+    await setValue('importedFiles', [...seen].slice(-500));
+    const { ids } = await ctx.importFiles(fresh, { quietIfEmpty: true });
+    // One new tab: open it right away.
+    if (ids?.length === 1 && !document.hidden) ctx.openSong(ids[0]);
+  } catch { /* folder gone or unreadable: try again next time */ } finally { busy = false; }
+}
+
+function stopWatch() {
+  clearInterval(watch?.timer);
+  watch = null;
+  showAuto();
+}
+
+export async function watchDownloads() {
+  if (!ctx || !('showDirectoryPicker' in window)) return;
+  const since = watch?.since ?? Date.now() - 60e3; // a download that just finished counts
+  clearInterval(watch?.timer);
+  watch = { since, until: Date.now() + WATCH_MINUTES * 60e3, timer: setInterval(autoImport, WATCH_EVERY) };
+  await showAuto();
+}
+
+export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
+  ctx = { importFiles, toast, openSong };
+  showAuto();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) autoImport(); });
+  window.addEventListener('focus', autoImport);
   $('btn-clip').hidden = !navigator.clipboard?.readText;
   $('btn-clip').addEventListener('click', () => pasteFromClipboard(openEditor));
   const folderSupported = 'showDirectoryPicker' in window;
   $('btn-downloads').hidden = !folderSupported;
   $('btn-folder').hidden = !folderSupported;
-  $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast));
+  $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast).then(showAuto));
   $('btn-folder').addEventListener('click', () => changeFolder(toast));
 }

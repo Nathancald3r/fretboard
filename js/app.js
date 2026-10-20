@@ -8,7 +8,8 @@ import { renderLog } from './log.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport } from './quickimport.js';
+import { initQuickImport, watchDownloads } from './quickimport.js';
+import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
 import { initSync } from './syncui.js';
@@ -142,25 +143,26 @@ function readScoreInfo(bytes) {
 
 async function importFiles(files, { quietIfEmpty = false } = {}) {
   let added = 0;
+  const ids = [];
   const failed = [];
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '');
     if (/\.txt$/i.test(file.name)) {
-      await putSong({ kind: 'text', title: base, artist: '', data: cleanTabText(await file.text()), added: Date.now() });
+      ids.push(await putSong({ kind: 'text', title: base, artist: '', data: cleanTabText(await file.text()), added: Date.now() }));
       added++;
       continue;
     }
     const buf = await file.arrayBuffer();
     const info = readScoreInfo(new Uint8Array(buf));
     if (!info.ok) { failed.push(file.name); continue; }
-    await putSong({
+    ids.push(await putSong({
       kind: /\.(xml|musicxml|mxl)$/i.test(file.name) ? 'xml' : 'gp',
       title: info.title?.trim() || base,
       artist: info.artist?.trim() || '',
       data: buf,
       fileName: file.name,
       added: Date.now(),
-    });
+    }));
     added++;
   }
   const parts = [];
@@ -169,7 +171,7 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
   else if (!quietIfEmpty) toast('Nothing to import.');
   renderLibrary();
-  return { added, failed };
+  return { added, failed, ids };
 }
 
 function initImport() {
@@ -222,16 +224,23 @@ function initEditor() {
 /* ---------- find online ---------- */
 
 function initFind() {
+  const box = $('find-sources');
+  for (const s of TAB_SOURCES) {
+    const b = document.createElement('button');
+    b.type = 'submit';
+    b.dataset.site = s.id;
+    b.textContent = s.label;
+    b.title = s.note;
+    if (!s.primary) b.className = 'ghost';
+    box.append(b);
+  }
   $('find-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const q = encodeURIComponent($('find-query').value.trim());
-    if (!q) return;
-    const urls = {
-      'ug-gp': `https://www.ultimate-guitar.com/search.php?search_type=title&value=${q}&type=500`,
-      ug: `https://www.ultimate-guitar.com/search.php?search_type=title&value=${q}`,
-      songsterr: `https://www.songsterr.com/?pattern=${q}`,
-    };
-    window.open(urls[e.submitter?.dataset.site || 'ug-gp'], '_blank', 'noopener');
+    const artist = $('find-artist').value;
+    const song = $('find-query').value;
+    if (!artist.trim() && !song.trim()) { $('find-query').focus(); return; }
+    window.open(sourceUrl(e.submitter?.dataset.site || 'ug-gp', artist, song), '_blank', 'noopener');
+    watchDownloads();
   });
 }
 
@@ -256,7 +265,7 @@ async function main() {
   initScales();
   initKeys();
   initDrawer();
-  initQuickImport({ importFiles, openEditor, toast });
+  initQuickImport({ importFiles, openEditor, toast, openSong: (id) => { location.hash = `song/${id}`; } });
   $('library-list').addEventListener('click', onLibraryClick);
   $('lib-filter').addEventListener('input', renderLibrary);
   window.addEventListener('hashchange', route);
