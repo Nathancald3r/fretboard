@@ -204,3 +204,5 @@ button.primary.danger { background: var(--warn); border-color: var(--warn); colo
 /* Keep alphaTab's cursor layers below the sticky top bar. */
 .score-scroll { isolation: isolate; }
 .small-text { font-size: .85rem; }
+kbd { font: .78rem var(--mono); padding: 0 .35em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
+.keys-hint { margin: .3rem 0 .6rem; line-height: 1.9; }

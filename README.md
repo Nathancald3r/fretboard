@@ -34,7 +34,7 @@ Tabs can't be fetched automatically: both sites forbid scraping in their terms, 
 - **Scales:** 12 scales (major, minor, pentatonics, blues, the modes, harmonic and melodic minor) in any key and every position, shown on a fretboard diagram with degrees or note names. **Practice in player** turns the position into an exercise (up and down, in 3s or in 4s) that you can loop and run through the speed trainer.
 - **Practice log:** counts the time a song is actually playing, or the time a text tab is open. Shows today, last 7 days, day streak, time per song and top speed.
 
-Keyboard shortcuts in the player: `Space` play/pause, `[` / `]` speed ±5%, `L` loop on/off, `Esc` clear selection.
+Keyboard shortcuts in the player: `Space` play/pause, `←` / `→` previous/next bar (`Shift` for 4 bars), `Home` back to the start (or the start of the selection), `End` last bar, `[` / `]` speed ±5%, `L` loop on/off, `C` count-in, `M` click, `Esc` clear selection. With count-in on, every start counts you in, including after jumping to a bar.
 
 Everything is stored only in this browser (IndexedDB). Clearing site data deletes your library.
 

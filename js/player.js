@@ -37,6 +37,10 @@ function ensureApi() {
     },
   });
 
+  // Browsers can restore checkbox state on reload; make the player match what's shown.
+  api.countInVolume = $('pl-countin').checked ? 1 : 0;
+  api.metronomeVolume = $('pl-metro').checked ? 1 : 0;
+
   api.scoreLoaded.on((s) => {
     score = s;
     baseTempo = s.masterBars[0]?.tempoAutomations?.[0]?.value || 120;
@@ -273,6 +277,72 @@ function togglePlay() {
   if (api && readyForPlayback) api.playPause();
 }
 
+// Bars in playback order (repeats included), each with its start/end in MIDI ticks.
+const playedBars = () => api?.tickCache?.masterBars || [];
+
+function currentBarIndex() {
+  const tick = currentTick();
+  const bars = playedBars();
+  let i = bars.findIndex((b) => tick >= b.start && tick < b.end);
+  if (i === -1) i = tick >= (bars.at(-1)?.end ?? 0) ? bars.length - 1 : 0;
+  return i;
+}
+
+// While playing with count-in on, a jump pauses, moves, and plays again so the count-in
+// is heard at the new spot. Pausing is asynchronous in alphaTab (it reports the paused
+// position afterwards), so the move waits for the pause; quick repeated presses only
+// update the target.
+let restartTarget = null;
+
+function waitForPause() {
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timeout); off(); resolve(); };
+    const handler = (e) => { if (e.state !== PLAYING) done(); };
+    const unsubscribe = api.playerStateChanged.on(handler);
+    const off = () => (typeof unsubscribe === 'function' ? unsubscribe() : api.playerStateChanged.off(handler));
+    const timeout = setTimeout(done, 600);
+  });
+}
+
+async function moveTo(tick) {
+  if (!(api.playerState === PLAYING && $('pl-countin').checked) && restartTarget === null) {
+    api.tickPosition = tick;
+    api.scrollToCursor?.();
+    return;
+  }
+  const busy = restartTarget !== null;
+  restartTarget = tick;
+  if (busy) return;
+  api.pause();
+  await waitForPause();
+  api.tickPosition = restartTarget;
+  restartTarget = null;
+  api.scrollToCursor?.();
+  api.play();
+}
+
+// Position the next jump is relative to (the pending target during a restart).
+const currentTick = () => restartTarget ?? api.tickPosition;
+
+function seekToBar(index) {
+  const bars = playedBars();
+  if (!readyForPlayback || !bars.length) return;
+  moveTo(bars[Math.max(0, Math.min(bars.length - 1, index))].start);
+}
+
+function stepBars(delta) {
+  if (!playedBars().length) return;
+  const i = currentBarIndex();
+  // Going back from partway through a bar first returns to that bar's start (like a CD player).
+  const atBarStart = currentTick() - playedBars()[i].start < 120;
+  seekToBar(delta < 0 && !atBarStart ? i : i + delta);
+}
+
+function backToStart() {
+  if (!readyForPlayback) return;
+  moveTo(api.playbackRange ? api.playbackRange.startTick : 0);
+}
+
 function setLoop(on) {
   $('pl-loop').checked = on;
   if (api) api.isLooping = on;
@@ -321,12 +391,37 @@ export function initPlayer() {
     if (api.playerState !== PLAYING) api.play();
   });
 
+  // Clicking a checkbox, select or slider leaves it focused, and Space / arrow keys would
+  // then change it instead of controlling playback; hand focus back to the page.
+  $('view-player').addEventListener('change', (e) => {
+    if (e.target.matches('input[type=checkbox], input[type=range], select')) e.target.blur();
+  });
+
   document.addEventListener('keydown', (e) => {
-    if ($('view-player').hidden || e.target.closest('input, select, textarea, button')) return;
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    else if (e.key === '[') setSpeed(Number($('pl-speed').value) - 5);
-    else if (e.key === ']') setSpeed(Number($('pl-speed').value) + 5);
-    else if (e.key.toLowerCase() === 'l') setLoop(!$('pl-loop').checked);
-    else if (e.key === 'Escape') clearSelection();
+    if ($('view-player').hidden || $('view-player').querySelector('dialog[open]')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Let number fields (speed trainer) take typing and arrows.
+    if (e.target.matches?.('input[type=number], input[type=text], input[type=search], textarea')) return;
+    const keys = {
+      ' ': togglePlay,
+      k: togglePlay,
+      ArrowLeft: () => stepBars(e.shiftKey ? -4 : -1),
+      ArrowRight: () => stepBars(e.shiftKey ? 4 : 1),
+      j: () => stepBars(-1),
+      ';': () => stepBars(1),
+      Home: backToStart,
+      Backspace: backToStart,
+      End: () => seekToBar(playedBars().length - 1),
+      '[': () => setSpeed(Number($('pl-speed').value) - 5),
+      ']': () => setSpeed(Number($('pl-speed').value) + 5),
+      l: () => setLoop(!$('pl-loop').checked),
+      c: () => { $('pl-countin').checked = !$('pl-countin').checked; $('pl-countin').dispatchEvent(new Event('change')); },
+      m: () => { $('pl-metro').checked = !$('pl-metro').checked; $('pl-metro').dispatchEvent(new Event('change')); },
+      Escape: clearSelection,
+    };
+    const action = keys[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+    if (!action) return;
+    e.preventDefault(); // also stops Space from clicking a focused button
+    action();
   });
 }
