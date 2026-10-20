@@ -17,7 +17,7 @@ import {
   CLICK_SOUNDS, COUNT_SOUNDS, SUBDIVISIONS, COUNT_LENGTHS, loadClickSettings, saveClickSettings, sanitize,
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
 } from './click.js';
-import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, tapSync, toggleRecording } from './playalong.js';
+import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, toggleRecording } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
@@ -1029,7 +1029,7 @@ function drawSectionLabels() {
   for (const sec of sections) {
     const sys = systems.find((s) => s.bars.some((b) => b.index === sec.index));
     const bar = sys?.bars.find((b) => b.index === sec.index);
-    if (!bar) continue;
+    if (!bar || sec.index === 0) continue; // the title block already sits above bar 1
     const box = bar.realBounds || bar.visualBounds;
     const top = Math.max(18, (sys.visualBounds || sys.realBounds).y);
     const el = document.createElement('span');
@@ -1336,7 +1336,7 @@ function findPlayed(masterIndex, from, dir) {
 
 function backToStart() {
   if (!readyForPlayback) return;
-  moveTo(api.playbackRange ? api.playbackRange.startTick : 0);
+  moveTo(api.playbackRange ? api.playbackRange.startTick : videoStartTick());
 }
 
 function setLoop(on) {
@@ -1648,7 +1648,12 @@ export function initPlayer() {
     toggleButton(id, on);
   }
   $('pl-play').addEventListener('click', togglePlay);
-  $('pl-stop').addEventListener('click', () => { cancelCountIn(); api?.stop(); });
+  $('pl-stop').addEventListener('click', () => {
+    cancelCountIn();
+    api?.stop();
+    // A video that begins at the verse: stopping goes back to the verse, not the intro.
+    setTimeout(() => { const t = videoStartTick(); if (t && api) api.tickPosition = t; }, 80);
+  });
   $('pl-back').addEventListener('click', backToStart);
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
   $('pl-speed-slide').addEventListener('input', (e) => slideSpeed(Number(e.target.value)));

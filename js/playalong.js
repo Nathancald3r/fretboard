@@ -436,6 +436,12 @@ export function playerStateChanged(playing) {
 
 export const recordingOn = () => on;
 
+/** Where the song starts: the part of the tab the video begins with (0 = the very start). */
+export function videoStartTick() {
+  if (!on || !song?.videoMaster) return 0;
+  return hooks.playedBars()[startIdx()]?.start || 0;
+}
+
 async function setOn(want) {
   const api = hooks.api();
   if (!api || !song) return;
@@ -460,6 +466,7 @@ async function setOn(want) {
   if (on) {
     api.player.output.handler = media;
     applySync();
+    if (song?.videoMaster) setTimeout(() => hooks.seekToBar(startIdx()), 200);
   }
   hooks.modeChanged(on);
   showState();
