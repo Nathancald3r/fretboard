@@ -282,6 +282,17 @@
             <label title="Where in the video the song's first bar begins: skip an intro, applause or talking">Song starts at <input id="pa-start" type="number" min="0" step="0.1" value="0" style="width:5.5rem"> s</label>
             <button id="pa-start-now" class="ghost small" title="Pause the video where the music begins, then press this">Use the video's current time</button>
           </div>
+          <h3>Skip a part of the video</h3>
+          <p class="muted small-text">An interlude, applause or talking the tab doesn't have: pause the video where it begins and press <b>now</b>, then where it ends, then <b>Skip it</b>. Playback jumps over it, and the tab never waits for it.</p>
+          <div class="row">
+            <label>From <input id="pa-skip-from" type="number" min="0" step="0.1" placeholder="s" style="width:5rem"></label>
+            <button id="pa-skip-from-now" class="ghost small">now</button>
+            <label>to <input id="pa-skip-to" type="number" min="0" step="0.1" placeholder="s" style="width:5rem"></label>
+            <button id="pa-skip-to-now" class="ghost small">now</button>
+            <button id="pa-skip-add" class="primary">Skip it</button>
+            <span id="pa-skip-state" class="small-text"></span>
+          </div>
+          <ul id="pa-skips" class="small-text"></ul>
           <p class="muted small-text">Play it, and tap <kbd>T</kbd> (or the button) on beat 1 of every bar as you hear it, for as long as you like; pause to save. Untapped parts follow the written tempo from the last tap.</p>
           <div class="row">
             <button id="pa-tap" class="primary">Tap beat 1 (T)</button>

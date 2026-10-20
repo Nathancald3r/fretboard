@@ -10,8 +10,20 @@ const AT = window.alphaTab;
 
 let hooks = null; // from player.js
 // Only the external-media output takes positions; the synth's output has no updatePosition.
-const sendPosition = (ms) => { const o = hooks.output(); if (typeof o?.updatePosition === 'function') o.updatePosition(ms); };
 let song = null;
+// Skipped parts of the video (an interlude, applause): [from, to] in the video's own ms. The
+// tab and its sync points use "played time", the video's time with the skipped parts taken out,
+// so skipped parts never need syncing; the video just jumps over them.
+const skipList = () => (song?.skips || []).slice().sort((a, b) => a[0] - b[0]);
+const toPlayed = (real) => skipList().reduce((t, [f, e]) => (real > f ? t - (Math.min(real, e) - f) : t), real);
+const toReal = (played) => skipList().reduce((r, [f, e]) => (r >= f ? r + (e - f) : r), played);
+const skippedTotal = () => skipList().reduce((t, [f, e]) => t + (e - f), 0);
+const sendPosition = (real) => {
+  const hit = skipList().find(([f, e]) => real >= f && real < e);
+  if (hit && media?.seekReal) { media.seekReal(hit[1]); return; }
+  const o = hooks.output();
+  if (typeof o?.updatePosition === 'function') o.updatePosition(toPlayed(real));
+};
 let media = null; // the active handler (file or YouTube)
 let on = false;
 let taps = null; // tap-sync in progress: { next: played-bar index, points }
@@ -39,15 +51,17 @@ function fileHandler(rec) {
   el.addEventListener('loadedmetadata', () => sendPosition(el.currentTime * 1000));
   return {
     kind: 'file',
-    get backingTrackDuration() { return (el.duration || 0) * 1000; },
+    get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal()); },
     get playbackRate() { return el.playbackRate; },
     set playbackRate(v) { el.playbackRate = v; },
     get masterVolume() { return el.volume; },
     set masterVolume(v) { el.volume = Math.max(0, Math.min(1, v)); },
-    seekTo(ms) { el.currentTime = ms / 1000; },
+    seekTo(ms) { el.currentTime = toReal(ms) / 1000; },
+    seekReal(ms) { el.currentTime = ms / 1000; },
+    nowReal: () => el.currentTime * 1000,
     play() { el.play().catch(() => {}); },
     pause() { el.pause(); },
-    now: () => el.currentTime * 1000,
+    now: () => toPlayed(el.currentTime * 1000),
     destroy() { el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
   };
 }
@@ -108,7 +122,7 @@ async function youTubeHandler(rec) {
   player.addEventListener('onStateChange', stateChange);
   return {
     kind: 'youtube',
-    get backingTrackDuration() { return (player.getDuration() || 0) * 1000; },
+    get backingTrackDuration() { return Math.max(0, (player.getDuration() || 0) * 1000 - skippedTotal()); },
     get playbackRate() { return rate; },
     set playbackRate(v) {
       // YouTube only offers some speeds (0.25 steps, or finer on newer players).
@@ -119,10 +133,12 @@ async function youTubeHandler(rec) {
     },
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
-    seekTo(ms) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); },
+    seekTo(ms) { player.seekTo(toReal(ms) / 1000, true); setTimeout(poll, 50); },
+    seekReal(ms) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); },
+    nowReal: () => player.getCurrentTime() * 1000,
     play() { player.playVideo(); },
     pause() { player.pauseVideo(); },
-    now: () => player.getCurrentTime() * 1000,
+    now: () => toPlayed(player.getCurrentTime() * 1000),
     // Another video in the same player (tearing YouTube's player down and making a new one
     // right away can leave the new one stuck). Resolves once it's ready to play.
     cue(id) {
@@ -185,6 +201,55 @@ function applySync() {
   showSync();
 }
 
+// Skips: add or remove one, keeping the tapped bars lined up (played time after it changes).
+function shiftSyncAfter(playedMs, by) {
+  if (!song.syncPoints?.length) return;
+  song.syncPoints = song.syncPoints.map(([p, t]) => [p, t >= playedMs ? Math.max(0, t + by) : t]);
+  updateSong(song.id, { syncPoints: song.syncPoints });
+}
+
+function changeSkips(skips, shiftAt, by) {
+  shiftSyncAfter(shiftAt, by);
+  song.skips = skips;
+  updateSong(song.id, { skips });
+  showSkips();
+  if (on) applySync(); else showSync();
+}
+
+function addSkip(fromSec, toSec) {
+  const f = Math.round(fromSec * 1000);
+  const e = Math.round(toSec * 1000);
+  if (!song || !(e > f)) { $('pa-skip-state').textContent = 'The skip must end after it starts.'; return; }
+  if (skipList().some(([a, b]) => f < b && e > a)) { $('pa-skip-state').textContent = 'That overlaps a skip you already set.'; return; }
+  const playedAt = toPlayed(f);
+  changeSkips([...(song.skips || []), [f, e]], playedAt, -(e - f));
+  $('pa-skip-state').textContent = '';
+}
+
+function removeSkip(i) {
+  const [f, e] = skipList()[i];
+  const playedAt = toPlayed(f);
+  changeSkips(skipList().filter((_, k) => k !== i), playedAt, e - f);
+}
+
+const skipClock = (ms) => `${Math.floor(ms / 60000)}:${(ms % 60000 / 1000).toFixed(1).padStart(4, '0')}`;
+function showSkips() {
+  const ul = $('pa-skips');
+  ul.innerHTML = '';
+  skipList().forEach(([f, e], i) => {
+    const li = document.createElement('li');
+    li.textContent = `${skipClock(f)} → ${skipClock(e)} `;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost small';
+    b.textContent = '✕';
+    b.title = 'Play this part again';
+    b.addEventListener('click', () => removeSkip(i));
+    li.append(b);
+    ul.append(li);
+  });
+}
+
 // Where the first bar begins in the video. Everything tapped later moves with it.
 function setStart(sec) {
   if (!song) return;
@@ -201,6 +266,7 @@ function setStart(sec) {
 }
 
 function showSync() {
+  showSkips();
   const zero = song?.syncPoints?.find(([p]) => p === 0);
   if (document.activeElement !== $('pa-start')) $('pa-start').value = zero ? (zero[1] / 1000).toFixed(1) : '0';
   const pts = song?.syncPoints || [];
@@ -483,6 +549,13 @@ export function initPlayAlong(h) {
     updateSong(song.id, { syncOffset: song.syncOffset });
     if (on) applySync(); else showSync();
   }));
+  const nowSec = (input) => {
+    if (!media) { $('pa-skip-state').textContent = 'Turn on the linked video first, then find the spot.'; return; }
+    input.value = (media.nowReal() / 1000).toFixed(1);
+  };
+  $('pa-skip-from-now').addEventListener('click', () => nowSec($('pa-skip-from')));
+  $('pa-skip-to-now').addEventListener('click', () => nowSec($('pa-skip-to')));
+  $('pa-skip-add').addEventListener('click', () => addSkip(Number($('pa-skip-from').value), Number($('pa-skip-to').value)));
   $('pa-start').addEventListener('change', (e) => setStart(Number(e.target.value) || 0));
   $('pa-start-now').addEventListener('click', () => {
     if (!media) { $('pa-tap-state').textContent = 'Turn on the linked video first, then find where the music starts.'; return; }
