@@ -2,6 +2,7 @@
 import { updateSong } from './db.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
+import { detectKey, keyLabel, toNashville } from './theory.js';
 
 const $ = (id) => document.getElementById(id);
 const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d|add\d+|b\d+|#\d+)*(\/[A-G][#b]?)?\)?$/;
@@ -22,16 +23,56 @@ const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', 
 // Ultimate Guitar's raw format wraps chords and tabs in [ch]..[/ch] and [tab]..[/tab].
 export const cleanTabText = (text) => text.replace(/\[\/?(ch|tab)\]/g, '').replace(/\r\n?/g, '\n');
 
-function highlight(text) {
+const chordTokens = (line) => {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  return tokens.length && tokens.every((t) => CHORD.test(t)) ? tokens : null;
+};
+
+function songChords(text) {
+  return cleanTabText(text).split('\n').flatMap((line) =>
+    TAB_LINE.test(line) ? [] : (chordTokens(line) || []).map((t) => t.replace(/[()]/g, '')));
+}
+
+// Rewrites a chord line, keeping each chord at its original column where possible
+// so chords stay above the right lyric.
+function chordLine(line, key) {
+  let html = '';
+  let col = 0;
+  for (const m of line.matchAll(/\S+/g)) {
+    const shown = key ? m[0].replace(/[^()]+/, (c) => toNashville(c, key)) : m[0];
+    const gap = Math.max(col ? 1 : 0, m.index - col);
+    html += ' '.repeat(gap) + `<span class="chord" title="${escape(m[0])}">${escape(shown)}</span>`;
+    col += gap + shown.length;
+  }
+  return html;
+}
+
+function highlight(text, key) {
   return cleanTabText(text).split('\n').map((line) => {
     if (/^\s*\[[^\]]+\]\s*$/.test(line)) return `<span class="section">${escape(line)}</span>`;
     if (TAB_LINE.test(line)) return `<span class="tab-line">${escape(line)}</span>`;
-    const tokens = line.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length && tokens.every((t) => CHORD.test(t))) {
-      return escape(line).replace(/\S+/g, (t) => `<span class="chord">${t}</span>`);
-    }
+    if (chordTokens(line)) return chordLine(line, key);
     return escape(line);
   }).join('\n');
+}
+
+// Key for Nashville numbers: the saved choice, or detected from the chords.
+function render() {
+  const detected = detectKey(songChords(song.data));
+  const keySelect = $('tx-key');
+  keySelect.innerHTML = '';
+  keySelect.add(new Option(detected ? `Auto (${keyLabel(detected)})` : 'Auto (no chords found)', 'auto'));
+  for (let pc = 0; pc < 12; pc++) {
+    for (const minor of [false, true]) keySelect.add(new Option(keyLabel({ tonic: pc, minor }), `${pc}${minor ? 'm' : ''}`));
+  }
+  keySelect.value = song.key || 'auto';
+  $('tx-chords').value = song.chordMode || 'letters';
+  const key = song.key && song.key !== 'auto'
+    ? { tonic: parseInt(song.key, 10), minor: song.key.endsWith('m') }
+    : detected;
+  const nashville = song.chordMode === 'nashville';
+  keySelect.disabled = !nashville;
+  $('tx-body').innerHTML = highlight(song.data, nashville ? key : null);
 }
 
 function frame(now) {
@@ -60,7 +101,7 @@ export function openText(s) {
   song = s;
   $('tx-title').textContent = s.title;
   $('tx-artist').textContent = s.artist || '';
-  $('tx-body').innerHTML = highlight(s.data);
+  render();
   $('tx-size').value = s.textSize || 15;
   $('tx-body').style.fontSize = $('tx-size').value + 'px';
   $('tx-speed').value = s.scrollSpeed || 5;
@@ -93,6 +134,16 @@ export function initText({ onEdit }) {
   $('tx-tempo').addEventListener('change', async (e) => {
     const tempo = Math.max(30, Math.min(260, Number(e.target.value) || 100));
     if (song) song = await updateSong(song.id, { tempo });
+  });
+  $('tx-chords').addEventListener('change', async (e) => {
+    if (!song) return;
+    song = await updateSong(song.id, { chordMode: e.target.value });
+    render();
+  });
+  $('tx-key').addEventListener('change', async (e) => {
+    if (!song) return;
+    song = await updateSong(song.id, { key: e.target.value });
+    render();
   });
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {

@@ -15,7 +15,10 @@ Then open http://localhost:8420. `npm install` copies alphaTab into `vendor/`. A
 
 1. In **Find tabs online**, search Ultimate Guitar (with the Guitar Pro filter) or Songsterr. Each search opens in a new tab.
 2. Download a Guitar Pro file (`.gp`, `.gp5`, `.gpx`, …). On Ultimate Guitar a free account is enough for most of them.
-3. To add it, drag it onto the library or click **Import files**. Plain-text tabs work too: either **Paste text tab** or import a `.txt` file.
+3. Back in Fretboard, press **Import new downloads**. The first time, pick your Downloads folder; after that one click imports every tab file downloaded in the last 14 days that isn't in the library yet. (Chrome and Edge on desktop. Elsewhere, drag the file onto the library or use **Import files**.)
+4. For a plain-text tab, copy it on the site and press **Paste from clipboard**, or import a `.txt` file.
+
+Tabs can't be fetched automatically: both sites forbid scraping in their terms, so the app only opens their search and imports what you download.
 
 ## Features
 
@@ -26,7 +29,9 @@ Then open http://localhost:8420. `npm install` copies alphaTab into `vendor/`. A
 - **Count-in and click track** while a song plays.
 - **Metronome:** subdivisions, accent on beat 1, tap tempo, and a speed builder that adds X BPM every N bars.
 - **Tuner:** uses your mic. It has 9 tunings and reference tones you can play.
-- **Text tabs:** chords, tab lines and section headers are highlighted. Text size and auto-scroll speed are adjustable.
+- **Text tabs:** chords, tab lines and section headers are highlighted. Text size and auto-scroll speed are adjustable. Tab lines can be played as a score (rhythm is guessed from the spacing).
+- **Nashville numbers:** switch a chord sheet's chords to numbers (G D/F# Em7 C in G → 1 5/7 6m7 4). The key is detected from the chords, or you can set it.
+- **Scales:** 12 scales (major, minor, pentatonics, blues, the modes, harmonic and melodic minor) in any key and every position, shown on a fretboard diagram with degrees or note names. **Practice in player** turns the position into an exercise (up and down, in 3s or in 4s) that you can loop and run through the speed trainer.
 - **Practice log:** counts the time a song is actually playing, or the time a text tab is open. Shows today, last 7 days, day streak, time per song and top speed.
 
 Keyboard shortcuts in the player: `Space` play/pause, `[` / `]` speed ±5%, `L` loop on/off, `Esc` clear selection.

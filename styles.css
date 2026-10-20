@@ -183,3 +183,19 @@ dialog .row input { flex: 1 1 200px; }
   .transport { top: 0; position: static; }
   .score-scroll { max-height: none; }
 }
+
+/* Scale diagram */
+.view > * { min-width: 0; }
+.fretboard { overflow-x: auto; margin: 12px 0 4px; }
+.fretboard svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.fb-window { fill: var(--accent); opacity: 0.08; rx: 6; }
+.fb-fret { stroke: #5b616c; stroke-width: 1.5; }
+.fb-nut { stroke: #d9dce1; stroke-width: 5; }
+.fb-string { stroke: #9aa0aa; }
+.fb-inlay { fill: #2c3038; }
+.fb-num { fill: var(--muted); font-size: 11px; text-anchor: middle; }
+.fb-dot circle { fill: #3a3f48; }
+.fb-dot.root circle { fill: #6b4f2a; }
+.fb-dot.on circle { fill: #e8eaed; }
+.fb-dot.on.root circle { fill: var(--accent); }
+.fb-dot text { fill: #14161a; font: 600 11px system-ui, sans-serif; text-anchor: middle; }

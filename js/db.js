@@ -2,7 +2,7 @@
 // and practice sessions. Everything stays in this browser.
 
 const DB_NAME = 'fretboard';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbPromise;
 
 function open() {
@@ -10,9 +10,14 @@ function open() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
-      const sessions = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
-      sessions.createIndex('songId', 'songId');
+      const has = (name) => db.objectStoreNames.contains(name);
+      if (!has('songs')) db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
+      if (!has('sessions')) {
+        const sessions = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+        sessions.createIndex('songId', 'songId');
+      }
+      // v2: small settings that localStorage can't hold (e.g. the Downloads folder handle).
+      if (!has('kv')) db.createObjectStore('kv');
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -45,3 +50,6 @@ export async function updateSong(id, changes) {
 
 export const listSessions = () => run('sessions', 'readonly', (s) => s.getAll());
 export const addSession = (session) => run('sessions', 'readwrite', (s) => s.add(session));
+
+export const getValue = (key) => run('kv', 'readonly', (s) => s.get(key));
+export const setValue = (key, value) => run('kv', 'readwrite', (s) => s.put(value, key));

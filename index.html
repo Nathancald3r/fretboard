@@ -15,6 +15,7 @@
     <a class="brand" href="#library">Fretboard</a>
     <nav class="nav">
       <a href="#library" data-nav="library">Library</a>
+      <a href="#scales" data-nav="scales">Scales</a>
       <a href="#tools" data-nav="tools">Metronome &amp; Tuner</a>
       <a href="#log" data-nav="log">Practice log</a>
     </nav>
@@ -24,7 +25,7 @@
   <main id="view-library" class="view">
     <section class="panel find">
       <h2>Find tabs online</h2>
-      <p class="muted">Opens the site's search in a new tab. Download Guitar Pro files there (a free Ultimate Guitar account is enough for most), then import them below.</p>
+      <p class="muted">Opens the site's search in a new tab. Download the Guitar Pro file there (a free Ultimate Guitar account is enough for most), then press <b>Import new downloads</b> below. For text tabs, copy the tab on the page and press <b>Paste from clipboard</b>.</p>
       <form id="find-form" class="row">
         <input id="find-query" type="search" placeholder="Song or artist" required>
         <button type="submit" data-site="ug-gp">Ultimate Guitar · Guitar Pro</button>
@@ -38,7 +39,10 @@
         <h2>Your library</h2>
         <div class="row">
           <input id="lib-filter" type="search" placeholder="Filter library">
-          <button id="btn-paste" class="ghost">Paste text tab</button>
+          <button id="btn-downloads" class="primary" title="Import tab files you downloaded recently (asks for the folder once)" hidden>Import new downloads</button>
+          <button id="btn-folder" class="ghost small" title="Choose a different folder to check" hidden>Folder…</button>
+          <button id="btn-clip" class="ghost" title="Paste a text tab you copied (e.g. from Ultimate Guitar)" hidden>Paste from clipboard</button>
+          <button id="btn-paste" class="ghost">Type / paste text tab</button>
           <label class="button">Import files<input id="file-input" type="file" multiple hidden
             accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.gp8,.xml,.musicxml,.mxl,.cap,.capx,.txt"></label>
         </div>
@@ -133,9 +137,58 @@
       <button id="tx-scroll" class="primary big">Auto-scroll</button>
       <label>Scroll speed <input id="tx-speed" type="range" min="1" max="20" value="5"></label>
       <label>Text size <input id="tx-size" type="range" min="10" max="26" value="15"></label>
+      <label>Chords
+        <select id="tx-chords">
+          <option value="letters">Letters (G, Em)</option>
+          <option value="nashville">Nashville (1, 6m)</option>
+        </select>
+      </label>
+      <label>Key <select id="tx-key"></select></label>
       <span id="tx-time" class="mono muted"></span>
     </div>
     <pre id="tx-body" class="text-tab"></pre>
+  </main>
+
+  <!-- SCALES -->
+  <main id="view-scales" class="view" hidden>
+    <section class="panel">
+      <h2>Scale practice</h2>
+      <div class="row">
+        <label>Key <select id="sc-root"></select></label>
+        <label>Scale <select id="sc-scale"></select></label>
+        <label>Position <select id="sc-position"></select></label>
+        <label>Labels
+          <select id="sc-labels">
+            <option value="degree">Degrees (1, b3, 5)</option>
+            <option value="note">Note names</option>
+          </select>
+        </label>
+      </div>
+      <div id="sc-diagram" class="fretboard"></div>
+      <p id="sc-hint" class="muted"></p>
+    </section>
+    <section class="panel">
+      <h2>Play it</h2>
+      <p class="muted">Opens the exercise in the player, where you can loop it, slow it down and run the speed trainer. It is saved to your library so your practice time is logged.</p>
+      <div class="row">
+        <label>Pattern
+          <select id="sc-pattern">
+            <option value="straight">Up and down</option>
+            <option value="threes">In 3s (1-2-3, 2-3-4…)</option>
+            <option value="fours">In 4s (1-2-3-4, 2-3-4-5…)</option>
+          </select>
+        </label>
+        <label>Notes
+          <select id="sc-value">
+            <option value="4">Quarters</option>
+            <option value="8" selected>Eighths</option>
+            <option value="16">Sixteenths</option>
+          </select>
+        </label>
+        <label>Tempo <input id="sc-tempo" type="number" min="30" max="260" value="80"> BPM</label>
+        <button id="sc-play" class="primary">Practice in player</button>
+      </div>
+    </section>
   </main>
 
   <!-- TOOLS -->

@@ -7,10 +7,12 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
+import { initScales, renderScales } from './scales.js';
+import { initQuickImport } from './quickimport.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const VIEWS = ['library', 'player', 'text', 'tools', 'log'];
+const VIEWS = ['library', 'player', 'text', 'scales', 'tools', 'log'];
 let currentView = null;
 let editingId = null;
 
@@ -44,6 +46,7 @@ async function route() {
 
   if (view === 'library') renderLibrary();
   if (view === 'log') renderLog();
+  if (view === 'scales') renderScales();
   if (view === 'player') openPlayer(song);
   if (view === 'text') openText(song);
   if (view !== 'text') window.scrollTo(0, 0);
@@ -109,7 +112,7 @@ function readScoreInfo(bytes) {
   }
 }
 
-async function importFiles(files) {
+async function importFiles(files, { quietIfEmpty = false } = {}) {
   let added = 0;
   const failed = [];
   for (const file of files) {
@@ -136,7 +139,9 @@ async function importFiles(files) {
   if (added) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
   if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
+  else if (!quietIfEmpty) toast('Nothing to import.');
   renderLibrary();
+  return { added, failed };
 }
 
 function initImport() {
@@ -157,12 +162,13 @@ function initImport() {
 
 /* ---------- text tab editor ---------- */
 
-function openEditor(song) {
+// song: an existing text song to edit, or null for a new one; prefill: initial text for a new one.
+function openEditor(song, prefill = {}) {
   editingId = song?.id ?? null;
   $('tab-dialog-title').textContent = song ? 'Edit text tab' : 'Paste text tab';
-  $('tf-title').value = song?.title || '';
-  $('tf-artist').value = song?.artist || '';
-  $('tf-body').value = song?.data || '';
+  $('tf-title').value = song?.title || prefill.title || '';
+  $('tf-artist').value = song?.artist || prefill.artist || '';
+  $('tf-body').value = song?.data || prefill.data || '';
   $('tab-dialog').showModal();
 }
 
@@ -219,6 +225,8 @@ async function main() {
   initImport();
   initEditor();
   initFind();
+  initScales();
+  initQuickImport({ importFiles, openEditor, toast });
   $('library-list').addEventListener('click', onLibraryClick);
   $('lib-filter').addEventListener('input', renderLibrary);
   window.addEventListener('hashchange', route);
