@@ -12,7 +12,15 @@
 </head>
 <body>
   <header class="topbar">
+    <button id="menu-btn" class="icon-btn" aria-label="Library and setlists" title="Library and setlists">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
     <a class="brand" href="#library">Fretboard</a>
+    <div class="search">
+      <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="song-search" type="search" placeholder="Search your songs  ( / )" autocomplete="off" aria-label="Search your songs">
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
     <nav class="nav">
       <a href="#library" data-nav="library">Library</a>
       <a href="#scales" data-nav="scales">Scales</a>
@@ -22,6 +30,20 @@
     </nav>
     <button id="amp-top" class="small ghost amp-top" hidden title="The amp keeps running in other views">Amp on · turn off</button>
   </header>
+
+  <!-- ☰ drawer: library and setlists from anywhere -->
+  <div id="drawer-scrim" class="drawer-scrim"></div>
+  <aside id="drawer" class="drawer" aria-hidden="true" aria-label="Library and setlists">
+    <div class="drawer-head">
+      <div class="seg">
+        <button data-dr-tab="songs" class="on">Songs</button>
+        <button data-dr-tab="setlists">Setlists</button>
+      </div>
+      <button id="dr-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <input id="dr-search" type="search" placeholder="Filter songs" autocomplete="off">
+    <div id="dr-body" class="drawer-body"></div>
+  </aside>
 
   <!-- LIBRARY -->
   <main id="view-library" class="view">
@@ -57,18 +79,32 @@
   <!-- PLAYER -->
   <main id="view-player" class="view player-view" hidden>
     <div class="player-head">
-      <h1 id="pl-title">—</h1>
-      <span id="pl-artist" class="muted"></span>
+      <div class="player-title">
+        <h1 id="pl-title">—</h1>
+        <span id="pl-artist" class="muted"></span>
+        <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the recording">● Recording</span>
+      </div>
       <span id="pl-info" class="muted small-text"></span>
+      <div id="pl-setlist" class="setlist-nav" hidden>
+        <button id="pl-prev-song" class="ghost small" title="Previous song in the setlist">‹ Prev</button>
+        <span id="pl-setlist-name" class="small-text"></span>
+        <button id="pl-next-song" class="ghost small" title="Next song in the setlist">Next ›</button>
+        <button id="pl-setlist-leave" class="ghost small" title="Stop playing through this setlist">✕</button>
+      </div>
       <div id="pl-from-text" class="muted small-text" hidden>
         Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
       </div>
-      <div id="pl-notab" class="muted small-text" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track below.</div>
+      <div id="pl-notab" class="muted small-text" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track in Tracks.</div>
     </div>
 
     <div id="pl-loading" class="loading">Loading score…</div>
     <div id="score-scroll" class="score-scroll">
       <div id="alphatab"></div>
+    </div>
+    <div id="count-overlay" class="count-overlay" hidden aria-live="polite"></div>
+    <div id="pa-video" class="pa-video" hidden>
+      <div class="pa-video-bar"><span class="small-text">Recording</span><button id="pa-video-hide" class="ghost small" title="Smaller / bigger">⤡</button></div>
+      <div class="pa-video-frame"></div>
     </div>
 
     <!-- Everything about playback lives in the bar at the bottom; the buttons on its right
@@ -108,25 +144,90 @@
           </div>
           <p class="muted small-text keys-hint">
             <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
-            <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> speed · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>M</kbd> click · <kbd>Esc</kbd> close panel / clear selection
+            <kbd>↑</kbd> <kbd>↓</kbd> previous/next line · <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> tempo −/+ 5 BPM · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>B</kbd> click ·
+            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> recording on/off · <kbd>T</kbd> tap sync · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
           </p>
         </section>
 
-        <section class="sheet" data-sheet="trainer" hidden>
-          <div class="sheet-head"><h2>Speed trainer</h2><button class="ghost small" data-close>Close</button></div>
-          <p class="muted small-text">Select bars to loop (drag across the tab), then start. The tempo rises after every few clean loops.</p>
+        <section class="sheet" data-sheet="speed" hidden>
+          <div class="sheet-head"><h2>Speed</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">Changes the tempo only: the pitch stays the same, for the synth and for recordings.</p>
+          <div class="row">
+            <input id="pl-speed" class="wide-range" type="range" min="25" max="200" step="1" value="100" aria-label="Speed">
+            <span id="pl-speed-val" class="muted small-text"></span>
+          </div>
+          <div class="row chips">
+            <button class="chip" data-speed="50">50%</button><button class="chip" data-speed="60">60%</button>
+            <button class="chip" data-speed="70">70%</button><button class="chip" data-speed="75">75%</button>
+            <button class="chip" data-speed="80">80%</button><button class="chip" data-speed="90">90%</button>
+            <button class="chip" data-speed="100">100%</button><button class="chip" data-speed="110">110%</button>
+            <button class="chip" data-speed="125">125%</button>
+          </div>
+          <h3>Speed trainer</h3>
+          <p class="muted small-text">Select bars to loop (drag across the tab), then start. The tempo rises after every few loops.</p>
           <div class="row trainer">
-            <label>Start <input id="tr-start" type="number" min="25" max="150" value="60">%</label>
-            <label>Target <input id="tr-target" type="number" min="25" max="150" value="100">%</label>
+            <label>Start <input id="tr-start" type="number" min="25" max="200" value="60">%</label>
+            <label>Target <input id="tr-target" type="number" min="25" max="200" value="100">%</label>
             <label>Step <input id="tr-step" type="number" min="1" max="25" value="5">%</label>
             <label>Every <input id="tr-every" type="number" min="1" max="20" value="2"> loops</label>
             <button id="tr-go" class="primary">Start trainer</button>
           </div>
         </section>
 
+        <section class="sheet" data-sheet="click" hidden>
+          <div class="sheet-head"><h2>Click &amp; count-in</h2><button class="ghost small" data-close>Close</button></div>
+          <h3>Click</h3>
+          <div class="row">
+            <label>Sound <select id="ck-sound"></select></label>
+            <label>Notes <select id="ck-sub"></select></label>
+            <label class="toggle"><input id="ck-accent" type="checkbox"> Accent beat 1</label>
+            <label>Volume <input id="ck-vol" type="range" min="0" max="150" step="1"> <span id="ck-vol-val" class="mono small-text"></span></label>
+          </div>
+          <h3>Count-in</h3>
+          <div class="row">
+            <label>Sound <select id="ci-sound"></select></label>
+            <label>Length <select id="ci-bars"></select></label>
+            <label>Notes <select id="ci-sub"></select></label>
+            <label>Volume <input id="ci-vol" type="range" min="0" max="150" step="1"> <span id="ci-vol-val" class="mono small-text"></span></label>
+            <button id="ci-preview" class="ghost small">▶ Hear it</button>
+          </div>
+          <p class="muted small-text">The count-in plays every time you start, and when you click a new spot in the tab while it plays. <kbd>C</kbd> count-in on/off · <kbd>B</kbd> click on/off.</p>
+        </section>
+
         <section class="sheet" data-sheet="mixer" hidden>
-          <div class="sheet-head"><h2>Tracks</h2><button class="ghost small" data-close>Close</button></div>
-          <div id="mixer-list"></div>
+          <div class="sheet-head"><h2>Tracks</h2><span class="row"><button id="pl-mix-reset" class="ghost small" hidden>Reset mix</button><button class="ghost small" data-close>Close</button></span></div>
+          <p id="pl-mixer-note" class="muted small-text"></p>
+          <div id="mixer-list" class="mixer"></div>
+          <p class="muted small-text"><kbd>M</kbd> mute and <kbd>S</kbd> solo the track you're looking at.</p>
+        </section>
+
+        <section class="sheet" data-sheet="playalong" hidden>
+          <div class="sheet-head"><h2>Play along with the recording</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">Play the real recording instead of the synth; the tab follows it, at any speed without changing pitch. Use your own audio file (MP3, M4A, WAV…) or a YouTube link.</p>
+          <div class="row">
+            <label class="button">Audio file…<input id="pa-file" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" hidden></label>
+            <form id="pa-yt-form" class="row"><input id="pa-yt-url" placeholder="YouTube link" autocomplete="off"><button class="ghost">Use video</button></form>
+          </div>
+          <div class="row">
+            <span id="pa-source" class="muted"></span>
+            <button id="pa-remove" class="ghost small danger" hidden>Remove</button>
+            <label class="toggle"><input id="pa-on" type="checkbox"> Play the recording (<kbd>R</kbd>)</label>
+          </div>
+          <p id="pa-error" class="amp-error"></p>
+          <h3>Line the tab up with the recording</h3>
+          <p class="muted small-text">Play it, and tap <kbd>T</kbd> (or the button) on beat 1 of every bar as you hear it, for as long as you like; pause to save. Untapped parts follow the written tempo from the last tap.</p>
+          <div class="row">
+            <button id="pa-tap" class="primary">Tap beat 1 (T)</button>
+            <span id="pa-tap-state" class="small-text"></span>
+          </div>
+          <div class="row">
+            <span id="pa-sync-state" class="muted small-text"></span>
+            <span class="row">Nudge
+              <button class="ghost small" data-nudge="-50">−50 ms</button><button class="ghost small" data-nudge="-10">−10</button>
+              <button class="ghost small" data-nudge="10">+10</button><button class="ghost small" data-nudge="50">+50 ms</button></span>
+            <button id="pa-clear" class="ghost small">Reset sync</button>
+          </div>
+          <p id="pa-rate-note" class="muted small-text"></p>
         </section>
 
         <section class="sheet" data-sheet="sound" hidden>
@@ -154,6 +255,7 @@
                 <option value="mix">Both</option>
               </select>
             </label>
+            <label title="Send the amp straight to your interface's headphone output (lowest delay)">Output <select id="amp-output"></select></label>
             <button id="amp-go" class="primary">Turn amp on</button>
           </div>
           <div class="row amp-status">
@@ -162,6 +264,16 @@
             <span id="amp-latency" class="muted small-text"></span>
           </div>
           <p id="amp-error" class="amp-error"></p>
+          <details class="amp-tips small-text">
+            <summary>Less delay (MiniFuse, Focusrite, Behringer…)</summary>
+            <ul>
+              <li>Set <b>Output</b> to the interface itself, not "Default", and listen on the interface's headphone jack.</li>
+              <li>Turn the interface's <b>direct monitor</b> off (MiniFuse: the Monitor knob fully to the PC/playback side), or you hear your dry guitar on top of the amp.</li>
+              <li>In Windows sound settings, set the interface's input and output to the same rate, <b>48000 Hz</b>, and turn off "audio enhancements".</li>
+              <li>Close other apps that use the interface, and keep the laptop plugged in.</li>
+              <li>A browser can't use ASIO drivers, so expect roughly 15–30 ms in total. For studio-tight timing (under 10 ms), use the interface's direct monitor with an ASIO amp plugin, and keep Fretboard for the tab and backing.</li>
+            </ul>
+          </details>
 
           <div class="row">
             <label>Tone <select id="amp-preset"></select></label>
@@ -222,31 +334,43 @@
       <div class="playbar">
         <input id="pl-seek" class="seek" type="range" min="0" max="1000" value="0" step="1" title="Song position (click to jump)">
         <div class="playbar-row">
-          <button id="pl-play" class="primary big" disabled title="Play / pause (Space). With Count-in on, every start counts you in.">Loading…</button>
-          <button id="pl-stop" class="ghost" title="Stop">■</button>
-          <span id="pl-time" class="mono muted">0:00 / 0:00</span>
+          <div class="transport">
+            <button id="pl-back" class="icon-btn" title="Back to start (Home)" aria-label="Back to start"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 5v14M19 5L9 12l10 7z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+            <button id="pl-play" class="play-btn" disabled aria-label="Play" title="Loading sounds…">
+              <svg class="i-play" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5l12 7-12 7z" fill="currentColor"/></svg>
+              <svg class="i-pause" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>
+            </button>
+            <button id="pl-stop" class="icon-btn" title="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
+            <span id="pl-time" class="mono muted small-text">0:00 / 0:00</span>
+          </div>
           <div id="pl-chord" class="chord-now" title="Chord now → next" hidden><b id="pl-chord-now">–</b><span id="pl-chord-next" class="muted"></span></div>
           <div id="sg-live" class="sing-now" hidden title="Singing mode: the written note and how you're singing it (click for the score)">
             <canvas id="sg-lane" class="sing-lane"></canvas>
             <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
           </div>
-          <div class="speed">
-            <button id="pl-slower" class="ghost small" title="Slower ([)">−</button>
-            <input id="pl-speed" type="range" min="25" max="150" step="1" value="100" title="Speed">
-            <button id="pl-faster" class="ghost small" title="Faster (])">+</button>
-            <span id="pl-speed-val" class="pill">100%</span>
-            <span id="pl-bpm" class="muted small-text"></span>
+          <div class="speed" title="Tempo. Type a BPM, or − / + ( [ ] ) for 5 BPM steps. Pitch never changes.">
+            <button id="pl-slower" class="icon-btn small" aria-label="Slower">−</button>
+            <label class="bpm"><input id="pl-bpm-input" type="number" min="10" max="400" step="1" inputmode="numeric" aria-label="Tempo in BPM"><span>BPM</span></label>
+            <button id="pl-faster" class="icon-btn small" aria-label="Faster">+</button>
+            <button id="pl-speed-pct" class="pill-btn" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
+            <span id="pl-tempo-now" class="muted small-text"></span>
           </div>
-          <label class="toggle" title="Loop the selected bars (L). Drag across the tab to select."><input id="pl-loop" type="checkbox"> Loop</label>
-          <button id="pl-clear-sel" class="ghost small" title="Clear the bar selection (Esc)">Clear</button>
-          <label class="toggle" title="Count-in (C)"><input id="pl-countin" type="checkbox"> Count-in</label>
-          <label class="toggle" title="Click track (M)"><input id="pl-metro" type="checkbox"> Click</label>
+          <div class="toggles">
+            <button id="pl-loop" class="tog" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
+            <button id="pl-clear-sel" class="icon-btn small" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
+            <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
+            <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
+            <button id="pa-toggle" class="tog rec" title="Play along with the recording (R)">● Rec</button>
+          </div>
           <span id="tr-status" class="muted small-text"></span>
           <div class="playbar-end">
-            <select id="pl-track" title="Track shown in the tab"></select>
+            <div class="track-chip">
+              <button id="pl-track-btn" class="track-btn" data-sheet-btn="mixer" title="Tracks: pick, mute, solo, volume"><span id="pl-track-icon"></span><span id="pl-track-name">Tracks</span><span class="caret">▾</span></button>
+              <button id="pl-mute" class="ms" title="Mute this track (M)">M</button>
+              <button id="pl-solo" class="ms solo" title="Solo this track (S)">S</button>
+            </div>
             <div class="sheet-btns">
-              <button class="ghost small" data-sheet-btn="trainer">Trainer</button>
-              <button class="ghost small" data-sheet-btn="mixer">Tracks</button>
+              <button class="ghost small" data-sheet-btn="playalong">Recording</button>
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>

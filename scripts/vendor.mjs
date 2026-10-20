@@ -1,6 +1,6 @@
 // Copies alphaTab's browser build (script, fonts, soundfont) into vendor/ so the
 // app can be served as plain static files (local server or GitHub Pages).
-import { cpSync, rmSync, existsSync } from 'node:fs';
+import { cpSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -18,4 +18,8 @@ rmSync(dest, { recursive: true, force: true });
 const keep = ['alphaTab.js', 'font/Bravura.woff2', 'font/Bravura.woff', 'font/Bravura.otf', 'font/Bravura-OFL.txt',
   'soundfont/sonivox.sf2', 'soundfont/LICENSE'];
 for (const file of keep) cpSync(join(src, file), join(dest, file));
+// alphaTab 1.8.4 bug: the worker player's loadedMidiInfo getter returns itself (endless
+// recursion, thrown whenever something subscribes to midiLoaded). Point it at the field.
+const script = join(dest, 'alphaTab.js');
+writeFileSync(script, readFileSync(script, 'utf8').replace('return this.loadedMidiInfo;', 'return this._loadedMidiInfo;'));
 console.log('alphaTab copied to vendor/alphatab');

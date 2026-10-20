@@ -10,6 +10,7 @@ import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
 import { initQuickImport } from './quickimport.js';
 import { initKeys, renderKeys } from './keys.js';
+import { initDrawer } from './drawer.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -253,6 +254,7 @@ async function main() {
   initFind();
   initScales();
   initKeys();
+  initDrawer();
   initQuickImport({ importFiles, openEditor, toast });
   $('library-list').addEventListener('click', onLibraryClick);
   $('lib-filter').addEventListener('input', renderLibrary);

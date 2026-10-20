@@ -6,6 +6,8 @@ import {
   noteAt, progressionChords, PROGRESSIONS, spellScale, splitChord,
 } from './chordshapes.js';
 import { strum, pluckNote, beep } from './pluck.js';
+import { backingTex, STYLES } from './backing.js';
+import { listSongs, putSong, updateSong } from './db.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -14,7 +16,7 @@ const PREFS_KEY = 'fretboard-keys-prefs';
 const DRILL_KEY = 'fretboard-chord-changes';
 const FLAT_ROOTS = [1, 3, 5, 8, 10];
 
-let prefs = { key: 'G', sevenths: false, chord: 0, cfRoot: 0, cfType: '', ccA: 'C', ccB: 'G', ccLen: 60, fnRange: '0-12', fnNaturals: true, fnSound: true, tempo: 90 };
+let prefs = { key: 'G', sevenths: false, chord: 0, cfRoot: 0, cfType: '', ccA: 'C', ccB: 'G', ccLen: 60, fnRange: '0-12', fnNaturals: true, fnSound: true, tempo: 90, style: 'pop' };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch { /* ignore */ }
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
 
@@ -130,10 +132,27 @@ function renderKeyInfo() {
     </div>
     <p class="small-text muted">Next-door keys (one sharp or flat apart): ${near.map(pretty).join(', ')}. Songs often borrow chords from them.</p>
     <div class="row spread"><b>Common progressions</b>
-      <label class="small-text">Tempo <input type="number" id="key-tempo" min="40" max="200" value="${prefs.tempo}"> BPM</label></div>
+      <span class="row small-text"><label>Tempo <input type="number" id="key-tempo" min="40" max="200" value="${prefs.tempo}"> BPM</label>
+      <label>Backing <select id="key-style">${Object.entries(STYLES).map(([k, st]) => `<option value="${k}"${k === prefs.style ? ' selected' : ''}>${st.label}</option>`).join('')}</select></label></span></div>
     <ul class="progressions">${progs.map(({ p, n, chords: cs }) => `
       <li><button class="small" data-prog="${n}" title="Play">▶</button>
-      <span><span class="muted small-text">${escape(p.name)}</span><br>${cs.map((c, j) => `<span class="prog-chord" data-j="${j}">${pretty(c.name)}</span>`).join(' ')}</span></li>`).join('')}</ul>`;
+      <span class="grow"><span class="muted small-text">${escape(p.name)}</span><br>${cs.map((c, j) => `<span class="prog-chord" data-j="${j}">${pretty(c.name)}</span>`).join(' ')}</span>
+      <button class="ghost small" data-backing="${n}" title="Open as a backing track (drums, bass, guitar) to play along and loop">Backing track</button></li>`).join('')}</ul>
+    <p class="small-text muted">Backing track opens the progression in the player with drums, bass and rhythm guitar at your tempo and style, so you can jam over it, loop it and mute parts.</p>`;
+}
+
+// The progression as a song with drums, bass and guitar; reuses the library entry of the same title.
+async function openBacking(n) {
+  const prog = PROGRESSIONS[n];
+  const chords = progressionChords(prog, prefs.key);
+  const style = STYLES[prefs.style] ? prefs.style : 'pop';
+  const title = `${pretty(prefs.key.replace(/m$/, ' minor'))} – ${prog.name.replace(/ \(.*\)$/, '')} (${STYLES[style].label})`;
+  const data = backingTex({ title, chords, style, tempo: prefs.tempo, repeats: chords.length >= 8 ? 2 : 4 });
+  const existing = (await listSongs()).find((s) => s.kind === 'tex' && s.title === title);
+  let id;
+  if (existing) { id = existing.id; await updateSong(id, { data }); }
+  else id = await putSong({ kind: 'tex', title, artist: 'Backing track', data, added: Date.now() });
+  location.hash = `song/${id}`;
 }
 
 let progTimer = null;
@@ -173,11 +192,14 @@ function initCircle() {
       if (v) strum(v.frets);
       return;
     }
+    const back = e.target.closest('[data-backing]');
+    if (back) { clearTimeout(progTimer); openBacking(Number(back.dataset.backing)); return; }
     const prog = e.target.closest('[data-prog]');
     if (prog) playProgression(Number(prog.dataset.prog), prog.closest('li'));
   });
   $('key-info').addEventListener('change', (e) => {
     if (e.target.id === 'key-sevenths') { prefs.sevenths = e.target.checked; savePrefs(); renderKeyInfo(); }
+    if (e.target.id === 'key-style') { prefs.style = e.target.value; savePrefs(); }
     if (e.target.id === 'key-tempo') { prefs.tempo = Math.max(40, Math.min(200, Number(e.target.value) || 90)); savePrefs(); }
   });
   drawCircle();

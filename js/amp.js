@@ -17,6 +17,7 @@ let source = null; // MediaStreamAudioSourceNode or the demo riff's output
 let demo = null;
 let running = false;
 let meterRaf = 0;
+let inputRate = 0; // the input stream's sample rate, to spot resampling
 
 let userPresets = [];
 let presetId = BUILT_IN_PRESETS[0].id;
@@ -32,7 +33,9 @@ const findPreset = (id) => allPresets().find((p) => p.id === id);
 
 async function ensureGraph() {
   if (graph) return graph;
-  ctx = new AudioContext({ latencyHint: 'interactive' });
+  // latencyHint 0 asks for the smallest buffer the browser allows (it clamps it to its own minimum).
+  try { ctx = new AudioContext({ latencyHint: 0 }); } catch { ctx = new AudioContext({ latencyHint: 'interactive' }); }
+  await applyOutput();
   const g = {};
   const node = (fn, props = {}) => Object.assign(fn(), props);
   const filter = (type, freq, q = 0.7) => {
@@ -164,7 +167,21 @@ function applyChannel() {
   graph.right.gain.value = ch === 'left' ? 0 : ch === 'mix' ? 0.5 : 1;
 }
 
-/* ---------- inputs ---------- */
+/* ---------- inputs and outputs ---------- */
+
+const canPickOutput = () => typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+
+// Sending the amp straight to the interface's own outputs (not "Default") keeps input and
+// output on one clock: no resampling and no drift buffer, so less delay.
+async function applyOutput() {
+  if (!ctx || !canPickOutput()) return;
+  const id = $('amp-output').value;
+  try {
+    if ((ctx.sinkId || '') !== id) await ctx.setSinkId(id);
+  } catch (e) {
+    $('amp-error').textContent = 'Could not use that output: ' + (e?.message || e);
+  }
+}
 
 function detachSource() {
   stopDemo();
@@ -190,6 +207,7 @@ async function start() {
       },
     });
     source = ctx.createMediaStreamSource(stream);
+    inputRate = stream.getAudioTracks()[0]?.getSettings?.().sampleRate || 0;
     listDevices(); // labels only become available after permission is granted
   }
   source.connect(g.splitter);
@@ -211,14 +229,27 @@ function stop() {
 async function listDevices() {
   const select = $('amp-device');
   const keep = select.value;
-  let inputs = [];
-  try { inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch { /* no permission API */ }
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch { /* no permission API */ }
+  const inputs = devices.filter((d) => d.kind === 'audioinput');
+  listOutputs(devices.filter((d) => d.kind === 'audiooutput'));
   select.innerHTML = '';
   select.add(new Option('Default input', ''));
   inputs.filter((d) => d.deviceId && d.deviceId !== 'default').forEach((d, i) => select.add(new Option(d.label || `Input ${i + 1}`, d.deviceId)));
   select.add(new Option('Demo riff (no guitar — preview tones)', 'demo'));
   const saved = keep || localStorage.getItem('fretboard-amp-device') || '';
   select.value = [...select.options].some((o) => o.value === saved) ? saved : '';
+}
+
+function listOutputs(outputs) {
+  const select = $('amp-output');
+  select.closest('label').hidden = !canPickOutput();
+  const keep = select.value || localStorage.getItem('fretboard-amp-output') || '';
+  select.innerHTML = '';
+  select.add(new Option('Default output', ''));
+  outputs.filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+    .forEach((d, i) => select.add(new Option(d.label || `Output ${i + 1}`, d.deviceId)));
+  select.value = [...select.options].some((o) => o.value === keep) ? keep : '';
 }
 
 // A synthesized "DI guitar" riff so tones can be heard without a guitar plugged in.
@@ -280,8 +311,11 @@ function showLatency() {
   const inputLatency = stream?.getAudioTracks()[0]?.getSettings?.().latency || 0;
   const out = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
   const total = Math.round((out + inputLatency) * 1000);
-  $('amp-latency').textContent = `Latency ≈ ${total} ms (output ${Math.round(out * 1000)} ms${inputLatency ? `, input ${Math.round(inputLatency * 1000)} ms` : ''})`
-    + (total > 25 ? ' — high; an audio interface with ASIO/low-latency drivers helps' : '');
+  const rates = inputRate && inputRate !== ctx.sampleRate
+    ? ` · input ${inputRate / 1000} kHz but output ${ctx.sampleRate / 1000} kHz: set both to 48 kHz in Windows sound settings to skip resampling`
+    : '';
+  $('amp-latency').textContent = `Latency ≈ ${total} ms (output ${Math.round(out * 1000)} ms${inputLatency ? `, input ${Math.round(inputLatency * 1000)} ms` : ''})${rates}`
+    + (total > 25 && !rates ? ' — see the tips below to bring it down' : '');
 }
 
 function meterLoop() {
@@ -537,6 +571,14 @@ export async function initAmp(playerHooks = {}) {
         ? 'Microphone/input access was blocked. Allow it in the address bar, then try again.'
         : 'Could not start the amp: ' + (e?.message || e);
     }
+  });
+  $('amp-output').closest('label').hidden = !canPickOutput();
+  $('amp-output').add(new Option('Default output', ''));
+  $('amp-output').addEventListener('change', async () => {
+    try { localStorage.setItem('fretboard-amp-output', $('amp-output').value); } catch { /* ignore */ }
+    $('amp-error').textContent = '';
+    await applyOutput();
+    if (running) setTimeout(showLatency, 400);
   });
   $('amp-device').addEventListener('change', () => {
     try { localStorage.setItem('fretboard-amp-device', $('amp-device').value); } catch { /* ignore */ }

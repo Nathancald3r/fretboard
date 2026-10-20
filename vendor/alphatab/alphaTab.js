@@ -33574,7 +33574,7 @@
 			});
 		}
 		get loadedMidiInfo() {
-			return this.loadedMidiInfo;
+			return this._loadedMidiInfo;
 		}
 		get currentPosition() {
 			return this._currentPosition;

@@ -1,6 +1,6 @@
 // Guitar Pro / MusicXML / alphaTex player built on alphaTab:
-// playback, speed, A–B looping (drag-select bars), count-in, click, track mute/solo
-// and an automatic speed trainer.
+// playback, tempo, A–B looping (drag-select bars), count-in, click track, a track mixer
+// (show / mute / solo / volume), play-along with the recording and a speed trainer.
 import { updateSong, getValue, setValue } from './db.js';
 import { TONES, installTone, getTone, setTone } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
@@ -10,11 +10,19 @@ import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
 import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
 import { buildMelody } from './singcore.js';
+import {
+  CLICK_SOUNDS, COUNT_SOUNDS, SUBDIVISIONS, COUNT_LENGTHS, loadClickSettings, saveClickSettings, sanitize,
+  usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
+} from './click.js';
+import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, tapSync, toggleRecording } from './playalong.js';
+import { setlistContext, leaveSetlist } from './drawer.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
 const VENDOR = new URL('../vendor/alphatab/', import.meta.url).href;
 const PLAYING = 1;
+const MIN_SPEED = 25;
+const MAX_SPEED = 200;
 
 let api = null;
 let song = null;
@@ -30,6 +38,8 @@ let customSoundFont = null; // { name, data: ArrayBuffer }
 const customSoundFontReady = getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
 
 const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING });
+
+let click = loadClickSettings();
 
 function ensureApi() {
   if (api) return api;
@@ -48,13 +58,11 @@ function ensureApi() {
   });
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
-  // Browsers can restore checkbox state on reload; make the player match what's shown.
-  api.countInVolume = $('pl-countin').checked ? 1 : 0;
-  api.metronomeVolume = $('pl-metro').checked ? 1 : 0;
+  applyClickVolume();
 
   api.scoreLoaded.on((s) => {
     score = s;
-    baseTempo = s.masterBars[0]?.tempoAutomations?.[0]?.value || 120;
+    baseTempo = s.masterBars[0]?.tempoAutomations?.[0]?.value || s.tempo || 120;
     $('pl-title').textContent = s.title || song?.title || 'Untitled';
     $('pl-artist').textContent = s.artist || song?.artist || '';
     buildTrackControls();
@@ -72,31 +80,61 @@ function ensureApi() {
     setPlayButton();
   });
   api.soundFontLoad.on((e) => {
-    if (!readyForPlayback) $('pl-play').textContent = `Sound ${Math.round((e.loaded / e.total) * 100)}%`;
+    if (!readyForPlayback) $('pl-play').title = `Loading sounds ${Math.round((e.loaded / e.total) * 100)}%`;
   });
+  // The click is written into the song's MIDI on a channel of its own.
+  api.midiLoad.on(addClickTrack);
+  // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
+  // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
+  try {
+    api.midiLoaded.on(() => {
+      applyMix();
+      applyClickVolume();
+      playAlongScoreReady();
+    });
+  } catch { /* see above */ }
   api.playerStateChanged.on((e) => {
     setPlayButton();
     if (e?.stopped) singStopped();
+    playAlongState2(e.state === PLAYING);
+    if (e.state === PLAYING) measureLag.start();
   });
   api.playerPositionChanged.on(onPosition);
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
   api.playerFinished.on(() => {
     singFinished(api.isLooping);
     if (api.isLooping) onLoopCompleted();
+    else if (!recordingOn()) nextInSetlistHint();
   });
   api.playbackRangeChanged?.on(() => {
     // A new selection restarts the trainer's loop count.
     trainer.loops = 0;
     updateTrainerStatus();
   });
+  // Clicking the tab while it plays: jump there with a count-in (if it's on).
+  api.beatMouseDown.on(() => {
+    clickResume = api.playerState === PLAYING && countInOn() ? 'pending' : null;
+    if (clickResume) api.pause();
+  });
+  api.beatMouseUp.on((beat) => {
+    if (clickResume !== 'pending') return;
+    clickResume = null;
+    const range = api.playbackRange;
+    const tick = range ? range.startTick : api.tickCache?.getBeatStart(beat) ?? api.tickPosition;
+    moveTo(tick, true);
+  });
   return api;
 }
+let clickResume = null;
 
 function setPlayButton() {
   const btn = $('pl-play');
   btn.disabled = !readyForPlayback;
-  if (!readyForPlayback) return;
-  btn.textContent = api.playerState === PLAYING ? 'Pause' : 'Play';
+  const playing = api?.playerState === PLAYING || counting;
+  btn.classList.toggle('playing', playing);
+  btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  btn.title = playing ? 'Pause (Space)' : 'Play (Space)';
+  if (!readyForPlayback) btn.title = 'Loading sounds…';
 }
 
 let endTime = 0;
@@ -107,7 +145,200 @@ function onPosition(e) {
   $('pl-time').textContent = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
   if (!seeking) $('pl-seek').value = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
   showChordAt(e.currentTick);
+  showTempoAt(e.currentTick);
+  measureLag.position(e.currentTime);
   singPosition(e);
+}
+
+/* ---------- count-in ---------- */
+
+// How long alphaTab takes from play() to sound, measured on every start (seconds).
+// Used to start the song early by that much so it lands right after the count-in.
+const measureLag = {
+  key: () => 'fretboard-lag-' + (recordingOn() ? 'media' : 'synth'),
+  value() {
+    try { return Number(localStorage.getItem(this.key())) || (recordingOn() ? 0.15 : 0.12); } catch { return 0.12; }
+  },
+  calledAt: 0,
+  from: 0,
+  armed: false,
+  // Called right before api.play().
+  arm() { this.calledAt = performance.now(); this.from = api.timePosition; this.armed = 'wait'; },
+  start() { if (this.armed === 'wait') this.armed = true; },
+  position(ms) {
+    if (this.armed !== true) return;
+    const played = (ms - this.from) / (api.playbackSpeed || 1);
+    if (played < 30) return;
+    this.armed = false;
+    if (played > 1500) return;
+    const lag = (performance.now() - played - this.calledAt) / 1000;
+    if (lag < 0 || lag > 1) return;
+    const old = this.value();
+    try { localStorage.setItem(this.key(), (old * 0.6 + lag * 0.4).toFixed(3)); } catch { /* ignore */ }
+  },
+};
+
+let counting = null; // cancel function while a count-in runs
+
+const countInOn = () => $('pl-countin').classList.contains('on');
+
+function currentBarLookup() {
+  const bars = playedBars();
+  return bars[currentBarIndex()] || bars[0];
+}
+
+// Starts playback from the current position, with the count-in if it's on.
+function startPlayback() {
+  if (!api || !readyForPlayback || counting) return;
+  if (!countInOn() || usesClassicCountIn(click)) {
+    api.countInVolume = countInOn() && !recordingOn() ? click.countVolume : 0;
+    api.play();
+    return;
+  }
+  api.countInVolume = 0;
+  const bar = currentBarLookup();
+  const mb = bar?.masterBar;
+  const den = mb?.timeSignatureDenominator || 4;
+  const num = mb?.timeSignatureNumerator || 4;
+  const tempo = bar?.tempo || baseTempo;
+  const beatSeconds = (60 / (tempo * api.playbackSpeed)) * (4 / den);
+  showCount('');
+  counting = runCountIn({
+    settings: click, num, den, beatSeconds, lag: measureLag.value(),
+    onBeat: showCount,
+    start: () => {
+      counting = null;
+      measureLag.arm();
+      api.play();
+      setTimeout(() => showCount(null), 150);
+    },
+  });
+  setPlayButton();
+}
+
+function cancelCountIn() {
+  if (!counting) return false;
+  counting();
+  counting = null;
+  showCount(null);
+  setPlayButton();
+  return true;
+}
+
+function showCount(n) {
+  const el = $('count-overlay');
+  el.hidden = n === null;
+  if (n !== null) {
+    el.textContent = n || '';
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    if (n) el.classList.add('pop');
+  }
+}
+
+/* ---------- click track ---------- */
+
+let clickChannel = -1;
+const clickTrack = () => ({ playbackInfo: { primaryChannel: clickChannel, secondaryChannel: clickChannel } });
+const clickOn = () => $('pl-metro').classList.contains('on');
+
+function addClickTrack(midiFile) {
+  clickChannel = -1;
+  const sound = CLICK_SOUNDS[click.sound];
+  if (!sound || sound.program < 0 || !api.tickCache) return;
+  let maxChannel = 0;
+  for (const t of midiFile.tracks) for (const e of t.events) if (typeof e.channel === 'number') maxChannel = Math.max(maxChannel, e.channel);
+  const ch = maxChannel + 1;
+  const bars = api.tickCache.masterBars.map((b) => ({ start: b.start, end: b.end, num: b.masterBar.timeSignatureNumerator, den: b.masterBar.timeSignatureDenominator }));
+  const M = AT.midi;
+  const mine = [new M.ProgramChangeEvent(0, 0, ch, sound.program), new M.ControlChangeEvent(0, 0, ch, 7, 127), new M.ControlChangeEvent(0, 0, ch, 10, 64)];
+  const velocity = [127, 96, 64];
+  const length = sound.short ? 60 : 240;
+  for (const ev of clickEvents(bars, click)) {
+    const key = sound.keys[ev.level];
+    mine.push(new M.NoteOnEvent(0, ev.tick, ch, key, velocity[ev.level]));
+    mine.push(new M.NoteOffEvent(0, ev.tick + length, ch, key, 0));
+  }
+  if (midiFile.tracks.length === 1) {
+    const events = midiFile.tracks[0].events;
+    events.push(...mine);
+    events.sort((a, b) => a.tick - b.tick); // stable: keeps the order of same-tick events
+  } else {
+    mine.forEach((e) => midiFile.addEvent(e));
+  }
+  clickChannel = ch;
+}
+
+function applyClickVolume() {
+  if (!api) return;
+  const on = clickOn();
+  api.metronomeVolume = on && usesClassicClick(click) ? click.volume : 0;
+  if (clickChannel >= 0) api.changeTrackVolume([clickTrack()], on ? click.volume : 0);
+}
+
+// Sound or rhythm changed: the click lives in the MIDI, so regenerate it (keeping the
+// position and whether it was playing).
+async function rebuildClick() {
+  if (!api || !score || !readyForPlayback) return;
+  const playing = api.playerState === PLAYING;
+  const tick = api.tickPosition;
+  if (playing) { api.pause(); await waitForPause(); }
+  api.loadMidiForScore();
+  api.tickPosition = tick;
+  if (playing) api.play();
+}
+
+function initClickSheet() {
+  const fill = (id, entries) => {
+    const s = $(id);
+    s.innerHTML = '';
+    const list = Object.entries(entries);
+    if (list.every(([k]) => !Number.isNaN(Number(k)))) list.sort((a, b) => a[0] - b[0]);
+    list.forEach(([k, v]) => s.add(new Option(v.label || v, k)));
+  };
+  fill('ck-sound', CLICK_SOUNDS);
+  fill('ck-sub', SUBDIVISIONS);
+  fill('ci-sound', COUNT_SOUNDS);
+  fill('ci-bars', COUNT_LENGTHS);
+  fill('ci-sub', SUBDIVISIONS);
+  const show = () => {
+    $('ck-sound').value = click.sound;
+    $('ck-sub').value = click.sub;
+    $('ck-sub').disabled = usesClassicClick(click);
+    $('ck-accent').checked = click.accent;
+    $('ck-vol').value = Math.round(click.volume * 100);
+    $('ck-vol-val').textContent = $('ck-vol').value + '%';
+    $('ci-sound').value = click.countSound;
+    $('ci-bars').value = click.countBars;
+    $('ci-sub').value = click.countSub;
+    $('ci-bars').disabled = $('ci-sub').disabled = usesClassicCountIn(click);
+    $('ci-vol').value = Math.round(click.countVolume * 100);
+    $('ci-vol-val').textContent = $('ci-vol').value + '%';
+  };
+  const change = (patch, rebuild) => {
+    click = sanitize({ ...click, ...patch });
+    saveClickSettings(click);
+    show();
+    applyClickVolume();
+    if (rebuild) rebuildClick();
+  };
+  $('ck-sound').addEventListener('change', (e) => change({ sound: e.target.value }, true));
+  $('ck-sub').addEventListener('change', (e) => change({ sub: Number(e.target.value) }, true));
+  $('ck-accent').addEventListener('change', (e) => change({ accent: e.target.checked }, true));
+  $('ck-vol').addEventListener('input', (e) => change({ volume: e.target.value / 100 }));
+  $('ci-sound').addEventListener('change', (e) => change({ countSound: e.target.value }));
+  $('ci-bars').addEventListener('change', (e) => change({ countBars: Number(e.target.value) }));
+  $('ci-sub').addEventListener('change', (e) => change({ countSub: Number(e.target.value) }));
+  $('ci-vol').addEventListener('input', (e) => change({ countVolume: e.target.value / 100 }));
+  $('ci-preview').addEventListener('click', () => previewSound(click.countSound, click.countVolume));
+  show();
+}
+
+function toggleButton(id, on) {
+  const b = $(id);
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('fretboard-' + id, on ? '1' : '0'); } catch { /* ignore */ }
 }
 
 /* ---------- chords ---------- */
@@ -199,27 +430,55 @@ function onLoopCompleted() {
 
 function updateTrainerStatus(message) {
   const el = $('tr-status');
-  document.querySelector('[data-sheet-btn=trainer]').classList.toggle('live', trainer.on);
+  document.querySelector('[data-sheet-btn=speed]').classList.toggle('live', trainer.on);
   if (message) { el.textContent = message; return; }
   if (!trainer.on) { el.textContent = ''; return; }
   const toNext = trainer.every - (trainer.loops % trainer.every);
   el.textContent = `Trainer: loop ${trainer.loops}, faster in ${toNext}`;
 }
 
+/* ---------- tempo ---------- */
+
+let speedPct = 100;
+
 function setSpeed(percent, save = true) {
-  percent = Math.max(25, Math.min(150, Math.round(percent)));
+  // Tenths of a percent, so a typed BPM comes out exact.
+  percent = Math.max(MIN_SPEED, Math.min(MAX_SPEED, Math.round(percent * 10) / 10));
+  speedPct = percent;
   if (api) api.playbackSpeed = percent / 100;
-  $('pl-speed').value = percent;
-  $('pl-speed-val').textContent = percent + '%';
-  timer.noteSpeed(percent);
+  $('pl-speed').value = Math.min(150, percent);
+  timer.noteSpeed(Math.round(percent));
   updateBpm();
   if (save && song) updateSong(song.id, { speed: percent });
 }
 
-function updateBpm() {
-  const pct = Number($('pl-speed').value);
-  $('pl-bpm').textContent = score ? `≈ ${Math.round((baseTempo * pct) / 100)} BPM` : '';
+// Tempo as BPM: the speed field shows and takes the song's tempo in BPM at this speed.
+function setBpm(bpm) {
+  setSpeed((bpm / baseTempo) * 100);
 }
+
+function updateBpm() {
+  const bpm = Math.round((baseTempo * speedPct) / 100);
+  if (document.activeElement !== $('pl-bpm-input')) $('pl-bpm-input').value = bpm;
+  const pct = Math.round(speedPct);
+  $('pl-speed-val').textContent = speedPct === 100 ? `original speed (${Math.round(baseTempo)} BPM)` : `${pct}% of ${Math.round(baseTempo)} BPM`;
+  $('pl-speed-pct').textContent = pct + '%';
+  $('pl-speed-pct').classList.toggle('changed', speedPct !== 100);
+  document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === speedPct));
+}
+
+// Songs that change tempo: show the tempo where the cursor is.
+let shownTempo = 0;
+function showTempoAt(tick) {
+  const bars = playedBars();
+  const bar = bars.find((b) => tick >= b.start && tick < b.end);
+  const t = bar?.tempo;
+  if (!t || t === shownTempo) return;
+  shownTempo = t;
+  $('pl-tempo-now').textContent = Math.abs(t - baseTempo) > 0.5 ? `here ${Math.round((t * speedPct) / 100)}` : '';
+}
+
+/* ---------- tracks ---------- */
 
 const hasTab = (track) => track.staves.some((st) => st.showTablature && st.tuning.length > 0);
 const isDrums = (track) => track.staves.some((st) => st.isPercussion);
@@ -230,8 +489,13 @@ function instrumentOf(track) {
   if (isDrums(track)) return 'Drums';
   if (program >= 24 && program <= 31) return 'Guitar';
   if (program >= 32 && program <= 39) return 'Bass';
+  if (program <= 7) return 'Piano';
+  if (isVocal(track)) return 'Vocals';
   return '';
 }
+
+const ICONS = { Guitar: '🎸', Bass: '🎸', Drums: '🥁', Piano: '🎹', Vocals: '🎤' };
+const iconOf = (track) => ICONS[instrumentOf(track)] || '🎵';
 
 function trackLabel(track, i) {
   if (track.name?.trim()) return track.name.trim();
@@ -239,59 +503,134 @@ function trackLabel(track, i) {
   return `Track ${i + 1}${kind ? ' · ' + kind : ''}`;
 }
 
-function buildTrackControls() {
-  const select = $('pl-track');
-  select.innerHTML = '';
-  score.tracks.forEach((t, i) => select.add(new Option(trackLabel(t, i) + (hasTab(t) ? '' : ' (no tab)'), i)));
-  select.value = trackIndex;
+// The mixer: per track mute / solo / volume (remembered per song). Solo is done by muting
+// the other tracks, so the click and count-in always stay audible.
+let mix = [];
 
+function defaultMix(sc) {
+  return sc.tracks.map(() => ({ mute: false, solo: false, volume: 1 }));
+}
+
+function loadMix(sc, saved) {
+  mix = defaultMix(sc);
+  if (Array.isArray(saved) && saved.length === sc.tracks.length) {
+    saved.forEach((m, i) => Object.assign(mix[i], { mute: !!m.mute, solo: !!m.solo, volume: Number.isFinite(m.volume) ? m.volume : 1 }));
+  }
+  // Files can be saved with tracks muted or soloed (a soloed track silences every other
+  // one). Start from what the mixer shows instead.
+  for (const t of sc.tracks) { t.playbackInfo.isMute = false; t.playbackInfo.isSolo = false; }
+}
+
+function saveMix() {
+  if (song) updateSong(song.id, { mix: mix.map((m) => ({ ...m })) });
+}
+
+// Muted for you to play or sing it (amp play-along, singing mode).
+const playAlongMuted = (i) => i === trackIndex && (playAlongState().muteGuitar || singWantsVocalMuted());
+
+function isAudible(i) {
+  const anySolo = mix.some((m) => m.solo);
+  return !mix[i].mute && !(anySolo && !mix[i].solo) && !playAlongMuted(i);
+}
+
+function applyMix() {
+  if (!api || !score) return;
+  score.tracks.forEach((t, i) => {
+    if (!mix[i]) return;
+    api.changeTrackMute([t], !isAudible(i));
+    api.changeTrackVolume([t], mix[i].volume);
+  });
+  showMix();
+}
+
+function buildTrackControls() {
+  if (mix.length !== score.tracks.length) loadMix(score, song?.mix);
   const list = $('mixer-list');
   list.innerHTML = '';
   score.tracks.forEach((track, i) => {
     const row = document.createElement('div');
     row.className = 'mixer-row';
-    row.innerHTML = `<span class="name"></span>
-      <button class="small ghost" data-act="mute">Mute</button>
-      <button class="small ghost" data-act="solo">Solo</button>`;
-    row.querySelector('.name').textContent = trackLabel(track, i);
-    row.addEventListener('click', (ev) => {
-      const btn = ev.target.closest('button');
-      if (!btn) return;
-      const on = !btn.classList.contains('on');
-      btn.classList.toggle('on', on);
-      if (btn.dataset.act === 'mute') api.changeTrackMute([track], on);
-      else api.changeTrackSolo([track], on);
-    });
+    row.dataset.i = i;
+    row.innerHTML = `<button class="track-name" data-act="show" title="Show this track in the tab"><span class="ticon"></span><span class="tname"></span><small></small></button>
+      <input type="range" min="0" max="150" step="1" data-act="volume" title="Volume" aria-label="Volume">
+      <button class="ms" data-act="mute" title="Mute">M</button>
+      <button class="ms solo" data-act="solo" title="Solo">S</button>`;
+    row.querySelector('.ticon').textContent = iconOf(track);
+    row.querySelector('.tname').textContent = trackLabel(track, i);
+    row.querySelector('small').textContent = hasTab(track) ? '' : 'notation';
     list.append(row);
   });
-  guitarMuted = null; // a freshly loaded score has nothing muted
-  applyGuitarMute();
+  applyMix();
 }
 
-// Play-along (Amp panel): mute the track being shown, so you play that part yourself.
-let guitarMuted = null; // index of the track muted for play-along
+function showMix() {
+  const rows = $('mixer-list').children;
+  const anySolo = mix.some((m) => m.solo);
+  mix.forEach((m, i) => {
+    const row = rows[i];
+    if (!row) return;
+    row.classList.toggle('current', i === trackIndex);
+    row.classList.toggle('silent', !isAudible(i));
+    row.querySelector('[data-act=mute]').classList.toggle('on', m.mute || playAlongMuted(i));
+    row.querySelector('[data-act=solo]').classList.toggle('on', m.solo);
+    const vol = row.querySelector('[data-act=volume]');
+    if (document.activeElement !== vol) vol.value = Math.round(m.volume * 100);
+    row.title = playAlongMuted(i) ? 'Muted so you can play / sing this part (Amp or Sing panel)' : (anySolo && !m.solo ? 'Silent: another track is solo' : '');
+  });
+  // The play bar's track button and its quick mute / solo.
+  const t = score?.tracks[trackIndex];
+  if (!t) return;
+  $('pl-track-icon').textContent = iconOf(t);
+  $('pl-track-name').textContent = trackLabel(t, trackIndex);
+  $('pl-mute').classList.toggle('on', mix[trackIndex].mute || playAlongMuted(trackIndex));
+  $('pl-solo').classList.toggle('on', mix[trackIndex].solo);
+  $('pl-track-btn').classList.toggle('silent', !isAudible(trackIndex));
+  $('pl-mixer-note').textContent = mix.some((m) => m.mute || m.solo || m.volume !== 1) ? '' : 'Click a name to show that track. M = mute, S = solo (you can solo several).';
+  $('pl-mix-reset').hidden = !mix.some((m) => m.mute || m.solo || m.volume !== 1);
+}
 
-function setTrackMuted(i, on) {
-  const track = score?.tracks[i];
-  if (!track || !api) return;
-  api.changeTrackMute([track], on);
-  $('mixer-list').children[i]?.querySelector('[data-act=mute]')?.classList.toggle('on', on);
+function setMute(i, on = !mix[i].mute) {
+  // Unmuting a track that's muted for play-along turns that off instead.
+  if (!on && playAlongMuted(i) && !mix[i].mute) return;
+  mix[i].mute = on;
+  applyMix();
+  saveMix();
+}
+
+function setSolo(i, on = !mix[i].solo) {
+  mix[i].solo = on;
+  if (on) mix[i].mute = false;
+  applyMix();
+  saveMix();
+}
+
+function onMixerInput(e) {
+  const row = e.target.closest('.mixer-row');
+  if (!row) return;
+  const i = Number(row.dataset.i);
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (e.type === 'input' && act === 'volume') {
+    mix[i].volume = e.target.value / 100;
+    api?.changeTrackVolume([score.tracks[i]], mix[i].volume);
+    return;
+  }
+  if (e.type === 'change' && act === 'volume') { saveMix(); e.target.blur(); return; }
+  if (e.type !== 'click') return;
+  if (act === 'show') selectTrack(i);
+  else if (act === 'mute') setMute(i);
+  else if (act === 'solo') setSolo(i);
 }
 
 function applyGuitarMute() {
-  if (!score) return;
-  // The amp's play-along mutes the guitar you play; singing mode can mute the vocal you sing.
-  const want = playAlongState().muteGuitar || singWantsVocalMuted() ? trackIndex : null;
-  if (guitarMuted === want) return;
-  if (guitarMuted !== null) setTrackMuted(guitarMuted, false);
-  if (want !== null) setTrackMuted(want, true);
-  guitarMuted = want;
+  applyMix();
 }
 
 /* ---------- singing mode ---------- */
 
-const isVocal = (track) => /vocal|voice|vox|sing|choir|lyric/i.test(track?.name || '')
-  || [52, 53, 54, 85].includes(track?.playbackInfo?.program); // choir, voice oohs, synth voice, lead voice
+function isVocal(track) {
+  return /vocal|voice|vox|sing|choir|lyric/i.test(track?.name || '')
+    || [52, 53, 54, 85].includes(track?.playbackInfo?.program); // choir, voice oohs, synth voice, lead voice
+}
 
 // The shown track's melody in playback order (repeats included), cached per score/track/bars.
 let melodyCache = { score: null, track: -1, bars: null, list: [] };
@@ -305,9 +644,14 @@ function currentMelody() {
 }
 
 function selectTrack(i) {
-  if (!score?.tracks[i]) return;
-  $('pl-track').value = i;
-  $('pl-track').dispatchEvent(new Event('change'));
+  if (!score?.tracks[i] || !api) return;
+  trackIndex = i;
+  applyStaveProfile();
+  if (chordSource === 'file') { chordBars = fileChords(score, trackIndex); chordTimeline = { bars: null, list: [] }; }
+  api.renderTracks([score.tracks[trackIndex]]);
+  applyMix();
+  singTrackChanged();
+  if (song) updateSong(song.id, { trackIndex });
 }
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
@@ -368,27 +712,51 @@ function readScore(s) {
   return AT.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(s.data), api.settings);
 }
 
+/* ---------- setlists ---------- */
+
+function showSetlist() {
+  const ctx = song && setlistContext(song.id);
+  $('pl-setlist').hidden = !ctx;
+  if (!ctx) return;
+  $('pl-setlist-name').textContent = `${ctx.name} · ${ctx.index + 1}/${ctx.count}`;
+  $('pl-prev-song').disabled = ctx.prevId === null;
+  $('pl-next-song').disabled = ctx.nextId === null;
+  $('pl-prev-song').dataset.id = ctx.prevId ?? '';
+  $('pl-next-song').dataset.id = ctx.nextId ?? '';
+}
+
+function nextInSetlistHint() {
+  const ctx = song && setlistContext(song.id);
+  if (ctx?.nextId != null) $('pl-next-song').classList.add('pulse');
+}
+
+/* ---------- opening a song ---------- */
+
 export async function openPlayer(s) {
   song = s;
   score = null;
+  mix = [];
+  cancelCountIn();
   readyForPlayback = readyForPlayback && !!api;
   $('pl-title').textContent = s.title;
   $('pl-artist').textContent = s.artist || '';
   $('pl-loading').textContent = 'Loading score…';
   $('pl-loading').hidden = false;
+  $('pl-next-song').classList.remove('pulse');
   stopTrainer();
   await customSoundFontReady;
   ensureApi();
+  await playAlongSongOpened(s);
   api.stop();
   api.playbackRange = null;
-  $('pl-loop').checked = false;
-  api.isLooping = false;
+  setLoop(false);
   timer.begin(s);
   setSpeed(s.speed || 100, false);
   $('pl-from-text').hidden = s.kind !== 'text';
   $('pl-text-link').href = `#song/${s.id}`;
   updateSong(s.id, { lastOpened: Date.now() });
   ampSongOpened(s);
+  showSetlist();
   let parsed;
   try {
     parsed = readScore(s);
@@ -398,6 +766,7 @@ export async function openPlayer(s) {
   }
   const saved = s.trackIndex;
   trackIndex = saved >= 0 && saved < parsed.tracks.length ? saved : defaultTrackIndex(parsed);
+  loadMix(parsed, s.mix);
   score = parsed;
   prepareChords(parsed);
   singSongChanged();
@@ -408,6 +777,7 @@ export async function openPlayer(s) {
 
 export function closePlayer() {
   if (!api) return;
+  cancelCountIn();
   api.pause();
   stopTrainer();
   timer.end();
@@ -420,8 +790,13 @@ function stopTrainer() {
 }
 
 function togglePlay() {
-  if (api && readyForPlayback) api.playPause();
+  if (!api || !readyForPlayback) return;
+  if (cancelCountIn()) return;
+  if (api.playerState === PLAYING) api.pause();
+  else startPlayback();
 }
+
+/* ---------- moving around ---------- */
 
 // Bars in playback order (repeats included), each with its start/end in MIDI ticks.
 const playedBars = () => api?.tickCache?.masterBars || [];
@@ -442,6 +817,7 @@ let restartTarget = null;
 
 function waitForPause() {
   return new Promise((resolve) => {
+    if (api.playerState !== PLAYING) { setTimeout(resolve, 30); return; }
     const done = () => { clearTimeout(timeout); off(); resolve(); };
     const handler = (e) => { if (e.state !== PLAYING) done(); };
     const unsubscribe = api.playerStateChanged.on(handler);
@@ -450,21 +826,26 @@ function waitForPause() {
   });
 }
 
-async function moveTo(tick) {
-  if (!(api.playerState === PLAYING && $('pl-countin').checked) && restartTarget === null) {
+// resume: play from there afterwards (for clicks in the tab, which pause first).
+async function moveTo(tick, resume = false) {
+  const playing = api.playerState === PLAYING || resume || !!counting;
+  if (!(playing && countInOn()) && restartTarget === null) {
+    cancelCountIn();
     api.tickPosition = tick;
     api.scrollToCursor?.();
+    if (resume) api.play();
     return;
   }
   const busy = restartTarget !== null;
   restartTarget = tick;
   if (busy) return;
+  cancelCountIn();
   api.pause();
   await waitForPause();
   api.tickPosition = restartTarget;
   restartTarget = null;
   api.scrollToCursor?.();
-  api.play();
+  startPlayback();
 }
 
 // Position the next jump is relative to (the pending target during a restart).
@@ -484,13 +865,44 @@ function stepBars(delta) {
   seekToBar(delta < 0 && !atBarStart ? i : i + delta);
 }
 
+// ↑ / ↓: the first bar of the previous / next line of the tab.
+function stepLines(delta) {
+  const bars = playedBars();
+  const systems = api?.renderer?.boundsLookup?.staffSystems;
+  if (!bars.length) return;
+  const i = currentBarIndex();
+  const mbIndex = bars[i].masterBar.index;
+  const sysIndex = systems?.findIndex((s) => s.bars.some((b) => b.index === mbIndex)) ?? -1;
+  if (sysIndex === -1) { stepBars(delta * 4); return; }
+  const target = systems[sysIndex + delta];
+  if (delta < 0 && !target) { seekToBar(0); return; }
+  if (!target) { seekToBar(bars.length - 1); return; }
+  // Going up from partway through a line first returns to that line's start.
+  const lineStart = systems[sysIndex].bars[0].index;
+  if (delta < 0) {
+    const startOfThis = findPlayed(lineStart, i, -1);
+    if (startOfThis !== -1 && startOfThis < i) { seekToBar(startOfThis); return; }
+  }
+  const first = target.bars[0].index;
+  const j = findPlayed(first, i, delta);
+  seekToBar(j === -1 ? i + delta * target.bars.length : j);
+}
+
+// The played bar for a master bar, searching from `from` in direction `dir` (repeats
+// make one master bar appear several times).
+function findPlayed(masterIndex, from, dir) {
+  const bars = playedBars();
+  for (let k = from; k >= 0 && k < bars.length; k += dir) if (bars[k].masterBar.index === masterIndex) return k;
+  return bars.findIndex((b) => b.masterBar.index === masterIndex);
+}
+
 function backToStart() {
   if (!readyForPlayback) return;
   moveTo(api.playbackRange ? api.playbackRange.startTick : 0);
 }
 
 function setLoop(on) {
-  $('pl-loop').checked = on;
+  toggleButton('pl-loop', on);
   if (api) api.isLooping = on;
 }
 
@@ -507,6 +919,8 @@ function rerender() {
   api.render();
 }
 
+/* ---------- sound ---------- */
+
 function showSoundFontName() {
   $('pl-sf-name').textContent = customSoundFont
     ? `Using “${customSoundFont.name}” (${Math.round(customSoundFont.data.byteLength / 1048576)} MB)`
@@ -521,7 +935,6 @@ async function useSoundFont(sf) {
   if (!api) return;
   readyForPlayback = false;
   setPlayButton();
-  $('pl-play').textContent = 'Loading sounds…';
   api.resetSoundFonts();
   if (sf) api.loadSoundFont(sf.data, false);
   else api.loadSoundFont(VENDOR + 'soundfont/sonivox.sf2', false);
@@ -542,6 +955,19 @@ function initSound() {
     await useSoundFont({ name: file.name, data: await file.arrayBuffer() });
   });
   $('pl-sf-reset').addEventListener('click', () => useSoundFont(null));
+}
+
+// Back from the recording to the synth: alphaTab builds a new synth, which needs the
+// user's soundfont again.
+function playModeChanged(recording) {
+  readyForPlayback = recording;
+  setPlayButton();
+  if (!recording && customSoundFont) api.loadSoundFont(customSoundFont.data, false);
+  if (!recording) api.masterVolume = playAlongState().songVolume;
+  api.playbackSpeed = speedPct / 100;
+  $('pl-recording-badge').hidden = !recording;
+  $('pl-metro').disabled = recording;
+  $('pl-metro').title = recording ? 'The click plays with the synth only' : 'Click track (B). Sound, volume and rhythm: ⚙';
 }
 
 /* ---------- bottom bar and its sheets ---------- */
@@ -633,8 +1059,14 @@ function initDock() {
   });
   seek.addEventListener('change', () => {
     seeking = false;
-    if (api && readyForPlayback && endTime) api.timePosition = (seek.value / 1000) * endTime;
     seek.blur();
+    if (!api || !readyForPlayback || !endTime) return;
+    // Time → the bar it falls in, so a jump while playing counts in from a bar start.
+    const ms = (seek.value / 1000) * endTime;
+    const bars = playedBars();
+    const tickOf = (api.tickCache && bars.length) ? timeToBar(ms) : null;
+    if (tickOf === null) api.timePosition = ms;
+    else moveTo(tickOf);
   });
 
   const chords = $('pl-chords');
@@ -646,9 +1078,22 @@ function initDock() {
   });
 }
 
+// The start tick of the bar playing at a time (ms), from the bars' share of the song.
+function timeToBar(ms) {
+  const bars = playedBars();
+  const total = bars.at(-1).end;
+  const tick = (ms / endTime) * total;
+  const bar = bars.find((b) => tick >= b.start && tick < b.end) || bars.at(-1);
+  return bar.start;
+}
+
+// Debug/verification hook (browser console): window.fretboardPlayer.
+window.fretboardPlayer = { get api() { return api; }, get mix() { return mix; }, get click() { return click; }, get clickChannel() { return clickChannel; } };
+
 export function initPlayer() {
   initDock();
   initSound();
+  initClickSheet();
   initAmp({
     setGuitarMuted: applyGuitarMute,
     setSongVolume: (v) => { if (api) api.masterVolume = v; },
@@ -662,25 +1107,48 @@ export function initPlayer() {
     vocalMuteChanged: applyGuitarMute,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
   });
-  $('pl-play').addEventListener('click', togglePlay);
-  $('pl-stop').addEventListener('click', () => api?.stop());
-  $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
-  $('pl-slower').addEventListener('click', () => setSpeed(Number($('pl-speed').value) - 5));
-  $('pl-faster').addEventListener('click', () => setSpeed(Number($('pl-speed').value) + 5));
-  $('pl-loop').addEventListener('change', (e) => setLoop(e.target.checked));
-  $('pl-clear-sel').addEventListener('click', clearSelection);
-  $('pl-countin').addEventListener('change', (e) => { if (api) api.countInVolume = e.target.checked ? 1 : 0; });
-  $('pl-metro').addEventListener('change', (e) => { if (api) api.metronomeVolume = e.target.checked ? 1 : 0; });
-  $('pl-track').addEventListener('change', (e) => {
-    trackIndex = Number(e.target.value);
-    applyStaveProfile();
-    if (chordSource === 'file') { chordBars = fileChords(score, trackIndex); chordTimeline = { bars: null, list: [] }; }
-    api.renderTracks([score.tracks[trackIndex]]);
-    applyGuitarMute();
-    singTrackChanged();
-    if (song) updateSong(song.id, { trackIndex });
+  initPlayAlong({
+    api: () => api,
+    score: () => score,
+    output: () => api?.player?.output,
+    playedBars,
+    modeChanged: playModeChanged,
+    showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
   });
+
+  // Toggles in the play bar remember their state.
+  for (const id of ['pl-countin', 'pl-metro']) {
+    let on = false;
+    try { on = localStorage.getItem('fretboard-' + id) === '1'; } catch { /* ignore */ }
+    toggleButton(id, on);
+  }
+  $('pl-play').addEventListener('click', togglePlay);
+  $('pl-stop').addEventListener('click', () => { cancelCountIn(); api?.stop(); });
+  $('pl-back').addEventListener('click', backToStart);
+  $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
+  $('pl-slower').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) - 5));
+  $('pl-faster').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5));
+  $('pl-bpm-input').addEventListener('change', (e) => { const v = Number(e.target.value); if (v > 0) setBpm(v); e.target.blur(); });
+  $('pl-bpm-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
+  $('pl-bpm-input').addEventListener('blur', updateBpm);
+  document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
+  $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
+  $('pl-clear-sel').addEventListener('click', clearSelection);
+  $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
+  $('pl-metro').addEventListener('click', () => { toggleButton('pl-metro', !clickOn()); applyClickVolume(); });
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
+
+  // Tracks: the mixer sheet, and quick mute / solo for the shown track in the play bar.
+  const mixer = $('mixer-list');
+  ['click', 'input', 'change'].forEach((t) => mixer.addEventListener(t, onMixerInput));
+  $('pl-mute').addEventListener('click', () => score && setMute(trackIndex));
+  $('pl-solo').addEventListener('click', () => score && setSolo(trackIndex));
+  $('pl-mix-reset').addEventListener('click', () => { if (!score) return; mix = defaultMix(score); applyMix(); saveMix(); });
+
+  // Setlist: previous / next song.
+  ['pl-prev-song', 'pl-next-song'].forEach((id) => $(id).addEventListener('click', (e) => { if (e.currentTarget.dataset.id) location.hash = `song/${e.currentTarget.dataset.id}`; }));
+  $('pl-setlist-leave').addEventListener('click', () => { leaveSetlist(); showSetlist(); });
+  window.addEventListener('setlistschange', showSetlist);
 
   $('tr-go').addEventListener('click', () => {
     if (trainer.on) { stopTrainer(); return; }
@@ -691,7 +1159,7 @@ export function initPlayer() {
     setLoop(true);
     $('tr-go').textContent = 'Stop trainer';
     updateTrainerStatus();
-    if (api.playerState !== PLAYING) api.play();
+    if (api.playerState !== PLAYING) startPlayback();
   });
 
   // Clicking a checkbox, select or slider leaves it focused, and Space / arrow keys would
@@ -699,32 +1167,44 @@ export function initPlayer() {
   $('view-player').addEventListener('change', (e) => {
     if (e.target.matches('input[type=checkbox], input[type=range], select')) e.target.blur();
   });
+  // Buttons too: a focused button would be "clicked" again by Space.
+  $('view-player').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && !b.closest('dialog')) b.blur();
+  });
 
   document.addEventListener('keydown', (e) => {
     if ($('view-player').hidden || $('view-player').querySelector('dialog[open]')) return;
+    if (document.body.classList.contains('drawer-open')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // Let number fields (speed trainer) take typing and arrows.
-    if (e.target.matches?.('input[type=number], input[type=text], input[type=search], textarea')) return;
+    // Let text and number fields take typing and arrows.
+    if (e.target.matches?.('input[type=number], input[type=text], input[type=search], input:not([type]), textarea, select')) return;
     const keys = {
       ' ': togglePlay,
       k: togglePlay,
       ArrowLeft: () => stepBars(e.shiftKey ? -4 : -1),
       ArrowRight: () => stepBars(e.shiftKey ? 4 : 1),
+      ArrowUp: () => stepLines(-1),
+      ArrowDown: () => stepLines(1),
       j: () => stepBars(-1),
       ';': () => stepBars(1),
       Home: backToStart,
       Backspace: backToStart,
       End: () => seekToBar(playedBars().length - 1),
-      '[': () => setSpeed(Number($('pl-speed').value) - 5),
-      ']': () => setSpeed(Number($('pl-speed').value) + 5),
-      l: () => setLoop(!$('pl-loop').checked),
-      c: () => { $('pl-countin').checked = !$('pl-countin').checked; $('pl-countin').dispatchEvent(new Event('change')); },
-      m: () => { $('pl-metro').checked = !$('pl-metro').checked; $('pl-metro').dispatchEvent(new Event('change')); },
+      '[': () => setBpm(Math.round((baseTempo * speedPct) / 100) - 5),
+      ']': () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5),
+      l: () => setLoop(!$('pl-loop').classList.contains('on')),
+      c: () => toggleButton('pl-countin', !countInOn()),
+      b: () => { toggleButton('pl-metro', !clickOn()); applyClickVolume(); },
+      m: () => score && setMute(trackIndex),
+      s: () => score && setSolo(trackIndex),
+      t: () => { if (!tapSync() && recordingOn()) openSheet('playalong'); },
+      r: toggleRecording,
       Escape: () => { if (!closeSheets()) clearSelection(); },
     };
     const action = keys[e.key.length === 1 ? e.key.toLowerCase() : e.key];
     if (!action) return;
-    e.preventDefault(); // also stops Space from clicking a focused button
+    e.preventDefault(); // also stops Space from clicking a focused button and arrows from scrolling
     action();
   });
 }
