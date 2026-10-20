@@ -11,7 +11,9 @@ self.addEventListener('fetch', (e) => {
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {
-      const res = await fetch(e.request);
+      // no-cache: revalidate with the server so new HTML never runs with stale JS
+      // from the browser's HTTP cache (GitHub Pages sends max-age=600).
+      const res = await fetch(e.request, { cache: 'no-cache' });
       if (res.ok) cache.put(e.request, res.clone());
       return res;
     } catch {
