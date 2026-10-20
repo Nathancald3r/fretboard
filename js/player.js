@@ -12,6 +12,7 @@ import { initSing, singPosition, singFinished, singStopped, singSongChanged, sin
 import { buildMelody } from './singcore.js';
 import { initJudge, judgePosition, judgeFinished, judgeStopped, judgeSongChanged, judgeTrackChanged, judgeWantsTrackMuted } from './judge.js';
 import { buildTargets } from './judgecore.js';
+import { installPlayhead } from './playhead.js';
 import {
   CLICK_SOUNDS, COUNT_SOUNDS, SUBDIVISIONS, COUNT_LENGTHS, loadClickSettings, saveClickSettings, sanitize,
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
@@ -46,6 +47,8 @@ const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING
 
 let click = loadClickSettings();
 
+let playhead = null;
+
 function ensureApi() {
   if (api) return api;
   installTone();
@@ -63,25 +66,7 @@ function ensureApi() {
   });
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
-  // The beat cursor glides to the next beat and stops there. alphaTab's own cursor aims two
-  // beats ahead (over twice the time) and counts on the next beat's update to correct it,
-  // so whenever an update comes late it runs ahead of the notes being played.
-  api.customCursorHandler = {
-    onAttach() {},
-    onDetach() {},
-    placeBeatCursor(cursor, beatBounds, x) {
-      const bar = beatBounds.barBounds.masterBarBounds.visualBounds;
-      cursor.transitionToX(0, x);
-      cursor.setBounds(x, bar.y, 1, bar.h);
-    },
-    placeBarCursor(cursor, beatBounds) {
-      const bar = beatBounds.barBounds.masterBarBounds.visualBounds;
-      cursor.setBounds(bar.x, bar.y, bar.w, bar.h);
-    },
-    transitionBeatCursor(cursor, _beatBounds, _fromX, toX, duration) {
-      cursor.transitionToX(duration, toX);
-    },
-  };
+  playhead = installPlayhead(api, $('score-scroll'), $('alphatab'));
   applyClickVolume();
 
   api.scoreLoaded.on((s) => {
@@ -952,20 +937,10 @@ function jumpToSection(sec) {
   scrollBarToTop(range.first.masterBar.index);
 }
 
-// Brings the line of the tab holding a bar to the top of the score view. alphaTab only
-// scrolls when the cursor would leave the view, so a jumped-to section could stay low.
+// Brings the line of the tab holding a bar into place (second from the top, where it
+// stays while playing), after alphaTab has moved the cursor.
 function scrollBarToTop(masterIndex) {
-  const go = () => {
-    const systems = api?.renderer?.boundsLookup?.staffSystems;
-    const sys = systems?.find((s) => s.bars.some((b) => b.index === masterIndex));
-    if (!sys) return;
-    const box = $('score-scroll');
-    const offset = $('alphatab').getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
-    const bounds = sys.realBounds || sys.visualBounds;
-    box.scrollTo({ top: Math.max(0, offset + bounds.y - 12), behavior: 'smooth' });
-  };
-  // After alphaTab has moved the cursor (and done any scrolling of its own).
-  setTimeout(go, 60);
+  setTimeout(() => playhead?.scrollToBar(masterIndex), 60);
 }
 
 function loopSection(sec) {

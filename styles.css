@@ -160,9 +160,14 @@ body.in-player { overflow: hidden; }
 }
 #alphatab { min-height: 200px; }
 /* alphaTab cursor & selection colors */
-.at-cursor-bar { background: rgba(242, 165, 65, .18); }
+.at-cursor-bar { background: transparent; }
 .at-selection div { background: rgba(242, 165, 65, .28); }
-.at-cursor-beat { background: #e07b00; width: 3px; }
+.at-cursor-beat { visibility: hidden; }
+/* The playhead: a rounded box around the beat playing (js/playhead.js). */
+.fb-playhead {
+  position: absolute; left: 0; top: 0; box-sizing: border-box; pointer-events: none; will-change: transform;
+  border: 2px solid #3fbf7f; background: rgba(63, 191, 127, .08); box-shadow: 0 0 6px rgba(63, 191, 127, .35);
+}
 .at-highlight * { fill: #d0570b; stroke: #d0570b; }
 
 /* text tab */
