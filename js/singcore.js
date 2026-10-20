@@ -84,6 +84,44 @@ export function judge(sungMidi, targetMidi, tolerance = TOLERANCE) {
   return { ...c, status };
 }
 
+// Pitch trainer: the scales you can practise in (Chromatic = every semitone counts).
+export const CHROMATIC = 'Chromatic';
+
+// The note of the key/scale nearest to a sung pitch: { midi, degree } where degree is the
+// scale step (0-based). `intervals` are semitones above the tonic (pitch class 0–11).
+export function nearestScaleNote(sungMidi, tonic, intervals) {
+  const steps = intervals?.length ? intervals : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  let best = null;
+  const base = Math.floor(sungMidi / 12) * 12;
+  for (const octave of [base - 12, base, base + 12]) {
+    steps.forEach((iv, degree) => {
+      const midi = octave + ((tonic + iv) % 12);
+      const d = Math.abs(sungMidi - midi);
+      if (!best || d < best.d) best = { midi, degree, d };
+    });
+  }
+  return { midi: best.midi, degree: best.degree };
+}
+
+// Collects in-tune time while singing freely against a key (no song): what share of the
+// time you were singing you were within the tolerance of a note of the scale.
+export function createFreeScorer({ tolerance = TOLERANCE } = {}) {
+  let t = { voiced: 0, inTune: 0, flat: 0, sharp: 0 };
+  return {
+    add({ cents, dt }) {
+      if (cents == null || !(dt > 0)) return;
+      t.voiced += dt;
+      const status = Math.abs(cents) <= tolerance ? 'inTune' : cents < 0 ? 'flat' : 'sharp';
+      t[status] += dt;
+    },
+    summary() {
+      const pct = (x) => (t.voiced ? Math.round((x / t.voiced) * 100) : 0);
+      return { seconds: t.voiced / 1000, inTune: pct(t.inTune), flat: pct(t.flat), sharp: pct(t.sharp) };
+    },
+    reset() { t = { voiced: 0, inTune: 0, flat: 0, sharp: 0 }; },
+  };
+}
+
 // The vocal line of one track in playback order (repeats included): [{ start, end, midi }]
 // in absolute MIDI ticks. `bars` is alphaTab's tickCache.masterBars ({ start, masterBar }).
 // Chords take their top note (the melody); tied notes extend the note before them.

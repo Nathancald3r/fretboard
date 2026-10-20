@@ -361,6 +361,18 @@
             <button id="sg-go" class="primary">Start singing mode</button>
             <label class="toggle" title="Mutes the track shown, so you sing that part alone"><input id="sg-mute" type="checkbox"> Mute the vocal track (I'll sing it)</label>
           </div>
+          <div class="row">
+            <label title="What your singing is compared with">Compare with <select id="sg-target">
+              <option value="song">The song's notes</option>
+              <option value="scale">A key and scale (free practice)</option>
+            </select></label>
+            <label>Key <select id="sg-key"></select></label>
+            <label>Scale <select id="sg-scale"></select></label>
+            <button id="sg-tonic" class="ghost small" title="Plays the key note so you can find it">Play the key note</button>
+          </div>
+          <div class="row" id="sg-shift-row">
+            <label title="Moves the whole song up or down (same as Transpose), so it sits where your voice is comfortable">Sing the song in <select id="sg-songkey"></select></label>
+          </div>
           <div class="row amp-status">
             <div class="amp-meter" title="Microphone level"><div id="sg-meter-bar" class="amp-meter-bar"></div></div>
             <span id="sg-heard" class="mono muted small-text">Hearing: —</span>
@@ -372,7 +384,37 @@
             <p id="sg-breakdown" class="small-text"></p>
             <div class="row"><span id="sg-history" class="muted small-text"></span><button id="sg-reset" class="ghost small">Clear scores</button></div>
           </div>
-          <p class="muted small-text">Press Play and sing: the bar at the bottom shows the written note and whether you're on it, flat or sharp (the lane shows the last few seconds; the green band is ±50 cents). Each song or loop gets a score: the share of note time you sang within ±50 cents. Singing the right note in another octave counts as in tune. The first moment of every note isn't scored, so you have time to land on it.</p>
+                    <p class="muted small-text">Press Play and sing: the bar at the bottom shows the written note and whether you're on it, flat or sharp (the lane shows the last few seconds; the green band is ±50 cents). Each song or loop gets a score: the share of note time you sang within ±50 cents. Without the song playing (or with “A key and scale”) just sing: it shows the nearest note of the key and scale you chose and how many cents flat or sharp you are; Chromatic counts every semitone. Singing the right note in another octave counts as in tune. The first moment of every note isn't scored, so you have time to land on it.</p>
+        </section>
+
+        <section class="sheet judge" data-sheet="judge" hidden>
+          <div class="sheet-head"><h2>Practice mode <span id="pj-state-pill" class="pill amp-on"></span></h2><button class="ghost small" data-close>Close</button></div>
+          <p class="amp-warn"><b>Use headphones, or plug in through an audio interface.</b> Through speakers the microphone hears the song too, and its notes count as yours.</p>
+          <p id="pj-track" class="muted"></p>
+          <div class="row">
+            <label>Input <select id="pj-device"></select></label>
+            <button id="pj-go" class="primary">Start practice mode</button>
+            <label class="toggle" title="Mutes the track shown, so you play that part yourself"><input id="pj-mute" type="checkbox" checked> Mute the track (I'll play it)</label>
+          </div>
+          <div class="row">
+            <label title="How loud the input must be to count as playing. Raise it if noise is judged as wrong notes.">Sensitivity <select id="pj-gate">
+              <option value="0.003">High (quiet instrument, far mic)</option>
+              <option value="0.006" selected>Normal</option>
+              <option value="0.015">Low (noisy room)</option>
+            </select></label>
+          </div>
+          <div class="row amp-status">
+            <div class="amp-meter" title="Input level"><div id="pj-meter-bar" class="amp-meter-bar"></div></div>
+            <span id="pj-heard" class="mono muted small-text">Hearing: —</span>
+            <span id="pj-running" class="muted small-text"></span>
+          </div>
+          <p id="pj-error" class="amp-error"></p>
+          <div id="pj-result" class="sing-result" hidden>
+            <div><b id="pj-score">–</b> <span id="pj-score-label" class="muted"></span></div>
+            <p id="pj-breakdown" class="small-text"></p>
+            <div class="row"><span id="pj-history" class="muted small-text"></span><button id="pj-reset" class="ghost small">Clear scores</button></div>
+          </div>
+          <p class="muted small-text">Start practice mode, press Play and play the track shown (guitar, bass, keys or any pitched part). The play bar shows the note or chord to play now, and each one is judged as you go: <b>✓ hit</b> (played in time), <b>✗ wrong</b> (another note or chord) or <b>○ missed</b> (nothing played). Single notes are checked by pitch (any octave counts), chords by which notes ring out. Each song or loop gets a score; loop a hard part and slow it down to get it clean.</p>
         </section>
       </div>
 
@@ -391,6 +433,9 @@
             <span id="pl-time" class="mono muted small-text">0:00 / 0:00</span>
           </div>
           <div id="pl-chord" class="chord-now" title="Chord now → next" hidden><b id="pl-chord-now">–</b><span id="pl-chord-next" class="muted"></span></div>
+          <div id="pj-live" class="judge-now" hidden title="Practice mode: the note or chord to play now and how the last one went (click for the score)">
+            <b id="pj-target" class="mono">–</b><span id="pj-verdict"></span><span id="pj-dots" class="judge-dots"></span><span id="pj-streak" class="pill" hidden></span>
+          </div>
           <div id="sg-live" class="sing-now" hidden title="Singing mode: the written note and how you're singing it (click for the score)">
             <canvas id="sg-lane" class="sing-lane"></canvas>
             <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
@@ -422,6 +467,7 @@
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>
               <button class="ghost small" data-sheet-btn="sing">Sing</button>
+              <button class="ghost small" data-sheet-btn="judge" title="Practice mode: play the part and get each note judged">Practice</button>
             </div>
           </div>
         </div>

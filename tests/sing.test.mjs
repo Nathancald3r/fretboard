@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   detectPitch, hzToMidi, midiToHz, midiName, compare, judge, buildMelody, noteAt, createScorer, describe,
+  nearestScaleNote, createFreeScorer,
 } from '../js/singcore.js';
 
 const SR = 48000;
@@ -115,5 +116,16 @@ assert.match(describe(s), /another octave/);
 sc.reset();
 assert.equal(sc.summary().notes, 0);
 assert.equal(sc.add({ note: null, sung: 60, dt: 10 }), null); // between notes: not scored
+
+// Pitch trainer: the nearest note of a key/scale.
+const major = [0, 2, 4, 5, 7, 9, 11];
+assert.deepEqual(nearestScaleNote(60.3, 0, major), { midi: 60, degree: 0 }); // C major, a bit sharp of C
+assert.equal(nearestScaleNote(61.4, 0, major).midi, 62, 'C#+40 is nearer D in C major');
+assert.equal(nearestScaleNote(61.4, 0, []).midi, 61, 'chromatic: every semitone');
+assert.equal(nearestScaleNote(70.2, 9, [0, 3, 5, 7, 10]).midi, 69, 'A minor pentatonic: Bb-ish → A');
+assert.equal(nearestScaleNote(59.4, 0, major).midi, 59, 'B, an octave below the tonic');
+const fs = createFreeScorer();
+fs.add({ cents: 10, dt: 300 }); fs.add({ cents: -80, dt: 100 }); fs.add({ cents: null, dt: 500 });
+assert.deepEqual(fs.summary(), { seconds: 0.4, inTune: 75, flat: 25, sharp: 0 });
 
 console.log('sing tests passed');

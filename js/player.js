@@ -10,6 +10,8 @@ import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
 import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
 import { buildMelody } from './singcore.js';
+import { initJudge, judgePosition, judgeFinished, judgeStopped, judgeSongChanged, judgeTrackChanged, judgeWantsTrackMuted } from './judge.js';
+import { buildTargets } from './judgecore.js';
 import {
   CLICK_SOUNDS, COUNT_SOUNDS, SUBDIVISIONS, COUNT_LENGTHS, loadClickSettings, saveClickSettings, sanitize,
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
@@ -102,7 +104,7 @@ function ensureApi() {
   } catch { /* see above */ }
   api.playerStateChanged.on((e) => {
     setPlayButton();
-    if (e?.stopped) singStopped();
+    if (e?.stopped) { singStopped(); judgeStopped(); }
     playAlongState2(e.state === PLAYING);
     if (e.state === PLAYING) measureLag.start();
   });
@@ -111,6 +113,7 @@ function ensureApi() {
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
   api.playerFinished.on(() => {
     singFinished(api.isLooping);
+    judgeFinished(api.isLooping);
     if (api.isLooping) onLoopCompleted();
     else if (!recordingOn()) nextInSetlistHint();
   });
@@ -158,6 +161,7 @@ function onPosition(e) {
   showLyricsAt(e.currentTick);
   measureLag.position(e.currentTime);
   singPosition(e);
+  judgePosition(e);
 }
 
 /* ---------- count-in ---------- */
@@ -538,7 +542,7 @@ function saveMix() {
 }
 
 // Muted for you to play or sing it (amp play-along, singing mode).
-const playAlongMuted = (i) => i === trackIndex && (playAlongState().muteGuitar || singWantsVocalMuted());
+const playAlongMuted = (i) => i === trackIndex && (playAlongState().muteGuitar || singWantsVocalMuted() || judgeWantsTrackMuted());
 
 function isAudible(i) {
   const anySolo = mix.some((m) => m.solo);
@@ -604,7 +608,7 @@ function showMix() {
 function setMute(i, on = !mix[i].mute) {
   // Unmuting a track that's muted for play-along (Amp or Sing) turns that off instead.
   if (playAlongMuted(i) && !mix[i].mute) {
-    for (const id of ['amp-mute-track', 'sg-mute']) {
+    for (const id of ['amp-mute-track', 'sg-mute', 'pj-mute']) {
       const box = $(id);
       if (box.checked) { box.checked = false; box.dispatchEvent(new Event('change')); }
     }
@@ -673,6 +677,19 @@ function selectTrack(i) {
   api.renderTracks([score.tracks[trackIndex]]);
   applyMix();
   singTrackChanged();
+  judgeTrackChanged();
+}
+
+// Every note and chord of the shown track in playback order, for practice mode.
+let targetCache = { score: null, track: -1, bars: null, list: [] };
+function currentTargets() {
+  const bars = playedBars();
+  const c = targetCache;
+  if (c.score !== score || c.track !== trackIndex || c.bars !== bars) {
+    const track = score?.tracks[trackIndex];
+    targetCache = { score, track: trackIndex, bars, list: track && !isDrums(track) && bars.length ? buildTargets(score, trackIndex, bars) : [] };
+  }
+  return targetCache.list;
 }
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
@@ -708,17 +725,21 @@ function showTrackInfo() {
   if (staff && staff.tuning.length && !staff.isPercussion) {
     parts.push('Tuning: ' + [...staff.tuning].reverse().map((m) => noteName(m % 12, true)).join(' '));
   }
-  const bar = score?.masterBars[0];
-  if (bar && typeof bar.keySignature === 'number') {
-    const major = ((bar.keySignature * 7) % 12 + 12) % 12;
-    const minor = bar.keySignatureType === 1;
-    parts.push('Key: ' + keyLabel({ tonic: minor ? (major + 9) % 12 : major, minor }));
-  }
+  if (songKey()) parts.push('Key: ' + keyLabel(songKey()));
   if (staff && !staff.isPercussion) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
   const semis = song?.transpose || 0;
   if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
   showShift();
+}
+
+// The key of the song as shown (after transposing): { tonic, minor } or null.
+function songKey() {
+  const bar = score?.masterBars[0];
+  if (!bar || typeof bar.keySignature !== 'number') return null;
+  const major = ((bar.keySignature * 7) % 12 + 12) % 12;
+  const minor = bar.keySignatureType === 1;
+  return { tonic: minor ? (major + 9) % 12 : major, minor };
 }
 
 function readScore(s) {
@@ -801,6 +822,7 @@ function showParsed(parsed) {
   score = parsed;
   prepareChords(parsed);
   singSongChanged();
+  judgeSongChanged();
   applyChordVisibility();
   applyStaveProfile();
   api.renderScore(parsed, [trackIndex]);
@@ -906,7 +928,25 @@ function sectionBars(sec) {
 function jumpToSection(sec) {
   if (!readyForPlayback) return;
   const range = sectionBars(sec);
-  if (range) moveTo(range.first.start);
+  if (!range) return;
+  moveTo(range.first.start);
+  scrollBarToTop(range.first.masterBar.index);
+}
+
+// Brings the line of the tab holding a bar to the top of the score view. alphaTab only
+// scrolls when the cursor would leave the view, so a jumped-to section could stay low.
+function scrollBarToTop(masterIndex) {
+  const go = () => {
+    const systems = api?.renderer?.boundsLookup?.staffSystems;
+    const sys = systems?.find((s) => s.bars.some((b) => b.index === masterIndex));
+    if (!sys) return;
+    const box = $('score-scroll');
+    const offset = $('alphatab').getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    const bounds = sys.realBounds || sys.visualBounds;
+    box.scrollTo({ top: Math.max(0, offset + bounds.y - 12), behavior: 'smooth' });
+  };
+  // After alphaTab has moved the cursor (and done any scrolling of its own).
+  setTimeout(go, 60);
 }
 
 function loopSection(sec) {
@@ -924,6 +964,7 @@ function loopSection(sec) {
   sections.forEach((x) => x.el.classList.toggle('looped', x === sec));
   setLoop(true);
   moveTo(range.first.start);
+  scrollBarToTop(range.first.masterBar.index);
 }
 
 /* ---------- fretboard ---------- */
@@ -1340,7 +1381,17 @@ export function initPlayer() {
     trackInfo: () => (score ? { name: trackLabel(score.tracks[trackIndex], trackIndex), vocal: isVocal(score.tracks[trackIndex]) } : {}),
     findVocalTrack: () => (score ? score.tracks.findIndex(isVocal) : -1),
     selectTrack,
+    songKey,
+    transpose: () => song?.transpose || 0,
+    setTranspose: (n) => setShift({ transpose: Math.max(-11, Math.min(11, n)) }),
     vocalMuteChanged: applyGuitarMute,
+    showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
+  });
+  initJudge({
+    isPlaying: () => api?.playerState === PLAYING,
+    getTargets: currentTargets,
+    trackInfo: () => (score ? { name: trackLabel(score.tracks[trackIndex], trackIndex), drums: isDrums(score.tracks[trackIndex]) } : {}),
+    trackMuteChanged: applyGuitarMute,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
   });
   initPlayAlong({
