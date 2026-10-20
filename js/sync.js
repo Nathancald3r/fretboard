@@ -66,7 +66,7 @@ export function songRecord(song) {
 
 /** A song from its synced form; `local` (the copy on this device) keeps its local-only fields. */
 const SONG_KINDS = ['gp', 'xml', 'tex', 'text'];
-const NUMBER_FIELDS = ['speed', 'bestSpeed', 'practiceSeconds', 'added', 'updated', 'lastOpened', 'trackIndex', 'syncOffset'];
+const NUMBER_FIELDS = ['speed', 'bestSpeed', 'practiceSeconds', 'added', 'updated', 'lastOpened', 'trackIndex', 'syncOffset', 'videoMaster'];
 
 export function songFromRecord(rec, local = null) {
   const song = {};

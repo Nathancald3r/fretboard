@@ -279,7 +279,8 @@
           <p id="pa-error" class="amp-error"></p>
           <h3>Line the tab up with the video</h3>
           <div class="row">
-            <label title="Where in the video the song's first bar begins: skip an intro, applause or talking">Song starts at <input id="pa-start" type="number" min="0" step="0.1" value="0" style="width:5.5rem"> s</label>
+            <label title="Which part of the tab the video begins with (a video with no intro starts at the verse)">Video begins with <select id="pa-start-bar"></select></label>
+            <label title="Where in the video that part begins: skip an intro, applause or talking">at <input id="pa-start" type="number" min="0" step="0.1" value="0" style="width:5.5rem"> s</label>
             <button id="pa-start-now" class="ghost small" title="Pause the video where the music begins, then press this">Use the video's current time</button>
           </div>
           <h3>Skip a part of the video</h3>

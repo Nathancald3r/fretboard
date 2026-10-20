@@ -17,12 +17,19 @@ let song = null;
 const skipList = () => (song?.skips || []).slice().sort((a, b) => a[0] - b[0]);
 const toPlayed = (real) => skipList().reduce((t, [f, e]) => (real > f ? t - (Math.min(real, e) - f) : t), real);
 const toReal = (played) => skipList().reduce((r, [f, e]) => (r >= f ? r + (e - f) : r), played);
+// A video with no intro begins at a later part of the tab: the tab's clock runs `lead` ms ahead
+// of the video's (the written length of the bars before that part), so video time 0 is that part.
+const lead = () => {
+  const at = song?.videoMaster ? startIdx() : 0;
+  const bars = at > 0 ? hooks.playedBars() : null;
+  return bars?.[at] ? bars[at].start * (60000 / (hooks.tempo() * 960)) : 0;
+};
 const skippedTotal = () => skipList().reduce((t, [f, e]) => t + (e - f), 0);
 const sendPosition = (real) => {
   const hit = skipList().find(([f, e]) => real >= f && real < e);
   if (hit && media?.seekReal) { media.seekReal(hit[1]); return; }
   const o = hooks.output();
-  if (typeof o?.updatePosition === 'function') o.updatePosition(toPlayed(real));
+  if (typeof o?.updatePosition === 'function') o.updatePosition(toPlayed(real) + lead());
 };
 let media = null; // the active handler (file or YouTube)
 let on = false;
@@ -51,12 +58,12 @@ function fileHandler(rec) {
   el.addEventListener('loadedmetadata', () => sendPosition(el.currentTime * 1000));
   return {
     kind: 'file',
-    get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal()); },
+    get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal() + lead()); },
     get playbackRate() { return el.playbackRate; },
     set playbackRate(v) { el.playbackRate = v; },
     get masterVolume() { return el.volume; },
     set masterVolume(v) { el.volume = Math.max(0, Math.min(1, v)); },
-    seekTo(ms) { el.currentTime = toReal(ms) / 1000; },
+    seekTo(ms) { el.currentTime = toReal(Math.max(0, ms - lead())) / 1000; },
     seekReal(ms) { el.currentTime = ms / 1000; },
     nowReal: () => el.currentTime * 1000,
     play() { el.play().catch(() => {}); },
@@ -122,7 +129,7 @@ async function youTubeHandler(rec) {
   player.addEventListener('onStateChange', stateChange);
   return {
     kind: 'youtube',
-    get backingTrackDuration() { return Math.max(0, (player.getDuration() || 0) * 1000 - skippedTotal()); },
+    get backingTrackDuration() { return Math.max(0, (player.getDuration() || 0) * 1000 - skippedTotal() + lead()); },
     get playbackRate() { return rate; },
     set playbackRate(v) {
       // YouTube only offers some speeds (0.25 steps, or finer on newer players).
@@ -133,7 +140,7 @@ async function youTubeHandler(rec) {
     },
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
-    seekTo(ms) { player.seekTo(toReal(ms) / 1000, true); setTimeout(poll, 50); },
+    seekTo(ms) { player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); },
     seekReal(ms) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); },
     nowReal: () => player.getCurrentTime() * 1000,
     play() { player.playVideo(); },
@@ -181,15 +188,26 @@ function flatSyncPoints(points) {
     return n;
   });
   const offset = song?.syncOffset || 0;
-  return points
-    .filter(([p]) => p < bars.length)
-    .sort((a, b) => a[0] - b[0])
-    .map(([p, ms]) => ({ barIndex: bars[p].masterBar.index, barOccurence: occurrence[p], barPosition: 0, millisecondOffset: Math.max(0, ms + offset) }));
+  const sorted = points.filter(([p]) => p < bars.length).sort((a, b) => a[0] - b[0]);
+  const ahead = lead();
+  // The bars before a video's first part keep their written tempo: a point at 0 ms.
+  if (sorted.length && sorted[0][0] > 0) sorted.unshift([0, -ahead]);
+  let prev = -1;
+  return sorted.map(([p, ms]) => {
+    prev = Math.max(prev + 1, Math.max(0, ms + offset + ahead));
+    return { barIndex: bars[p].masterBar.index, barOccurence: occurrence[p], barPosition: 0, millisecondOffset: prev };
+  });
+}
+
+// The played bar where the video begins: the first bar of the chosen section (0 = the start).
+function startIdx() {
+  const want = song?.videoMaster || 0;
+  const i = want ? hooks.playedBars().findIndex((b) => b.masterBar.index === want) : 0;
+  return Math.max(0, i);
 }
 
 function syncPoints() {
-  const pts = song?.syncPoints?.length ? song.syncPoints : [[0, 0]];
-  return pts;
+  return song?.syncPoints?.length ? song.syncPoints : [[startIdx(), 0]];
 }
 
 function applySync() {
@@ -254,20 +272,49 @@ function showSkips() {
 function setStart(sec) {
   if (!song) return;
   const ms = Math.max(0, Math.round(sec * 1000));
-  const pts = song.syncPoints?.length ? song.syncPoints : [[0, 0]];
-  const first = pts.find(([p]) => p === 0);
+  const at = startIdx();
+  const pts = song.syncPoints?.length ? song.syncPoints : [[at, 0]];
+  const first = pts.find(([p]) => p === at);
   const delta = ms - (first ? first[1] : 0);
   song.syncPoints = first
     ? pts.map(([p, t]) => [p, Math.max(0, t + delta)])
-    : [[0, ms], ...pts.map(([p, t]) => [p, t + delta])];
+    : [[at, ms], ...pts.map(([p, t]) => [p, t + delta])];
   updateSong(song.id, { syncPoints: song.syncPoints });
   if (on) applySync(); else showSync();
   if (on && media) media.seekTo(ms);
 }
 
+// The sections of the tab, to say where the video begins (a video with no intro starts at the verse).
+function fillStartBars() {
+  const sel = $('pa-start-bar');
+  const list = hooks.sectionChoices?.() || [];
+  const sig = list.map((s) => `${s.master}:${s.name}`).join('|');
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = '';
+    sel.append(new Option('the start of the tab', '0'));
+    for (const s of list) if (s.master > 0) sel.append(new Option(s.name, String(s.master)));
+  }
+  const want = String(song?.videoMaster || 0);
+  sel.value = [...sel.options].some((o) => o.value === want) ? want : '0';
+}
+
+function setStartBar(master) {
+  if (!song) return;
+  const oldAt = startIdx();
+  const oldPt = song.syncPoints?.find(([p]) => p === oldAt);
+  song.videoMaster = master;
+  const at = startIdx();
+  const rest = (song.syncPoints || []).filter(([p]) => p !== oldAt && p !== at);
+  song.syncPoints = [[at, oldPt ? oldPt[1] : 0], ...rest].sort((a, b) => a[0] - b[0]);
+  updateSong(song.id, { videoMaster: master, syncPoints: song.syncPoints });
+  if (on) applySync(); else showSync();
+}
+
 function showSync() {
   showSkips();
-  const zero = song?.syncPoints?.find(([p]) => p === 0);
+  fillStartBars();
+  const zero = song?.syncPoints?.find(([p]) => p === startIdx());
   if (document.activeElement !== $('pa-start')) $('pa-start').value = zero ? (zero[1] / 1000).toFixed(1) : '0';
   const pts = song?.syncPoints || [];
   const off = song?.syncOffset || 0;
@@ -576,6 +623,7 @@ export function initPlayAlong(h) {
   $('pa-skip-from-now').addEventListener('click', () => nowSec($('pa-skip-from')));
   $('pa-skip-to-now').addEventListener('click', () => nowSec($('pa-skip-to')));
   $('pa-skip-add').addEventListener('click', () => addSkip(Number($('pa-skip-from').value), Number($('pa-skip-to').value)));
+  $('pa-start-bar').addEventListener('change', (e) => setStartBar(Number(e.target.value) || 0));
   $('pa-start').addEventListener('change', (e) => setStart(Number(e.target.value) || 0));
   $('pa-start-now').addEventListener('click', () => {
     if (!media) { $('pa-tap-state').textContent = 'Turn on the linked video first, then find where the music starts.'; return; }

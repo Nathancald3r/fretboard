@@ -1607,6 +1607,7 @@ export function initPlayer() {
     output: () => api?.player?.output,
     playedBars,
     tempo: () => baseTempo,
+    sectionChoices: () => sections.map((sec) => ({ master: sec.index, name: sec.el.textContent.trim() })),
     songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
