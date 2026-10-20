@@ -301,7 +301,6 @@ function showScrub(real) {
   const t = performance.now();
   if (t - lastScrubShown < 90) return;
   lastScrubShown = t;
-  $('pa-scrub').value = real / 1000;
   $('pa-scrub-time').textContent = fmtT(real);
   $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶';
   setLabel();
@@ -313,12 +312,9 @@ function setLabel() {
 }
 
 function refreshScrub() {
-  const sl = $('pa-scrub');
-  sl.disabled = !media;
+  $('pa-scrub').setAttribute('aria-disabled', String(!media));
   $('pa-scrub-play').disabled = !media;
   if (media) {
-    sl.max = Math.max(1, (media.rawDuration || 300000) / 1000);
-    sl.value = media.nowReal() / 1000;
     $('pa-scrub-time').textContent = fmtT(media.nowReal());
     $('pa-scrub-play').textContent = media.isPlaying ? '⏸' : '▶';
   }
@@ -690,19 +686,44 @@ export function initPlayAlong(h) {
     if (!media) return;
     media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)));
   };
-  $('pa-scrub').addEventListener('input', (e) => {
-    scrubbing = true;
-    const sec = Number(e.target.value);
-    $('pa-scrub-time').textContent = fmtT(sec * 1000);
+  // Hold the time and drag: right goes forward in the video, left back. Small drags move in
+  // fractions of a second; past 60 px it speeds up, so a long drag crosses minutes.
+  const jog = $('pa-scrub');
+  let from = null;
+  const jogTo = (x) => {
+    const dx = x - from.x;
+    const sec = dx * 0.02 + Math.sign(dx) * Math.max(0, Math.abs(dx) - 60) * 0.06;
+    from.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, from.sec + sec));
+    $('pa-scrub-time').textContent = fmtT(from.target * 1000);
     const now = performance.now();
-    if (now - seekAt > 120) { seekAt = now; seekTo(sec); }
+    if (now - seekAt > 110) { seekAt = now; seekTo(from.target); }
+  };
+  jog.addEventListener('pointerdown', (e) => {
+    if (!media) return;
+    jog.setPointerCapture(e.pointerId);
+    from = { x: e.clientX, sec: media.nowReal() / 1000, target: media.nowReal() / 1000 };
+    scrubbing = true;
+    jog.classList.add('on');
   });
-  $('pa-scrub').addEventListener('change', (e) => { seekTo(Number(e.target.value)); scrubbing = false; setTimeout(setLabel, 150); });
+  jog.addEventListener('pointermove', (e) => { if (from) jogTo(e.clientX); });
+  const jogEnd = () => {
+    if (!from) return;
+    seekTo(from.target);
+    from = null;
+    scrubbing = false;
+    jog.classList.remove('on');
+    setTimeout(setLabel, 200);
+  };
+  jog.addEventListener('pointerup', jogEnd);
+  jog.addEventListener('pointercancel', jogEnd);
+  jog.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowRight' ? 0.1 : e.key === 'ArrowLeft' ? -0.1 : 0;
+    if (step && media) { e.preventDefault(); seekTo(media.nowReal() / 1000 + (e.shiftKey ? step * 10 : step)); }
+  });
   document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
     if (!media) return;
     const to = media.nowReal() / 1000 + Number(b.dataset.scrub);
     seekTo(to);
-    $('pa-scrub').value = Math.max(0, to);
     $('pa-scrub-time').textContent = fmtT(Math.max(0, to) * 1000);
     setTimeout(setLabel, 250);
   }));

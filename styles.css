@@ -806,8 +806,15 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 input[type=password] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .45rem .6rem; }
 /* Lining up the video: the scrubber, nudges and section chips */
 .scrub-row { flex-wrap: nowrap; align-items: center; }
-.scrub-row input[type=range] { flex: 1 1 auto; min-width: 0; height: 36px; }
-.scrub-row .mono { min-width: 4.2rem; text-align: right; }
+.jog {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  height: 56px; padding: 0 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+  cursor: ew-resize; user-select: none; touch-action: pan-y;
+}
+.jog .mono { font-size: 1.5rem; font-weight: 700; }
+.jog-arrow { color: var(--muted); }
+.jog.on { border-color: var(--accent); }
+.jog[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
 .scrub-nudges { flex-wrap: wrap; }
 .chips { flex-wrap: wrap; gap: .4rem; }
 .chips button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }

@@ -279,11 +279,12 @@
           </div>
           <p id="pa-error" class="amp-error"></p>
           <h3>Line the tab up with the video</h3>
-          <p class="step-title"><b>1 · Find where the music starts.</b> Drag the bar to scrub the video, or use the nudges for the exact spot.</p>
+          <p class="step-title"><b>1 · Find where the music starts.</b> Hold the time and drag left or right to move the video (a slow drag is fine, a long drag is fast), then use the nudges for the exact spot.</p>
           <div class="row scrub-row">
             <button id="pa-scrub-play" class="ghost small" aria-label="Play or pause the video">▶</button>
-            <input id="pa-scrub" type="range" min="0" max="300" step="0.1" value="0" aria-label="Video position" disabled>
-            <span id="pa-scrub-time" class="mono">0:00.0</span>
+            <div id="pa-scrub" class="jog" role="slider" aria-label="Video position: hold and drag left or right" aria-disabled="true" tabindex="0">
+              <span class="jog-arrow">◀</span><span id="pa-scrub-time" class="mono">0:00.0</span><span class="jog-arrow">▶</span>
+            </div>
           </div>
           <div class="row scrub-nudges">
             <button class="ghost small" data-scrub="-5">−5 s</button><button class="ghost small" data-scrub="-1">−1</button><button class="ghost small" data-scrub="-0.1">−0.1</button>
