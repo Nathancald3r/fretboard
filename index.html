@@ -140,7 +140,12 @@
     </div>
     <div id="count-overlay" class="count-overlay" hidden aria-live="polite"></div>
     <div id="pa-video" class="pa-video" hidden>
-      <div class="pa-video-bar"><span class="small-text">Recording</span><button id="pa-video-hide" class="ghost small" title="Smaller / bigger">⤡</button></div>
+      <div class="pa-video-bar">
+        <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
+        <span id="pa-video-title" class="small-text">Recording</span>
+        <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
+        <button id="pa-video-hide" class="ghost small" title="Smaller / bigger">⤡</button>
+      </div>
       <div class="pa-video-frame"></div>
     </div>
 

@@ -103,6 +103,7 @@ function ensureApi() {
       applyClickVolume();
       playAlongScoreReady();
       if (restoreTick !== null) { api.tickPosition = restoreTick; restoreTick = null; }
+      if (playOnLoad) { playOnLoad = false; setTimeout(startPlayback, 150); }
       // Live: the song was opened by the last one ending, so start it after a short gap.
       if (pendingAutoPlay) {
         pendingAutoPlay = false;
@@ -822,6 +823,7 @@ function showSetlist() {
 
 // Live: at the end of a song, go on to the next one in the setlist.
 let pendingAutoPlay = false;
+let playOnLoad = false; // a recording was just picked: play it once its MIDI is loaded
 function liveNextSong() {
   const ctx = song && setlistContext(song.id);
   if (ctx?.nextId == null) return;
@@ -1481,6 +1483,9 @@ export function initPlayer() {
     songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
+    closeSheets,
+    playWhenLoaded: () => { playOnLoad = true; },
+    play: startPlayback,
   });
 
   // Toggles in the play bar remember their state.

@@ -113,6 +113,20 @@ async function youTubeHandler(rec) {
     play() { player.playVideo(); },
     pause() { player.pauseVideo(); },
     now: () => player.getCurrentTime() * 1000,
+    // Another video in the same player (tearing YouTube's player down and making a new one
+    // right away can leave the new one stuck). Resolves once it's ready to play.
+    cue(id) {
+      return new Promise((resolve) => {
+        const done = (e) => {
+          if (e.data !== window.YT.PlayerState.CUED) return;
+          player.removeEventListener('onStateChange', done);
+          resolve();
+        };
+        player.addEventListener('onStateChange', done);
+        player.cueVideoById(id);
+        setTimeout(resolve, 5000);
+      });
+    },
     destroy() {
       clearInterval(timer);
       // YouTube's player can throw while tearing down (e.g. its frame already gone).
@@ -256,10 +270,28 @@ function showState() {
   $('pa-toggle').classList.toggle('on', on);
   $('pa-toggle').title = on ? 'Playing the recording (click for the synth)' : 'Play along with the recording';
   $('pa-video').hidden = !(on && rec?.kind === 'youtube');
+  $('pa-video-title').textContent = rec?.kind === 'youtube' && rec.title ? rec.title : 'Recording';
+  $('pa-video-title').title = $('pa-video-title').textContent;
+  const at = matches.findIndex((r) => rec?.kind === 'youtube' && r.id === rec.id);
+  $('pa-video-prev').hidden = $('pa-video-next').hidden = matches.length < 2 || at < 0;
+  $('pa-video-prev').disabled = at <= 0;
+  $('pa-video-next').disabled = at >= matches.length - 1;
   showSync();
 }
 
 async function setRecording(rec) {
+  // YouTube to YouTube while playing along: same player, new video.
+  if (on && media?.kind === 'youtube' && rec?.kind === 'youtube') {
+    hooks.api()?.stop();
+    song.recording = rec;
+    song.syncPoints = [];
+    song.syncOffset = 0;
+    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0 });
+    await media.cue(rec.id);
+    applySync();
+    showState();
+    return;
+  }
   const wasOn = on;
   if (on) await setOn(false);
   song.recording = rec;
@@ -272,6 +304,8 @@ async function setRecording(rec) {
 }
 
 /* ---------- finding the recording on YouTube ---------- */
+
+let matches = []; // the last search's results, to step through from the video
 
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 let finding = 0;
@@ -310,6 +344,7 @@ async function findOnYouTube(pick) {
   if (mine !== finding) return;
   $('pa-find').disabled = false;
   results = results.slice(0, 6);
+  matches = results;
   if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
   state.textContent = 'Not the right one? Pick another:';
   list.innerHTML = '';
@@ -329,7 +364,7 @@ async function findOnYouTube(pick) {
     meta.className = 'yt-meta';
     meta.textContent = [r.author, r.seconds ? clock(r.seconds) : ''].filter(Boolean).join(' · ');
     b.append(img, t, meta);
-    b.addEventListener('click', () => useVideo(r));
+    b.addEventListener('click', () => tryVideo(r));
     li.append(b);
     list.append(li);
   }
@@ -340,6 +375,22 @@ async function findOnYouTube(pick) {
 
 const useVideo = (r) => setRecording({ kind: 'youtube', id: r.id, title: r.title, author: r.author });
 
+// Picked by hand: play it with the tab from the start, panel closed, so you can hear and
+// see whether it matches the chords (‹ › on the video try the other matches).
+async function tryVideo(r) {
+  if (!r) return;
+  hooks.closeSheets();
+  const reload = !(on && media?.kind === 'youtube'); // switching videos keeps the loaded MIDI
+  await useVideo(r);
+  if (on && reload) hooks.playWhenLoaded();
+  else if (on) setTimeout(() => hooks.play(), 150);
+}
+
+function stepMatch(step) {
+  const at = matches.findIndex((r) => r.id === song?.recording?.id);
+  tryVideo(matches[at + step]);
+}
+
 /** Called by the player when a song is opened (before its score renders). */
 export async function playAlongSongOpened(s) {
   if (on) await setOn(false);
@@ -348,6 +399,7 @@ export async function playAlongSongOpened(s) {
   finding++;
   $('pa-yt-results').hidden = true;
   $('pa-yt-results').innerHTML = '';
+  matches = [];
   $('pa-find-state').textContent = '';
   $('pa-find').disabled = false;
   $('pa-tap-state').textContent = '';
@@ -400,4 +452,6 @@ export function initPlayAlong(h) {
     if (on) applySync(); else showSync();
   });
   $('pa-video-hide').addEventListener('click', () => $('pa-video').classList.toggle('mini'));
+  $('pa-video-prev').addEventListener('click', () => stepMatch(-1));
+  $('pa-video-next').addEventListener('click', () => stepMatch(1));
 }
