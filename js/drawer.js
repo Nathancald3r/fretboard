@@ -223,4 +223,9 @@ export function initDrawer() {
   });
   window.addEventListener('hashchange', () => { if (document.body.classList.contains('drawer-open')) renderDrawer(); });
   loadSetlists().then(() => window.dispatchEvent(new Event('setlistschange')));
+  // Songs or setlists arrived from another device.
+  window.addEventListener('librarysynced', () => Promise.all([loadSongs(), loadSetlists()]).then(() => {
+    if (document.body.classList.contains('drawer-open')) renderDrawer();
+    window.dispatchEvent(new Event('setlistschange'));
+  }));
 }

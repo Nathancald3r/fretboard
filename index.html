@@ -74,6 +74,37 @@
       <div id="drop-zone" class="drop-zone">Drop Guitar Pro, MusicXML or .txt tab files here</div>
       <div id="library-list" class="cards"></div>
     </section>
+
+    <section class="panel sync-panel">
+      <h2>Sync and backup</h2>
+      <p class="muted">Keep your songs, setlists and practice log the same on every device, through a <b>private</b> GitHub repository of your own. Audio files added for play-along stay on the device that has them (YouTube links sync).</p>
+      <div id="sync-off">
+        <details>
+          <summary>How to set it up (once, about 5 minutes)</summary>
+          <ol class="small-text">
+            <li>On GitHub, create a new <b>private</b> repository, for example <code>fretboard-library</code>.</li>
+            <li>Create a token: GitHub → Settings → Developer settings → <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained tokens</a>. Repository access: <i>Only select repositories</i> → that repository. Permissions → Repository → <i>Contents: Read and write</i>. Nothing else.</li>
+            <li>Enter the repository and the token below, on each device. The token is kept in this browser only and sent only to GitHub.</li>
+          </ol>
+        </details>
+        <form id="sync-form" class="row">
+          <input id="sync-repo" placeholder="your-name/fretboard-library" required autocomplete="off" spellcheck="false" aria-label="Repository (owner/name)">
+          <input id="sync-token" type="password" placeholder="Token (github_pat_…)" required autocomplete="off" aria-label="GitHub token">
+          <button type="submit" class="primary">Connect</button>
+        </form>
+      </div>
+      <div id="sync-on" class="row" hidden>
+        <span class="sync-dot" aria-hidden="true"></span>
+        <span id="sync-status" class="small-text"></span>
+        <button id="sync-now" class="small">Sync now</button>
+        <button id="sync-disconnect" class="small ghost">Disconnect</button>
+      </div>
+      <p id="sync-error" class="sync-error small-text" hidden></p>
+      <div class="row">
+        <button id="backup-export" class="small ghost" title="Everything in one file (play-along audio files not included)">Download a backup file</button>
+        <label class="button small ghost">Restore a backup…<input id="backup-import" type="file" accept=".json,application/json" hidden></label>
+      </div>
+    </section>
   </main>
 
   <!-- PLAYER -->
@@ -95,6 +126,7 @@
         Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
       </div>
       <div id="pl-notab" class="muted small-text" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track in Tracks.</div>
+      <nav id="pl-sections" class="sections" hidden aria-label="Song sections" title="Click to jump there, double-click to loop the section"></nav>
     </div>
 
     <div id="pl-loading" class="loading">Loading score…</div>
@@ -128,6 +160,19 @@
               <option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option>
             </select></label>
           </div>
+          <div class="row transpose-row">
+            <span class="stepper" title="Moves the whole song up or down (the synth, the tab and the chord names). Recordings keep their pitch.">Transpose
+              <button id="tp-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="tp-val" class="mono">0</b><button id="tp-up" class="icon-btn small" aria-label="Transpose up">+</button></span>
+            <span class="stepper" title="Same sound, tab and chord shapes for a capo on this fret">Capo
+              <button id="capo-down" class="icon-btn small" aria-label="Capo down">−</button><b id="capo-val" class="mono">0</b><button id="capo-up" class="icon-btn small" aria-label="Capo up">+</button></span>
+            <button id="tp-reset" class="ghost small" hidden>Reset</button>
+            <span id="tp-note" class="muted small-text"></span>
+          </div>
+          <div class="row">
+            <label class="toggle"><input id="pl-fretboard" type="checkbox"> Fretboard (<kbd>F</kbd>)</label>
+            <label class="toggle"><input id="pl-lyrics-on" type="checkbox" checked> Lyrics</label>
+            <span id="pl-lyrics-note" class="muted small-text"></span>
+          </div>
           <div class="row">
             <label class="toggle"><input id="pl-chords" type="checkbox" checked> Show chords</label>
             <span id="pl-chords-src" class="muted small-text"></span>
@@ -145,7 +190,7 @@
           <p class="muted small-text keys-hint">
             <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
             <kbd>↑</kbd> <kbd>↓</kbd> previous/next line · <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> tempo −/+ 5 BPM · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>B</kbd> click ·
-            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> recording on/off · <kbd>T</kbd> tap sync · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
+            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> recording on/off · <kbd>T</kbd> tap sync · <kbd>F</kbd> fretboard · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
           </p>
         </section>
 
@@ -332,6 +377,8 @@
       </div>
 
       <div class="playbar">
+        <div id="pl-lyrics" class="lyrics-pane" hidden aria-live="off"><p id="ly-now" class="ly-now"></p><p id="ly-next" class="ly-next"></p></div>
+        <div id="pl-fretview" class="fret-pane" hidden></div>
         <input id="pl-seek" class="seek" type="range" min="0" max="1000" value="0" step="1" title="Song position (click to jump)">
         <div class="playbar-row">
           <div class="transport">

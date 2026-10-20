@@ -16,6 +16,9 @@ import {
 } from './click.js';
 import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, tapSync, toggleRecording } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
+import { transposeScore, shiftChordName } from './transpose.js';
+import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
+import { initFretView, setNeck, showNotes } from './fretview.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -67,6 +70,9 @@ function ensureApi() {
     $('pl-artist').textContent = s.artist || song?.artist || '';
     buildTrackControls();
     updateBpm();
+    buildSections();
+    showNeck();
+    resetLyrics();
   });
   api.renderStarted.on(() => { $('pl-loading').hidden = false; });
   api.renderFinished.on(() => { $('pl-loading').hidden = true; });
@@ -91,6 +97,7 @@ function ensureApi() {
       applyMix();
       applyClickVolume();
       playAlongScoreReady();
+      if (restoreTick !== null) { api.tickPosition = restoreTick; restoreTick = null; }
     });
   } catch { /* see above */ }
   api.playerStateChanged.on((e) => {
@@ -100,6 +107,7 @@ function ensureApi() {
     if (e.state === PLAYING) measureLag.start();
   });
   api.playerPositionChanged.on(onPosition);
+  api.playedBeatChanged.on(onBeat);
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
   api.playerFinished.on(() => {
     singFinished(api.isLooping);
@@ -146,6 +154,8 @@ function onPosition(e) {
   if (!seeking) $('pl-seek').value = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
   showChordAt(e.currentTick);
   showTempoAt(e.currentTick);
+  showSectionAt(e.currentTick);
+  showLyricsAt(e.currentTick);
   measureLag.position(e.currentTime);
   singPosition(e);
 }
@@ -357,6 +367,8 @@ function prepareChords(sc) {
       chordBars = fileChords(sc, trackIndex);
     } else {
       const guessed = guessChords(sc);
+      const capo = sc.tracks[trackIndex]?.staves[0]?.capo || 0;
+      if (capo) for (const b of guessed) for (const c of b.all) c.name = shiftChordName(c.name, -capo, shiftFlats);
       if (guessed.some((b) => b.all.length)) {
         injectChords(sc, guessed, AT.model.Chord);
         chordSource = 'guess';
@@ -646,12 +658,14 @@ function currentMelody() {
 function selectTrack(i) {
   if (!score?.tracks[i] || !api) return;
   trackIndex = i;
+  if (song) updateSong(song.id, { trackIndex });
+  if (song?.capo != null) { song.trackIndex = i; reloadScore(); return; }
   applyStaveProfile();
+  showNeck();
   if (chordSource === 'file') { chordBars = fileChords(score, trackIndex); chordTimeline = { bars: null, list: [] }; }
   api.renderTracks([score.tracks[trackIndex]]);
   applyMix();
   singTrackChanged();
-  if (song) updateSong(song.id, { trackIndex });
 }
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
@@ -694,7 +708,10 @@ function showTrackInfo() {
     parts.push('Key: ' + keyLabel({ tonic: minor ? (major + 9) % 12 : major, minor }));
   }
   if (staff && !staff.isPercussion) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
+  const semis = song?.transpose || 0;
+  if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
+  showShift();
 }
 
 function readScore(s) {
@@ -767,12 +784,223 @@ export async function openPlayer(s) {
   const saved = s.trackIndex;
   trackIndex = saved >= 0 && saved < parsed.tracks.length ? saved : defaultTrackIndex(parsed);
   loadMix(parsed, s.mix);
+  showParsed(parsed);
+}
+
+// Transpose / capo, then chords, then draw. Shared by opening a song and re-reading it.
+function showParsed(parsed) {
+  fileCapo = parsed.tracks[trackIndex]?.staves[0]?.capo || 0;
+  shiftFlats = transposeScore(parsed, { semitones: song.transpose || 0, capo: song.capo ?? null, capoTrack: trackIndex }).flats;
   score = parsed;
   prepareChords(parsed);
   singSongChanged();
   applyChordVisibility();
   applyStaveProfile();
   api.renderScore(parsed, [trackIndex]);
+}
+
+/* ---------- transpose and capo ---------- */
+
+let fileCapo = 0; // the capo the file has on the shown track
+let shiftFlats = false;
+let restoreTick = null; // where to put the cursor once a re-read score is ready
+
+// Reads the song again with the current transpose / capo, keeping the position.
+function reloadScore() {
+  if (!song || !api) return;
+  cancelCountIn();
+  api.pause();
+  restoreTick = api.tickPosition;
+  clearSelection();
+  let parsed;
+  try { parsed = readScore(song); } catch { return; }
+  if (trackIndex >= parsed.tracks.length) trackIndex = 0;
+  showParsed(parsed);
+}
+
+const canCapo = () => { const st = score?.tracks[trackIndex]?.staves[0]; return !!st && st.tuning.length > 0 && !st.isPercussion; };
+
+function showShift() {
+  const semis = song?.transpose || 0;
+  const capo = song?.capo ?? fileCapo;
+  $('tp-val').textContent = semis > 0 ? '+' + semis : semis < 0 ? '−' + -semis : '0';
+  $('capo-val').textContent = canCapo() ? String(capo) : '–';
+  for (const id of ['capo-down', 'capo-up']) $(id).disabled = !canCapo();
+  $('tp-down').disabled = semis <= -11;
+  $('tp-up').disabled = semis >= 11;
+  $('capo-down').disabled ||= capo <= 0;
+  $('capo-up').disabled ||= capo >= 12;
+  $('tp-reset').hidden = !semis && (song?.capo == null || song.capo === fileCapo);
+  const notes = [];
+  if (song?.capo != null && song.capo !== fileCapo) notes.push(`File: capo ${fileCapo || 'none'}`);
+  if (semis && recordingOn()) notes.push('The recording keeps its pitch');
+  $('tp-note').textContent = notes.join(' · ');
+}
+
+function setShift(changes) {
+  if (!song || !score) return;
+  Object.assign(song, changes);
+  if (song.capo === fileCapo) song.capo = null; // the file's own capo
+  updateSong(song.id, { transpose: song.transpose || 0, capo: song.capo ?? null });
+  reloadScore();
+}
+
+/* ---------- sections ---------- */
+
+let sections = []; // [{ index (master bar), end (master bar after it), el }]
+let shownSection = null;
+
+function buildSections() {
+  const nav = $('pl-sections');
+  nav.textContent = '';
+  sections = [];
+  shownSection = null;
+  const bars = score?.masterBars || [];
+  bars.forEach((mb) => {
+    if (!mb.section) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'section-chip';
+    b.textContent = (mb.section.text || mb.section.marker || '').trim() || `Bar ${mb.index + 1}`;
+    b.dataset.bar = mb.index;
+    nav.append(b);
+    sections.push({ index: mb.index, end: bars.length, el: b });
+  });
+  sections.forEach((sec, i) => { if (sections[i + 1]) sec.end = sections[i + 1].index; });
+  nav.hidden = sections.length < 2;
+}
+
+const sectionOf = (masterIndex) => sections.findLast((sec) => sec.index <= masterIndex) || null;
+
+function showSectionAt(tick) {
+  if (!sections.length) return;
+  const bar = playedBars().find((b) => tick >= b.start && tick < b.end);
+  const sec = bar ? sectionOf(bar.masterBar.index) : null;
+  if (sec === shownSection) return;
+  shownSection?.el.classList.remove('now');
+  sec?.el.classList.add('now');
+  sec?.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  shownSection = sec;
+}
+
+// The played bars of a section, searching from the current position (repeats play a section
+// more than once): the next time it comes, else the first.
+function sectionBars(sec) {
+  const bars = playedBars();
+  const from = Math.max(0, currentBarIndex());
+  let k = bars.findIndex((b, j) => j >= from && b.masterBar.index === sec.index);
+  if (k === -1) k = bars.findIndex((b) => b.masterBar.index === sec.index);
+  if (k === -1) return null;
+  let last = k;
+  while (bars[last + 1] && bars[last + 1].masterBar.index > sec.index && bars[last + 1].masterBar.index < sec.end) last++;
+  return { first: bars[k], last: bars[last] };
+}
+
+function jumpToSection(sec) {
+  if (!readyForPlayback) return;
+  const range = sectionBars(sec);
+  if (range) moveTo(range.first.start);
+}
+
+function loopSection(sec) {
+  if (!readyForPlayback) return;
+  const range = sectionBars(sec);
+  if (!range) return;
+  const staff = score.tracks[trackIndex].staves[0];
+  const startBeat = staff.bars[range.first.masterBar.index]?.voices[0]?.beats[0];
+  const endBeat = staff.bars[range.last.masterBar.index]?.voices[0]?.beats.at(-1);
+  if (startBeat && endBeat && api.highlightPlaybackRange) {
+    api.highlightPlaybackRange(startBeat, endBeat);
+    api.applyPlaybackRangeFromHighlight?.();
+  }
+  api.playbackRange = { startTick: range.first.start, endTick: range.last.end };
+  sections.forEach((x) => x.el.classList.toggle('looped', x === sec));
+  setLoop(true);
+  moveTo(range.first.start);
+}
+
+/* ---------- fretboard ---------- */
+
+const fretboardOn = () => $('pl-fretboard').checked;
+
+function showNeck() {
+  const staff = score?.tracks[trackIndex]?.staves[0];
+  const ok = fretboardOn() && staff && staff.tuning.length > 0 && !staff.isPercussion;
+  $('pl-fretview').hidden = !ok;
+  if (!ok) { setNeck(null); return; }
+  let high = 0;
+  for (const bar of staff.bars) for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes) if (n.fret > high) high = n.fret;
+  const capo = staff.capo || 0;
+  const strings = staff.tuning.length;
+  setNeck({
+    strings,
+    frets: high + capo > 15 ? Math.min(24, Math.max(19, high + capo + 1)) : 15,
+    names: [...staff.tuning].reverse().map((m) => noteName(m % 12, shiftFlats)),
+    capo,
+  });
+  showNotes([], []);
+}
+
+const fretNotes = (beat) => (beat?.notes || []).filter((n) => n.fret >= 0 && n.string >= 1).map((n) => ({ string: n.string, fret: n.fret }));
+
+function onBeat(beat) {
+  if (!beat || $('pl-fretview').hidden) return;
+  if (beat.voice?.bar?.staff?.track?.index !== trackIndex) return;
+  let next = beat.nextBeat;
+  while (next && !next.notes.length && next.nextBeat) next = next.nextBeat;
+  showNotes(fretNotes(beat), fretNotes(next));
+}
+
+/* ---------- lyrics ---------- */
+
+let lyrics = { score: null, bars: null, track: -1, lines: [] };
+let shownLine = -2;
+
+function resetLyrics() {
+  lyrics = { score: null, bars: null, track: -1, lines: [] };
+  shownLine = -2;
+  const track = score ? lyricsTrack(score) : -1;
+  const on = $('pl-lyrics-on').checked;
+  $('pl-lyrics').hidden = !on || track === -1;
+  $('pl-lyrics-note').textContent = !score ? '' : track === -1 ? 'This song has no lyrics.' : `From ${trackLabel(score.tracks[track], track)}.`;
+  $('ly-now').textContent = '';
+  $('ly-next').textContent = '';
+}
+
+function lyricLines() {
+  const bars = playedBars();
+  if (lyrics.score !== score || lyrics.bars !== bars) {
+    const track = lyricsTrack(score);
+    lyrics = {
+      score, bars, track,
+      lines: track === -1 || !bars.length ? [] : buildLyrics(score, track, bars.map((b) => ({ start: b.start, masterIndex: b.masterBar.index }))),
+    };
+    shownLine = -2;
+  }
+  return lyrics.lines;
+}
+
+function lineHtml(target, line) {
+  target.textContent = '';
+  for (const w of line?.words || []) {
+    const span = document.createElement('span');
+    span.textContent = w.text + (w.joined ? '' : ' ');
+    target.append(span);
+  }
+}
+
+function showLyricsAt(tick) {
+  if ($('pl-lyrics').hidden || !score) return;
+  const lines = lyricLines();
+  if (!lines.length) return;
+  const i = lineAt(lines, tick);
+  if (i !== shownLine) {
+    lineHtml($('ly-now'), lines[i]);
+    lineHtml($('ly-next'), lines[i + 1]);
+    shownLine = i;
+  }
+  const spans = $('ly-now').children;
+  lines[i].words.forEach((w, k) => spans[k]?.classList.toggle('sung', tick >= w.tick));
 }
 
 export function closePlayer() {
@@ -910,6 +1138,7 @@ function clearSelection() {
   if (!api) return;
   api.playbackRange = null;
   api.clearPlaybackRangeHighlight?.();
+  sections.forEach((sec) => sec.el.classList.remove('looped'));
 }
 
 function rerender() {
@@ -1138,6 +1367,30 @@ export function initPlayer() {
   $('pl-metro').addEventListener('click', () => { toggleButton('pl-metro', !clickOn()); applyClickVolume(); });
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
 
+  // Sections: click jumps there, double-click loops the section.
+  const sectionAt = (e) => sections.find((sec) => sec.el === e.target.closest('.section-chip'));
+  $('pl-sections').addEventListener('click', (e) => { const sec = sectionAt(e); if (sec) jumpToSection(sec); });
+  $('pl-sections').addEventListener('dblclick', (e) => { const sec = sectionAt(e); if (sec) loopSection(sec); });
+
+  // Transpose and capo, saved with the song.
+  $('tp-down').addEventListener('click', () => setShift({ transpose: Math.max(-11, (song?.transpose || 0) - 1) }));
+  $('tp-up').addEventListener('click', () => setShift({ transpose: Math.min(11, (song?.transpose || 0) + 1) }));
+  $('capo-down').addEventListener('click', () => setShift({ capo: Math.max(0, (song?.capo ?? fileCapo) - 1) }));
+  $('capo-up').addEventListener('click', () => setShift({ capo: Math.min(12, (song?.capo ?? fileCapo) + 1) }));
+  $('tp-reset').addEventListener('click', () => setShift({ transpose: 0, capo: null }));
+
+  // Fretboard and lyrics panes.
+  initFretView($('pl-fretview'));
+  for (const [id, key, def] of [['pl-fretboard', 'fretboard-fretview', '0'], ['pl-lyrics-on', 'fretboard-lyrics', '1']]) {
+    let v = def;
+    try { v = localStorage.getItem(key) ?? def; } catch { /* ignore */ }
+    $(id).checked = v === '1';
+    $(id).addEventListener('change', () => {
+      try { localStorage.setItem(key, $(id).checked ? '1' : '0'); } catch { /* ignore */ }
+      if (id === 'pl-fretboard') showNeck(); else resetLyrics();
+    });
+  }
+
   // Tracks: the mixer sheet, and quick mute / solo for the shown track in the play bar.
   const mixer = $('mixer-list');
   ['click', 'input', 'change'].forEach((t) => mixer.addEventListener(t, onMixerInput));
@@ -1200,6 +1453,7 @@ export function initPlayer() {
       s: () => score && setSolo(trackIndex),
       t: () => { if (!tapSync() && recordingOn()) openSheet('playalong'); },
       r: toggleRecording,
+      f: () => { $('pl-fretboard').checked = !fretboardOn(); $('pl-fretboard').dispatchEvent(new Event('change')); },
       Escape: () => { if (!closeSheets()) clearSelection(); },
     };
     const action = keys[e.key.length === 1 ? e.key.toLowerCase() : e.key];

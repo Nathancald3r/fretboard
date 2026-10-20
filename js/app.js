@@ -11,6 +11,7 @@ import { initScales, renderScales } from './scales.js';
 import { initQuickImport } from './quickimport.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
+import { initSync } from './syncui.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -262,6 +263,8 @@ async function main() {
   await recoverPendingSessions();
   await seedDemos();
   route();
+  initSync({ toast });
+  window.addEventListener('librarysynced', () => { if (!$('view-library').hidden) renderLibrary(); });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
