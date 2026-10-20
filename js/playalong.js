@@ -392,7 +392,8 @@ function showState() {
 const remember = (want) => {
   if (!song?.recording) return;
   song.videoOff = !want;
-  updateSong(song.id, { videoOff: !want });
+  song.videoOn = !!want;
+  updateSong(song.id, { videoOff: !want, videoOn: !!want });
 };
 
 async function setRecording(rec) {
@@ -403,7 +404,8 @@ async function setRecording(rec) {
     song.syncPoints = [];
     song.syncOffset = 0;
     song.videoOff = false;
-    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false });
+    song.videoOn = true;
+    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false, videoOn: true });
     await media.cue(rec.id);
     applySync();
     showState();
@@ -415,7 +417,8 @@ async function setRecording(rec) {
   song.syncPoints = [];
   song.syncOffset = 0;
   song.videoOff = false;
-  await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false });
+  song.videoOn = true;
+  await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false, videoOn: true });
   showState();
   if (rec) await setOn(true);
   else if (wasOn) showState();
@@ -536,8 +539,8 @@ export function toggleRecording() {
 /** Re-apply sync points after the score changes (another track renders new bars). */
 export function playAlongScoreReady() {
   if (on) { applySync(); return; }
-  // First time this song's score is ready: use its linked video.
-  if (!autoTried && song?.recording && !song.videoOff) { autoTried = true; setOn(true); }
+  // Only a video you switched on yourself comes back by itself when the song opens.
+  if (!autoTried && song?.recording && song.videoOn && !song.videoOff) { autoTried = true; setOn(true); }
 }
 
 export function initPlayAlong(h) {
