@@ -515,9 +515,11 @@ function setBpm(bpm) {
 
 // Hold the tempo number and drag sideways: right is faster, left slower, a BPM per 6 pixels.
 // A plain tap still lets you type.
+const SPEED_STOPS_PCT = [10, 25, 50, 75, 100];
 function scrubBpm(input) {
   let start = null;
   let moved = false;
+  let lastStop = null;
   input.addEventListener('pointerdown', (e) => {
     if (isLive() || (e.pointerType === 'mouse' && e.button !== 0)) return;
     start = { x: e.clientX, bpm: Math.round((baseTempo * speedPct) / 100), id: e.pointerId };
@@ -533,7 +535,19 @@ function scrubBpm(input) {
       input.blur();
       input.classList.add('scrubbing');
     }
-    setBpm(start.bpm + Math.round(dx / 6));
+    // Magnets at the usual practice speeds: the number sticks to 10, 25, 50, 75 and 100% of the
+    // song's tempo until you drag a little past.
+    const want = start.bpm + dx / 6;
+    const pct = (want / baseTempo) * 100;
+    const stop = SPEED_STOPS_PCT.find((p) => Math.abs(pct - p) <= 2.5);
+    if (stop !== undefined) {
+      if (stop !== lastStop) navigator.vibrate?.(8);
+      lastStop = stop;
+      setSpeed(stop);
+    } else {
+      lastStop = null;
+      setBpm(Math.round(want));
+    }
   });
   const end = () => { start = null; input.classList.remove('scrubbing'); };
   input.addEventListener('pointerup', end);
@@ -1306,6 +1320,74 @@ function setLoop(on) {
   if (api) api.isLooping = on;
 }
 
+// On a phone a drag scrolls the page, so alphaTab's drag-to-select never fires. Instead: press
+// and hold a bar until the phone buzzes, then slide to the last bar you want (the page
+// scrolls when your finger nears its top or bottom edge); lifting your finger loops those bars.
+function initTouchSelect() {
+  const box = $('score-scroll');
+  let timer = 0;
+  let from = null; // first bar of the selection, once the hold has registered
+  let at = null; // where the touch started, then where it is now
+  let raf = 0;
+  const barAt = (x, y) => {
+    const r = $('alphatab').getBoundingClientRect();
+    return api?.renderer?.boundsLookup?.getBeatAtPos(x - r.left, y - r.top)?.voice?.bar || null;
+  };
+  const show = () => {
+    const to = barAt(at.x, at.y);
+    if (!to) return;
+    const [a, z] = from.index <= to.index ? [from, to] : [to, from];
+    const first = a.voices[0]?.beats[0];
+    const last = z.voices[0]?.beats.at(-1);
+    if (first && last) api.highlightPlaybackRange(first, last);
+  };
+  const edgeScroll = () => {
+    if (!from) return;
+    const r = box.getBoundingClientRect();
+    const dy = at.y < r.top + 70 ? -(r.top + 70 - at.y) / 4 : at.y > r.bottom - 70 ? (at.y - (r.bottom - 70)) / 4 : 0;
+    if (dy) { box.scrollTop += dy; show(); }
+    raf = requestAnimationFrame(edgeScroll);
+  };
+  const finish = (apply) => {
+    clearTimeout(timer);
+    cancelAnimationFrame(raf);
+    if (from && apply) {
+      api.applyPlaybackRangeFromHighlight?.();
+      setLoop(true);
+      sections.forEach((sec) => sec.el.classList.remove('looped'));
+    } else if (from) api.clearPlaybackRangeHighlight?.();
+    from = null;
+  };
+  box.addEventListener('touchstart', (e) => {
+    finish(false);
+    if (e.touches.length !== 1 || !api || !readyForPlayback || !$('alphatab').contains(e.target)) return;
+    const t = e.touches[0];
+    at = { x: t.clientX, y: t.clientY };
+    const start = { ...at };
+    timer = setTimeout(() => {
+      from = barAt(start.x, start.y);
+      if (!from) return;
+      navigator.vibrate?.(25);
+      show();
+      raf = requestAnimationFrame(edgeScroll);
+    }, 450);
+  }, { passive: true });
+  box.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    if (!from) {
+      // Moved before the hold registered: an ordinary scroll.
+      if (at && Math.hypot(t.clientX - at.x, t.clientY - at.y) > 10) clearTimeout(timer);
+      return;
+    }
+    e.preventDefault(); // keep the page still while choosing bars
+    at = { x: t.clientX, y: t.clientY };
+    show();
+  }, { passive: false });
+  box.addEventListener('touchend', () => finish(true));
+  box.addEventListener('touchcancel', () => finish(false));
+  box.addEventListener('contextmenu', (e) => { if (from || timer) e.preventDefault(); });
+}
+
 function clearSelection() {
   if (!api) return;
   api.playbackRange = null;
@@ -1544,6 +1626,7 @@ export function initPlayer() {
   $('pl-speed').addEventListener('input', (e) => setSpeed(Number(e.target.value)));
   $('pl-speed-slide').addEventListener('input', (e) => slideSpeed(Number(e.target.value)));
   $('pl-speed-slide').addEventListener('change', (e) => e.target.blur());
+  initTouchSelect();
   $('pl-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapTempo(); });
   $('pl-tap').addEventListener('keydown', (e) => { if (e.key === 'Enter') tapTempo(); });
   initModes({ enter: enterLive, leave: leaveLive });

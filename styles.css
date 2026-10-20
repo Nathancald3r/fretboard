@@ -160,7 +160,7 @@ body.in-player { overflow: hidden; }
   background: #fbfaf7; color: #111; border-radius: var(--radius);
   overflow: auto; flex: 1 1 auto; min-height: 100px;
 }
-#alphatab { min-height: 200px; }
+#alphatab { min-height: 200px; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 /* alphaTab cursor & selection colors */
 .at-cursor-bar { background: transparent; }
 .at-selection div { background: rgba(242, 165, 65, .28); }
