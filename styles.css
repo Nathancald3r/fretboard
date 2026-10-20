@@ -278,6 +278,25 @@ kbd { font: .78rem var(--mono); padding: 0 .35em; border: 1px solid var(--line);
 #amp-dialog input { width: 100%; }
 .amp-top { margin-left: auto; border-color: var(--good); color: var(--good); }
 
+/* Singing mode: live pitch readout in the play bar and the score in the Sing sheet. */
+.sing-now {
+  display: flex; align-items: center; gap: .45rem; padding: .15rem .6rem; border-radius: 8px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line); transition: border-color .1s;
+}
+.sing-lane { width: 140px; height: 34px; display: block; background: var(--bg); border-radius: 5px; }
+.sing-now b { font-size: 1.15rem; min-width: 2.4rem; }
+#sg-state { min-width: 5.5rem; font-weight: 700; color: var(--muted); }
+.sing-now[data-status=in] { border-color: var(--good); }
+.sing-now[data-status=in] #sg-state, .sing-now[data-status=in] b { color: var(--good); }
+.sing-now[data-status=flat] { border-color: var(--accent); }
+.sing-now[data-status=flat] #sg-state { color: var(--accent); }
+.sing-now[data-status=sharp] { border-color: var(--warn); }
+.sing-now[data-status=sharp] #sg-state { color: var(--warn); }
+.sing-result { background: var(--panel-2); border-radius: 8px; padding: .6rem .8rem; margin: .5rem 0; }
+.sing-result b { font-size: 2rem; color: var(--good); }
+.sing-result p { margin: .3rem 0; }
+.sing-result .row { justify-content: space-between; }
+
 /* chords & keys */
 .cof-layout { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 1.25rem; align-items: start; }
 @media (max-width: 760px) { .cof-layout { grid-template-columns: 1fr; } .cof { max-width: 380px; margin: 0 auto; width: 100%; } }

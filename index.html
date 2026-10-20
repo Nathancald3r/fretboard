@@ -194,6 +194,29 @@
             </form>
           </dialog>
         </section>
+
+        <section class="sheet sing" data-sheet="sing" hidden>
+          <div class="sheet-head"><h2>Sing along <span id="sg-state-pill" class="pill amp-on"></span></h2><button class="ghost small" data-close>Close</button></div>
+          <p class="amp-warn"><b>Wear headphones.</b> Through speakers the microphone hears the song too, and its notes get scored as your singing.</p>
+          <div class="row"><span id="sg-track" class="muted"></span><button id="sg-pick" class="ghost small" hidden>Show the vocal track</button></div>
+          <div class="row">
+            <label>Microphone <select id="sg-device"></select></label>
+            <button id="sg-go" class="primary">Start singing mode</button>
+            <label class="toggle" title="Mutes the track shown, so you sing that part alone"><input id="sg-mute" type="checkbox"> Mute the vocal track (I'll sing it)</label>
+          </div>
+          <div class="row amp-status">
+            <div class="amp-meter" title="Microphone level"><div id="sg-meter-bar" class="amp-meter-bar"></div></div>
+            <span id="sg-heard" class="mono muted small-text">Hearing: —</span>
+            <span id="sg-running" class="muted small-text"></span>
+          </div>
+          <p id="sg-error" class="amp-error"></p>
+          <div id="sg-result" class="sing-result" hidden>
+            <div><b id="sg-score">–</b> <span id="sg-score-label" class="muted"></span></div>
+            <p id="sg-breakdown" class="small-text"></p>
+            <div class="row"><span id="sg-history" class="muted small-text"></span><button id="sg-reset" class="ghost small">Clear scores</button></div>
+          </div>
+          <p class="muted small-text">Press Play and sing: the bar at the bottom shows the written note and whether you're on it, flat or sharp (the lane shows the last few seconds; the green band is ±50 cents). Each song or loop gets a score: the share of note time you sang within ±50 cents. Singing the right note in another octave counts as in tune. The first moment of every note isn't scored, so you have time to land on it.</p>
+        </section>
       </div>
 
       <div class="playbar">
@@ -203,6 +226,10 @@
           <button id="pl-stop" class="ghost" title="Stop">■</button>
           <span id="pl-time" class="mono muted">0:00 / 0:00</span>
           <div id="pl-chord" class="chord-now" title="Chord now → next" hidden><b id="pl-chord-now">–</b><span id="pl-chord-next" class="muted"></span></div>
+          <div id="sg-live" class="sing-now" hidden title="Singing mode: the written note and how you're singing it (click for the score)">
+            <canvas id="sg-lane" class="sing-lane"></canvas>
+            <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
+          </div>
           <div class="speed">
             <button id="pl-slower" class="ghost small" title="Slower ([)">−</button>
             <input id="pl-speed" type="range" min="25" max="150" step="1" value="100" title="Speed">
@@ -223,6 +250,7 @@
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>
               <button class="ghost small" data-sheet-btn="amp">Amp</button>
+              <button class="ghost small" data-sheet-btn="sing">Sing</button>
             </div>
           </div>
         </div>
