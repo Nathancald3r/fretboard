@@ -47,8 +47,6 @@ const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING
 
 let click = loadClickSettings();
 
-let playhead = null;
-
 function ensureApi() {
   if (api) return api;
   installTone();
@@ -66,7 +64,7 @@ function ensureApi() {
   });
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
-  playhead = installPlayhead(api, $('score-scroll'), $('alphatab'));
+  installPlayhead(api);
   applyClickVolume();
 
   api.scoreLoaded.on((s) => {
@@ -937,10 +935,20 @@ function jumpToSection(sec) {
   scrollBarToTop(range.first.masterBar.index);
 }
 
-// Brings the line of the tab holding a bar into place (second from the top, where it
-// stays while playing), after alphaTab has moved the cursor.
+// Brings the line of the tab holding a bar to the top of the score view. alphaTab only
+// scrolls when the cursor would leave the view, so a jumped-to section could stay low.
 function scrollBarToTop(masterIndex) {
-  setTimeout(() => playhead?.scrollToBar(masterIndex), 60);
+  const go = () => {
+    const systems = api?.renderer?.boundsLookup?.staffSystems;
+    const sys = systems?.find((s) => s.bars.some((b) => b.index === masterIndex));
+    if (!sys) return;
+    const box = $('score-scroll');
+    const offset = $('alphatab').getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    const bounds = sys.realBounds || sys.visualBounds;
+    box.scrollTo({ top: Math.max(0, offset + bounds.y - 12), behavior: 'smooth' });
+  };
+  // After alphaTab has moved the cursor (and done any scrolling of its own).
+  setTimeout(go, 60);
 }
 
 function loopSection(sec) {

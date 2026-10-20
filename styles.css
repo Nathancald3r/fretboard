@@ -163,10 +163,15 @@ body.in-player { overflow: hidden; }
 .at-cursor-bar { background: transparent; }
 .at-selection div { background: rgba(242, 165, 65, .28); }
 .at-cursor-beat { visibility: hidden; }
-/* The playhead: a rounded box around the beat playing (js/playhead.js). */
-.fb-playhead {
-  position: absolute; left: 0; top: 0; box-sizing: border-box; pointer-events: none; will-change: transform;
-  border: 2px solid #3fbf7f; background: rgba(63, 191, 127, .08); box-shadow: 0 0 6px rgba(63, 191, 127, .35);
+/* The playhead: a box around the beat playing, pointed at the bottom (js/playhead.js).
+   The cursor layer goes behind the tab so the box never covers a number. */
+.at-cursors { z-index: 0 !important; }
+.at-surface { z-index: 1; }
+.fb-playhead { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+.fb-playhead svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.fb-playhead path {
+  fill: rgba(63, 191, 127, .12); stroke: #3fbf7f; stroke-width: 2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(63, 191, 127, .45));
 }
 .at-highlight * { fill: #d0570b; stroke: #d0570b; }
 
