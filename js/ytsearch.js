@@ -74,7 +74,7 @@ const fromPiped = (data) => (data?.items || []).filter((i) => i.type === 'stream
   id: /v=([\w-]{11})/.exec(i.url)?.[1], title: i.title, author: i.uploaderName, seconds: i.duration, verified: !!i.uploaderVerified,
 }));
 const fromInvidious = (data) => (Array.isArray(data) ? data : []).filter((i) => i.type === 'video').map((i) => ({
-  id: i.videoId, title: i.title, author: i.author, seconds: i.lengthSeconds, verified: !!i.authorVerified,
+  id: /^[\w-]{11}$/.test(i.videoId) ? i.videoId : null, title: i.title, author: i.author, seconds: i.lengthSeconds, verified: !!i.authorVerified,
 }));
 
 async function getJson(url) {

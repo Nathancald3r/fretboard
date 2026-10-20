@@ -1,0 +1,68 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Release signing: android/keystore.properties (not in git) points at the key.
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'app.fretboard'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'app.fretboard'
+        minSdk 29          // Android 10+: MediaStore downloads, a current WebView
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The web app (this repo's own files) is copied into the APK's assets at build time.
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/web')
+
+    lint {
+        abortOnError false
+    }
+}
+
+def copyWeb = tasks.register('copyWeb', Copy) {
+    from(rootProject.projectDir.parentFile) {
+        include 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/**', 'js/**', 'vendor/**'
+        exclude '**/*.md', '**/*.map'
+    }
+    into layout.buildDirectory.dir('generated/web')
+}
+tasks.named('preBuild') { dependsOn copyWeb }
+
+dependencies {
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.webkit:webkit:1.14.0'
+}

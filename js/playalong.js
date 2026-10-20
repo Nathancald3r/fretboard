@@ -483,7 +483,7 @@ export function initPlayAlong(h) {
     $('pa-video-hide').title = hidden ? 'Show the video again' : 'Hide the picture (the sound keeps playing)';
     $('pa-video-hide').setAttribute('aria-label', $('pa-video-hide').title);
   };
-  box.classList.toggle('mini', look('fretboard-video-mini', '0') === '1');
+  box.classList.toggle('mini', look('fretboard-video-mini', matchMedia('(max-width: 640px)').matches ? '1' : '0') === '1'); // small by default on a phone
   box.classList.toggle('collapsed', look('fretboard-video-hidden', '0') === '1');
   showLook();
   $('pa-video-size').addEventListener('click', () => { save('fretboard-video-mini', box.classList.toggle('mini') ? '1' : '0'); });

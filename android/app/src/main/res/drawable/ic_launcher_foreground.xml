@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Four staff lines and two notes, inside the 66dp safe zone. -->
+    <path android:strokeColor="#9AA0AB" android:strokeWidth="2.2" android:pathData="M30,40h48M30,50h48M30,60h48M30,70h48" />
+    <path android:fillColor="#F2A541" android:pathData="M46,50m-7,0a7,7 0 1,1 14,0a7,7 0 1,1 -14,0" />
+    <path android:fillColor="#F2A541" android:pathData="M62,70m-7,0a7,7 0 1,1 14,0a7,7 0 1,1 -14,0" />
+</vector>

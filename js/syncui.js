@@ -148,8 +148,17 @@ async function downloadBackup() {
   try {
     applying = true;
     const text = await exportBackup(store);
+    const name = `fretboard-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    if (window.fretboardAndroid) {
+      // The Android app's WebView can't save blob downloads; its bridge writes to Downloads.
+      const bytes = new TextEncoder().encode(text);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      window.fretboardAndroid.postMessage(JSON.stringify({ name, mime: 'application/json', data: btoa(bin) }));
+      return;
+    }
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: `fretboard-backup-${new Date().toISOString().slice(0, 10)}.json` });
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
     document.body.append(a);
     a.click();
     a.remove();

@@ -69,13 +69,13 @@ async function renderLibrary() {
     .sort((a, b) => (b.lastOpened || b.added) - (a.lastOpened || a.added));
 
   $('library-list').innerHTML = songs.map((s) => `
-    <article class="card" data-id="${s.id}">
+    <article class="card" data-id="${escape(s.id)}">
       <div class="title">${escape(s.title)}</div>
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
-        <span class="badge">${KIND_LABEL[s.kind] || s.kind}</span>
+        <span class="badge">${escape(KIND_LABEL[s.kind] || s.kind)}</span>
         ${s.practiceSeconds ? `<span>${formatDuration(s.practiceSeconds)} practiced</span>` : ''}
-        ${s.bestSpeed ? `<span>top ${s.bestSpeed}%</span>` : ''}
+        ${s.bestSpeed ? `<span>top ${escape(s.bestSpeed)}%</span>` : ''}
       </div>
       <div class="actions">
         <button class="small ghost" data-act="rename">${s.kind === 'text' ? 'Edit' : 'Rename'}</button>
@@ -273,7 +273,7 @@ async function main() {
   route();
   initSync({ toast });
   window.addEventListener('librarysynced', () => { if (!$('view-library').hidden) renderLibrary(); });
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.fretboardAndroid) { // the Android app bundles its files
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 }

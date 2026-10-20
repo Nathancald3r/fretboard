@@ -40,7 +40,7 @@ export async function renderLog() {
   }
   $('log-songs').innerHTML = [...bySong.values()].sort((a, b) => b.seconds - a.seconds).map((e) => `
     <div class="log-row"><span>${escape(e.title)} <span class="muted">${escape(e.artist)}</span></span>
-    <span class="muted">${e.count} session${e.count === 1 ? '' : 's'}${e.best ? ` · top speed ${e.best}%` : ''} · <b>${formatDuration(e.seconds)}</b></span></div>`).join('')
+    <span class="muted">${e.count} session${e.count === 1 ? '' : 's'}${e.best ? ` · top speed ${escape(e.best)}%` : ''} · <b>${formatDuration(e.seconds)}</b></span></div>`).join('')
     || '<div class="empty">No practice logged yet. Time is tracked automatically while a song is playing (or while a text tab is open).</div>';
 
   let lastDay = '';
@@ -50,6 +50,6 @@ export async function renderLog() {
     lastDay = day;
     const time = new Date(s.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return `${header}<div class="log-row"><span>${escape(s.title)}</span>
-      <span class="muted">${time}${s.maxSpeed ? ` · up to ${s.maxSpeed}%` : ''} · <b>${formatDuration(s.seconds)}</b></span></div>`;
+      <span class="muted">${time}${s.maxSpeed ? ` · up to ${escape(s.maxSpeed)}%` : ''} · <b>${formatDuration(s.seconds)}</b></span></div>`;
   }).join('') || '<div class="empty">Nothing yet.</div>';
 }

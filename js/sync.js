@@ -11,7 +11,7 @@
 
 export const DIR = 'fretboard';
 const MANIFEST = `${DIR}/library.json`;
-const songPath = (uid) => `${DIR}/songs/${uid}.json`;
+const songPath = (uid) => `${DIR}/songs/${String(uid).replace(/[^\w-]/g, '')}.json`;
 
 /* ---------- encoding ---------- */
 
@@ -65,9 +65,20 @@ export function songRecord(song) {
 }
 
 /** A song from its synced form; `local` (the copy on this device) keeps its local-only fields. */
+const SONG_KINDS = ['gp', 'xml', 'tex', 'text'];
+const NUMBER_FIELDS = ['speed', 'bestSpeed', 'practiceSeconds', 'added', 'updated', 'lastOpened', 'trackIndex', 'syncOffset'];
+
 export function songFromRecord(rec, local = null) {
   const song = {};
-  for (const [k, v] of Object.entries(rec)) song[k] = k === 'data' && v && v.$b64 !== undefined ? fromBase64(v.$b64).buffer : v;
+  // Records come from the sync repository or a backup file: keep only well-formed values, so
+  // nothing in them can be taken for markup or reach the object prototype.
+  for (const [k, v] of Object.entries(rec)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype' || k === 'id') continue;
+    song[k] = k === 'data' && v && v.$b64 !== undefined ? fromBase64(v.$b64).buffer : v;
+  }
+  if (!SONG_KINDS.includes(song.kind)) song.kind = 'text';
+  for (const k of NUMBER_FIELDS) if (song[k] !== undefined && !Number.isFinite(song[k])) delete song[k];
+  if (song.recording?.kind === 'youtube' && !/^[\w-]{11}$/.test(song.recording.id)) delete song.recording;
   if (local) {
     for (const k of LOCAL_ONLY) if (local[k] !== undefined) song[k] = local[k];
     if (localRecording(local) && !song.recording) for (const k of RECORDING_FIELDS) if (local[k] !== undefined) song[k] = local[k];

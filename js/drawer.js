@@ -38,8 +38,8 @@ const byRecent = (a, b) => (b.lastOpened || b.added) - (a.lastOpened || a.added)
 
 function songRow(s, extra = '') {
   const cur = s.id === currentSongId() ? ' current' : '';
-  return `<li class="dr-song${cur}" data-id="${s.id}">
-    <a href="#song/${s.id}"><b>${escape(s.title)}</b><span>${escape(s.artist || '')}</span></a>${extra}</li>`;
+  return `<li class="dr-song${cur}" data-id="${escape(s.id)}">
+    <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${escape(s.artist || '')}</span></a>${extra}</li>`;
 }
 
 function renderDrawer() {
@@ -51,7 +51,7 @@ function renderDrawer() {
     const add = openList || activeList;
     const target = setlists.find((l) => l.id === add);
     body.innerHTML = list.length
-      ? `<ul class="dr-list">${list.map((s) => songRow(s, target ? `<button class="small ghost" data-add="${s.id}" title="Add to “${escape(target.name)}”">+</button>` : '')).join('')}</ul>`
+      ? `<ul class="dr-list">${list.map((s) => songRow(s, target ? `<button class="small ghost" data-add="${escape(s.id)}" title="Add to “${escape(target.name)}”">+</button>` : '')).join('')}</ul>`
       : `<p class="muted">${q ? 'No songs match.' : 'Your library is empty.'}</p>`;
     return;
   }
@@ -59,8 +59,8 @@ function renderDrawer() {
   if (!list) {
     body.innerHTML = `
       <form id="dr-new" class="row"><input id="dr-new-name" placeholder="New setlist name" maxlength="60" required><button class="small primary">Create</button></form>
-      <ul class="dr-list">${setlists.map((l) => `<li class="dr-set${l.id === activeList ? ' current' : ''}" data-set="${l.id}">
-        <a href="#" data-open-set="${l.id}"><b>${escape(l.name)}</b><span>${l.songIds.length} song${l.songIds.length === 1 ? '' : 's'}</span></a></li>`).join('')}</ul>
+      <ul class="dr-list">${setlists.map((l) => `<li class="dr-set${l.id === activeList ? ' current' : ''}" data-set="${escape(l.id)}">
+        <a href="#" data-open-set="${escape(l.id)}"><b>${escape(l.name)}</b><span>${l.songIds.length} song${l.songIds.length === 1 ? '' : 's'}</span></a></li>`).join('')}</ul>
       ${setlists.length ? '' : '<p class="muted small-text">Setlists keep songs in the order you want to practise or play them. In a setlist the player shows Previous / Next.</p>'}`;
     return;
   }

@@ -633,3 +633,164 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .sync-dot.bad { background: #e5534b; }
 @keyframes sync-pulse { to { opacity: .3; } }
 .sync-error { color: #e5534b; margin: .3rem 0; }
+
+/* ---------- Phones (the Android app): thumb-sized targets, a compact play bar ---------- */
+.yt-results li { min-width: 0; }
+.yt-results button { min-width: 0; }
+@media (max-width: 640px) {
+  /* top bar: menu, mark, search on one line; the page menu scrolls on a second line (hidden in the player) */
+  .topbar { flex-wrap: wrap; gap: .1rem .5rem; padding: .35rem .6rem .25rem; }
+  .brand { font-size: 1.1rem; }
+  .search { flex: 1 1 0; }
+  .search input { min-height: 40px; font-size: 16px; }
+  #menu-btn { width: 44px; height: 44px; margin-left: -.5rem; }
+  .nav { order: 3; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: .1rem; margin: 0 -.6rem; padding: 0 .6rem; }
+  .nav a { white-space: nowrap; padding: .6rem .8rem; min-height: 44px; display: inline-flex; align-items: center; }
+  .in-player .topbar { flex-wrap: nowrap; padding: .25rem .6rem; }
+  .in-player .nav { display: none; }
+  .in-player .brand { font-size: 0; }
+  .in-player .brand::before { font-size: 1.5rem; }
+  .toast { max-width: calc(100vw - 2rem); }
+  .in-player .toast { bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .8rem); }
+
+  /* controls: 44px targets */
+  button, .button { min-height: 44px; }
+  button.small, .sheet button.small, .sheet-head button { min-height: 40px; padding: .3rem .8rem; }
+  input[type=search], input:not([type]), input[type=number], select { min-height: 44px; font-size: 16px; }
+  .toggle { min-height: 36px; }
+  .toggle input { width: 1.3rem; height: 1.3rem; }
+  .row { gap: .5rem .6rem; }
+  .panel { padding: .8rem; }
+  .find form input { flex: 1 1 100%; }
+  .find-sources button { flex: 1 1 calc(50% - .5rem); white-space: normal; }
+  .cards { grid-template-columns: 1fr; }
+  .card .actions button { min-height: 44px; }
+  #lib-filter { flex: 1 1 100%; }
+  .dr-list li { min-height: 48px; }
+  .dr-list a { min-height: 44px; justify-content: center; }
+  .dr-tools button { min-width: 44px; min-height: 44px; }
+  .seg button { min-height: 40px; }
+  #dr-close { width: 44px; height: 44px; }
+  .note-buttons button { min-width: 3rem; }
+  .stat b { font-size: 1.5rem; }
+
+  /* player header */
+  .player-head h1 { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player-head { gap: .15rem .6rem; align-items: center; flex: none; }
+  .player-head > .player-title { flex-basis: 100%; min-width: 0; }
+  #pl-info { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mode-seg button { min-height: 34px; padding: .2rem .8rem; }
+  .section-chip { padding: .25rem .8rem; font-size: .85rem; }
+
+  /* play bar: seek, then transport + tempo, then switches, then track + sheet buttons */
+  .playbar { padding-left: .5rem; padding-right: .5rem; position: relative; }
+  .playbar-row { gap: .15rem .4rem; }
+  .transport { gap: .1rem; }
+  #pl-stop { display: none; }
+  #pl-back { width: 44px; height: 44px; }
+  .play-btn { width: 48px; height: 48px; }
+  /* the clock and the chord now/next float just above the seek bar so they cost no height */
+  #pl-time { position: absolute; left: .5rem; top: -1.5rem; margin: 0; padding: .05rem .45rem; border-radius: 6px 6px 0 0; background: #101216dd; font-size: .72rem; }
+  .chord-now { position: absolute; right: .5rem; top: -1.9rem; min-width: 0; padding: 0 .55rem; border-radius: 8px 8px 0 0; border-bottom: 0; background: #101216ee; }
+  .chord-now b { font-size: 1.05rem; }
+  .speed { flex: 1 1 0; min-width: 0; justify-content: space-between; padding: 0 .2rem; }
+  .speed .icon-btn.small { width: 40px; height: 40px; font-size: 1.15rem; }
+  .bpm { gap: 0; flex: 1 1 auto; justify-content: center; }
+  .bpm span { display: none; }
+  .speed .bpm input { display: block; } /* the older rule that hides the speed slider also matched this field */
+  .bpm input { flex: none; width: 3.4rem; min-height: 40px; font-size: 1.1rem; }
+  .pill-btn { min-height: 40px; padding: .15rem .6rem; font-size: .85rem; }
+  #pl-tap { min-width: 0; }
+  #pl-tempo-now { display: none; }
+  .judge-now, .sing-now { flex: 1 1 100%; }
+  .toggles { flex: 1 1 100%; gap: .25rem; overflow-x: auto; scrollbar-width: none; }
+  .toggles > * { flex: none; }
+  .tog { min-height: 40px; padding: .25rem .8rem; font-size: .85rem; }
+  .tog-group .gear { padding: .25rem .65rem; min-width: 40px; }
+  #pl-clear-sel { width: 40px; height: 40px; }
+  #pa-toggle { margin-left: auto; }
+  #tr-status { flex: 1 1 100%; }
+  .playbar-end { flex: 1 1 100%; width: auto; min-width: 0; }
+  .track-chip { flex: 0 1 13rem; min-width: 8rem; }
+  .track-btn { min-height: 40px; padding: .2rem .5rem; }
+  .ms { width: 34px; height: 34px; min-height: 0; flex: none; }
+  #pl-track-icon { flex: none; }
+  .sheet-btns { flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; gap: .25rem; }
+  .sheet-btns button { flex: none; min-height: 40px; padding: .25rem .75rem; font-size: .85rem; }
+
+  /* sheets: leave the tab and the play button visible, comfortable fields */
+  .sheet { width: calc(100% - .5rem); max-height: min(62vh, 560px); padding: .6rem .8rem .9rem; }
+  .sheet label { flex-wrap: wrap; }
+  .sheet select { max-width: 100%; }
+  .sheet input[type=range] { min-height: 32px; }
+  .sheet .chip { min-height: 40px; padding: .2rem .8rem; }
+  .sheet-head { top: -.6rem; }
+  .sheet .stepper .icon-btn.small { width: 40px; height: 40px; }
+  .amp-knob { grid-template-columns: 4.6rem 1fr 3.4rem; }
+  .mixer-row { grid-template-columns: minmax(0, 1fr) 70px auto auto; }
+  .mixer-row .ms { width: 40px; height: 40px; }
+  .mixer-row .track-name { min-height: 44px; }
+  #pa-yt-form { flex: 1 1 100%; }
+  #pa-yt-form input { width: auto; flex: 1; min-width: 0; }
+  .yt-results .yt-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .yt-results .yt-meta { display: none; }
+  .trainer input[type=number] { width: 3.6rem; }
+  dialog { width: 94vw; }
+  #mt-bpm { flex: 1 1 8rem; width: auto; min-width: 0; }
+  .metro .row button.small { min-width: 44px; }
+  input[type=password], input[type=text], input[type=url] { min-height: 44px; font-size: 16px; }
+
+  /* the video picture: a small corner window above the play bar */
+  .pa-video { width: 46vw; right: .5rem; }
+  .pa-video-bar button { min-height: 40px; min-width: 40px; }
+}
+
+/* Phone held sideways: very little height, so everything is one or two thin lines. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .topbar { flex-wrap: nowrap; padding: .15rem .6rem; gap: .6rem; }
+  .topbar .nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nav a { white-space: nowrap; padding: .3rem .6rem; min-height: 40px; display: inline-flex; align-items: center; }
+  .search { flex: 1 1 0; }
+  .search input { min-height: 36px; }
+  .in-player .brand { font-size: 0; }
+  .in-player .brand::before { font-size: 1.5rem; }
+  .in-player .nav { display: none; }
+  .view { padding: .5rem 1rem; }
+  .player-view { gap: .25rem; }
+  .player-head { flex-wrap: nowrap; gap: .5rem; align-items: center; overflow: hidden; }
+  .player-head h1 { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; max-width: 40%; }
+  .player-head > .player-title { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
+  #pl-artist, #pl-info { display: none; }
+  .player-head > .sections { flex: 1 1 0; min-width: 0; flex-basis: 0; order: 3; }
+  .section-chip { padding: .25rem .7rem; }
+  .mode-seg button { padding: .15rem .7rem; min-height: 32px; }
+  .playbar { padding-left: .6rem; padding-right: .6rem; }
+  .playbar-row { gap: .1rem .5rem; }
+  .speed .speed-slide, .speed input[type=range] { display: none; }
+  .play-btn { width: 44px; height: 44px; }
+  .icon-btn { width: 40px; height: 40px; }
+  #pl-time { min-width: 0; }
+  .chord-now { min-height: 36px; }
+  .speed .icon-btn.small { width: 40px; height: 40px; }
+  .pill-btn { min-height: 36px; }
+  .tog { min-height: 38px; }
+  .toggles { flex-wrap: nowrap; }
+  .playbar-end { margin-left: 0; flex: 1 1 0; flex-wrap: nowrap; min-width: 0; }
+  .track-chip { flex: none; }
+  .toggles { flex: none; }
+  .sheet-btns { flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .sheet-btns button { flex: none; }
+  #pl-stop { display: none; }
+  .player-head { flex: none; }
+  .track-btn { min-height: 38px; }
+  .ms { width: 34px; height: 34px; }
+  .sheet-btns button { min-height: 38px; }
+  .sheet { max-height: calc(var(--vvh, 100vh) - var(--dock-h, 100px) - 4rem); }
+  .pa-video, .pa-video.mini { width: 210px; right: .5rem; }
+  .count-overlay { font-size: 4rem; top: 50%; }
+  .in-player .toast { bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .6rem); }
+  .lyrics-pane { padding: .1rem 0; }
+  .fv-neck { max-height: 60px; }
+}
+
+input[type=password] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .45rem .6rem; }
