@@ -44,7 +44,7 @@ function fileHandler(rec) {
   el.preload = 'auto';
   el.preservesPitch = true;
   el.src = URL.createObjectURL(new Blob([rec.data], { type: rec.type || 'audio/mpeg' }));
-  let raf = 0, timer = 0;
+  let raf = 0, timer = 0, dead = false; // a switched-off handler must not move or play anything
   const tick = () => {
     sendPosition(el.currentTime * 1000);
     cancelAnimationFrame(raf);
@@ -66,13 +66,13 @@ function fileHandler(rec) {
     set playbackRate(v) { el.playbackRate = v; },
     get masterVolume() { return el.volume; },
     set masterVolume(v) { el.volume = Math.max(0, Math.min(1, v)); },
-    seekTo(ms) { el.currentTime = toReal(Math.max(0, ms - lead())) / 1000; },
-    seekReal(ms) { el.currentTime = ms / 1000; },
+    seekTo(ms) { if (!dead) el.currentTime = toReal(Math.max(0, ms - lead())) / 1000; },
+    seekReal(ms) { if (!dead) el.currentTime = ms / 1000; },
     nowReal: () => el.currentTime * 1000,
-    play() { el.play().catch(() => {}); },
+    play() { if (!dead) el.play().catch(() => {}); },
     pause() { el.pause(); },
     now: () => toPlayed(el.currentTime * 1000),
-    destroy() { el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
+    destroy() { dead = true; el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
   };
 }
 
@@ -119,6 +119,7 @@ async function youTubeHandler(rec) {
   }
   let timer = 0;
   let rate = 1;
+  let dead = false; // a switched-off handler must not move or play anything
   const poll = () => sendPosition(player.getCurrentTime() * 1000);
   const stateChange = (e) => {
     clearInterval(timer);
@@ -145,10 +146,10 @@ async function youTubeHandler(rec) {
     },
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
-    seekTo(ms) { player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); },
-    seekReal(ms) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); },
+    seekTo(ms) { if (!dead) { player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
+    seekReal(ms) { if (!dead) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); } },
     nowReal: () => player.getCurrentTime() * 1000,
-    play() { player.playVideo(); },
+    play() { if (!dead) player.playVideo(); },
     pause() { player.pauseVideo(); },
     now: () => toPlayed(player.getCurrentTime() * 1000),
     // Another video in the same player (tearing YouTube's player down and making a new one
@@ -166,9 +167,10 @@ async function youTubeHandler(rec) {
       });
     },
     destroy() {
+      dead = true;
       clearInterval(timer);
       player.removeEventListener('onStateChange', stateChange);
-      try { player.stopVideo(); } catch { /* ignore */ }
+      try { player.pauseVideo(); player.stopVideo(); } catch { /* ignore */ }
       box.hidden = true;
     },
   };
