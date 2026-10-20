@@ -310,6 +310,35 @@ function showScrub(real) {
 
 function setLabel() {}
 
+// Tempo match: the video's tempo (tapped or typed) gives every bar's time, so the tab keeps
+// pace with a video that is faster or slower than the written tempo.
+const tempoTaps = [];
+function tapVideoBeat() {
+  const now = performance.now();
+  if (tempoTaps.length && now - tempoTaps.at(-1) > 2500) tempoTaps.length = 0;
+  tempoTaps.push(now);
+  if (tempoTaps.length > 17) tempoTaps.shift();
+  if (tempoTaps.length < 3) { $('pa-tempo-state').textContent = 'Keep tapping the beat…'; return; }
+  const gaps = tempoTaps.slice(1).map((t, i) => t - tempoTaps[i]).sort((a, b) => a - b);
+  const bpm = 60000 / gaps[Math.floor(gaps.length / 2)];
+  $('pa-vbpm').value = bpm.toFixed(1);
+  $('pa-tempo-state').textContent = `${tempoTaps.length} taps: ${bpm.toFixed(1)} BPM (the tab says ${Math.round(hooks.tempo())}). ${tempoTaps.length < 6 ? 'A few more…' : 'Press Match when it settles.'}`;
+}
+
+function matchTempo(bpm) {
+  if (!song || !(bpm >= 30 && bpm <= 300)) { $('pa-tempo-state').textContent = 'Tap along with the video, or type its BPM.'; return; }
+  const bars = hooks.playedBars();
+  const at = startIdx();
+  const anchor = song.syncPoints?.find(([p]) => p === at)?.[1] ?? 0;
+  const perTick = 60000 / (bpm * 960);
+  const base = bars[at]?.start || 0;
+  song.syncPoints = bars.map((b, p) => [p, Math.round(anchor + (b.start - base) * perTick)]).filter(([p]) => p >= at);
+  song.videoBpm = bpm;
+  updateSong(song.id, { syncPoints: song.syncPoints, videoBpm: bpm });
+  $('pa-tempo-state').textContent = `Matched: the tab now follows ${bpm.toFixed(1)} BPM from ${fmtT(anchor)} in the video. Check the beat; tap again to adjust.`;
+  if (on) applySync(); else showSync();
+}
+
 // The video's start time follows the scrubber once a part has been chosen.
 const hasStart = () => !!song?.syncPoints?.some(([p]) => p === startIdx()) && !!song?.videoMaster;
 function applyStartAt(realMs) {
@@ -766,6 +795,8 @@ export function initPlayAlong(h) {
     if (media.isPlaying) media.pause(); else media.play();
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
   });
+  $('pa-tempo-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapVideoBeat(); });
+  $('pa-tempo-match').addEventListener('click', () => matchTempo(Number($('pa-vbpm').value)));
   $('pa-start-test').addEventListener('click', () => {
     if (!on) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first.'; return; }
     hooks.seekToBar(startIdx());
