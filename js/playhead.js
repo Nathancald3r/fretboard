@@ -7,7 +7,7 @@
 
 const BOX = 24; // smallest playhead width at zoom 1 (px)
 const SIDE = 7; // room beside the widest number of the beat
-const TOP = 4; // above the top string (chord names and bar numbers sit just above)
+const TOP = 13; // above the top string: clear of the numbers on it
 const BOTTOM = 7; // below the bottom string, before the point starts
 const POINT = 10; // how far the point reaches down
 const RADIUS = 8;
