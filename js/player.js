@@ -4,6 +4,7 @@
 import { updateSong } from './db.js';
 import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
+import { noteName, keyLabel } from './theory.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -184,7 +185,27 @@ function applyStaveProfile() {
   $('pl-notab').hidden = !noTab;
   const profile = noTab ? 'score' : wanted;
   api.settings.display.staveProfile = { tab: AT.StaveProfile.Tab, default: AT.StaveProfile.Default, score: AT.StaveProfile.Score }[profile];
+  // Tab only: draw the rhythm (stems and beams) under the tab, like Songsterr.
+  api.settings.notation.rhythmMode = profile === 'tab' ? AT.TabRhythmMode.ShowWithBars : AT.TabRhythmMode.Automatic;
   api.updateSettings();
+  showTrackInfo();
+}
+
+// "Tuning: E A D G B E · Key: E · Capo: none" for the current track.
+function showTrackInfo() {
+  const staff = score?.tracks[trackIndex]?.staves[0];
+  const parts = [];
+  if (staff && staff.tuning.length && !staff.isPercussion) {
+    parts.push('Tuning: ' + [...staff.tuning].reverse().map((m) => noteName(m % 12, true)).join(' '));
+  }
+  const bar = score?.masterBars[0];
+  if (bar && typeof bar.keySignature === 'number') {
+    const major = ((bar.keySignature * 7) % 12 + 12) % 12;
+    const minor = bar.keySignatureType === 1;
+    parts.push('Key: ' + keyLabel({ tonic: minor ? (major + 9) % 12 : major, minor }));
+  }
+  if (staff && !staff.isPercussion) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
+  $('pl-info').textContent = parts.join(' · ');
 }
 
 function readScore(s) {

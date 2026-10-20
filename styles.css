@@ -200,3 +200,7 @@ dialog .row input { flex: 1 1 200px; }
 .fb-dot.on.root circle { fill: var(--accent); }
 .fb-dot text { fill: #14161a; font: 600 11px system-ui, sans-serif; text-anchor: middle; }
 button.primary.danger { background: var(--warn); border-color: var(--warn); color: #fff; }
+
+/* Keep alphaTab's cursor layers below the sticky top bar. */
+.score-scroll { isolation: isolate; }
+.small-text { font-size: .85rem; }
