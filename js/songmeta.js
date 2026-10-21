@@ -1,13 +1,14 @@
 // How a song is classified and ordered in the library: pro tab vs chord chart, ratings, folders.
 
-/** 'pro' (Guitar Pro / MusicXML), 'tab' (typed tab lines), 'chords' (chords over lyrics), 'exercise'. */
+/** 'pro' (Guitar Pro / MusicXML), 'sheet' (a PDF shown as pages), 'tab' (typed tab lines), 'chords' (chords over lyrics), 'exercise'. */
 export function chartType(song) {
   if (song.kind === 'tex') return song.fileName && /\.pdf$/i.test(song.fileName) ? 'pro' : 'exercise'; // a PDF read into notes is a song, not a practice exercise
+  if (song.kind === 'sheet') return 'sheet';
   if (song.kind !== 'text') return 'pro';
   return /^\s*[eEbBgGdDaA]?\|?[-0-9hpbrx/\~()]{0,3}\|?[-0-9hpbrx/\~()|]{8,}/m.test(String(song.data || '')) && /-{3,}/.test(String(song.data || '')) ? 'tab' : 'chords';
 }
 
-export const CHART_LABEL = { pro: 'Pro tab', tab: 'Text tab', chords: 'Chord chart', exercise: 'Exercise' };
+export const CHART_LABEL = { pro: 'Pro tab', tab: 'Text tab', chords: 'Chord chart', exercise: 'Exercise', sheet: 'Sheet music' };
 
 export const SORTS = {
   recent: (a, b) => (b.lastOpened || b.added || 0) - (a.lastOpened || a.added || 0),

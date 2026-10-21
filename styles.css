@@ -1250,3 +1250,7 @@ body.edit-mode .ed-close { display: none; }
 .parts-dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .parts-dialog .row { margin: .5rem 0; gap: .6rem; flex-wrap: wrap; }
 .parts-dialog .parts-name { flex: 1 1 14rem; overflow-wrap: anywhere; font-size: .85rem; }
+
+/* Sheet music PDF pages */
+.sheet-pages { display: flex; flex-direction: column; align-items: center; gap: .8rem; margin-top: .8rem; }
+.sheet-page { width: 100%; max-width: 1100px; height: auto; background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }

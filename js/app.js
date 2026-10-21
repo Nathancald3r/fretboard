@@ -3,6 +3,7 @@ import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { askVersion } from './version.js';
 import { initText, openText, closeText, cleanTabText } from './texttab.js';
+import { openSheet, closeSheet } from './sheetview.js';
 import { initMetronome, stopMetronome } from './metronome.js';
 import { initLayers, resetLayers } from './layers.js';
 import { initTuner, stopTuner } from './tuner.js';
@@ -23,7 +24,7 @@ import { parseFilename } from './tabinfo.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const VIEWS = ['library', 'player', 'text', 'practice', 'scales', 'keys', 'tools', 'vocal', 'log'];
+const VIEWS = ['library', 'player', 'text', 'sheet', 'practice', 'scales', 'keys', 'tools', 'vocal', 'log'];
 const PRACTICE_VIEWS = ['practice', 'scales', 'keys', 'tools', 'vocal']; // all highlight the Practice tab
 let currentView = null;
 let editingId = null;
@@ -46,17 +47,18 @@ async function route() {
   if (name === 'song') {
     song = await getSong(Number(arg));
     const asText = song?.kind === 'text' && location.hash.split('/')[2] !== 'play';
-    view = !song ? 'library' : asText ? 'text' : 'player';
+    view = !song ? 'library' : song.kind === 'sheet' ? 'sheet' : asText ? 'text' : 'player';
   } else if (name === 'edit') { // edit mode: the tab editor instead of the practice tools
     song = await getSong(Number(arg));
-    editing = !!song && chartType(song) !== 'chords' && song.kind !== 'tex';
-    view = editing ? 'player' : song ? (song.kind === 'text' ? 'text' : 'player') : 'library';
+    editing = !!song && chartType(song) !== 'chords' && song.kind !== 'tex' && song.kind !== 'sheet';
+    view = editing ? 'player' : song ? (song.kind === 'sheet' ? 'sheet' : song.kind === 'text' ? 'text' : 'player') : 'library';
   }
   document.body.classList.toggle('edit-mode', editing);
 
   resetLayers(); // sheets, menus, pop-ups and full screen never carry over to another page or song
   if (currentView === 'player') closePlayer(); // also when switching songs
   if (currentView === 'text') closeText();
+  if (currentView === 'sheet') closeSheet();
   if (currentView === 'tools' && view !== 'tools') { stopTuner(); stopMetronome(); }
   if (currentView === 'vocal' && view !== 'vocal') stopVocal();
   trackDrill(view);
@@ -73,6 +75,7 @@ async function route() {
   if (view === 'keys') renderKeys();
   if (view === 'player') { await openPlayer(song); if (editing) window.dispatchEvent(new Event('fbeditmode')); }
   if (view === 'text') openText(song);
+  if (view === 'sheet') openSheet(song);
   if (view !== 'text') window.scrollTo(0, 0);
 }
 
@@ -313,12 +316,19 @@ async function importPdfParts(chosen) {
   const { title, artist } = namesFromPdf(chosen[0].file.name.replace(/\.[^.]+$/, ''), true);
   const singer = chosen.findIndex((c) => PARTS[c.part][0] === 'Vocal');
   const parts = [];
+  const sheets = [];
   for (let i = 0; i < chosen.length; i++) {
     const { file, part } = chosen[i];
     toast(`Reading ${PARTS[part][0]} (${i + 1} of ${chosen.length})…`, 8000);
     const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist, lyrics: i === (singer >= 0 ? singer : 0) });
     if (r.strips?.length) parts.push({ name: PARTS[part][0], program: PARTS[part][1], strips: r.strips });
+    else sheets.push({ file, name: PARTS[part][0] });
   }
+  // parts written as standard notation (piano, vocal staff) have no tab to combine; keep each as sheet music
+  for (const s of sheets) {
+    await putSong({ kind: 'sheet', title: `${title} (${s.name})`, artist, data: await s.file.arrayBuffer(), fileName: s.file.name, added: Date.now() });
+  }
+  if (!parts.length && sheets.length) { toast(`Saved ${sheets.length} PDF${sheets.length > 1 ? 's' : ''} as sheet music.`, 6000); return -1; }
   if (!parts.length) return null;
   const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
   if (!made) return null;
@@ -337,7 +347,8 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
     if (chosen?.length) {
       try {
         const id = await importPdfParts(chosen);
-        if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
+        if (id === -1) { added++; files = files.filter((f) => !pdfs.includes(f)); } // all kept as sheet music
+        else if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
       } catch (err) { console.error(err); }
     }
   }
@@ -354,7 +365,12 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
         toast('Reading the PDF…', 8000);
         const { title, artist } = namesFromPdf(base);
         const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist });
-        if (!r.tex && !r.text.trim()) { failed.push(file.name); continue; }
+        if (!r.tex && !r.text.trim()) { // no tab in it (piano or vocal staff): keep the PDF to read as pages
+          ids.push(await putSong({ kind: 'sheet', title, artist, data: await file.arrayBuffer(), fileName: file.name, added: Date.now() }));
+          added++;
+          toast('No tab in this PDF, so it’s saved as sheet music you can read page by page.', 6000);
+          continue;
+        }
         ids.push(await putSong(r.tex
           ? { kind: 'tex', title, artist, data: r.tex, fileName: file.name, added: Date.now() }
           : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));

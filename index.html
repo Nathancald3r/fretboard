@@ -80,6 +80,7 @@
           <button data-chart="pro" title="Guitar Pro / MusicXML: notation and tab you can play back">Pro tabs</button>
           <button data-chart="tab" title="Tab typed as text">Text tabs</button>
           <button data-chart="chords" title="Chords over lyrics">Chord charts</button>
+          <button data-chart="sheet" title="PDF sheet music shown as pages (piano, vocal staff)">Sheet music</button>
         </span>
         <label>Folder <select id="lib-folder"><option value="all">All songs</option></select></label>
         <label>Sort <select id="lib-sort">
@@ -682,6 +683,17 @@
       <span id="tx-time" class="mono muted"></span>
     </div>
     <pre id="tx-body" class="text-tab"></pre>
+  </main>
+
+  <!-- SHEET MUSIC PDF -->
+  <main id="view-sheet" class="view" hidden>
+    <div class="player-head">
+      <div>
+        <h1 id="sh-title">—</h1>
+        <div id="sh-artist" class="muted"></div>
+      </div>
+    </div>
+    <div id="sh-pages" class="sheet-pages"></div>
   </main>
 
   <!-- SCALES -->

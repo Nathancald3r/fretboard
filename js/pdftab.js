@@ -228,7 +228,7 @@ export function readTabPage(ink, w, h) {
 /* ---------- PDF reader ---------- */
 
 let pdfjs = null;
-async function loadPdfjs() {
+export async function loadPdfjs() {
   if (!pdfjs) {
     pdfjs = await import('../vendor/pdfjs/pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
