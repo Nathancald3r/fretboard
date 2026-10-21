@@ -1,6 +1,6 @@
 // Run: node tests/ytsearch.test.mjs
 import assert from 'node:assert/strict';
-import { songQuery, rankResults, versionHints } from '../js/ytsearch.js';
+import { songQuery, rankResults, versionHints, pickConfident, explainPick, tabEvidence } from '../js/ytsearch.js';
 
 assert.deepEqual(songQuery({ title: 'Chris Tomlin - Here I Am To Worship' }), { artist: 'Chris Tomlin', title: 'Here I Am To Worship', text: 'Chris Tomlin Here I Am To Worship' });
 assert.equal(songQuery({ artist: 'Oasis', title: 'Wonderwall' }).text, 'Oasis Wonderwall');
@@ -47,5 +47,28 @@ const noNote = rankResults([
 ], tom);
 assert.equal(noNote[0].id, 'studio', 'without a note the studio recording still wins');
 assert.deepEqual(versionHints({ title: 'x' }), { words: [], flags: {} });
+
+// Confident auto-pick: clear lead and a length within 8% of the tab.
+const ranked = rankResults([
+  r('official', 'Metallica: Nothing Else Matters (Official Music Video)', 'Metallica', 386, true),
+  r('cover', 'Nothing Else Matters guitar cover', 'Some Guitarist', 390),
+], want);
+assert.equal(pickConfident(ranked, 388)?.id, 'official');
+assert.equal(pickConfident(ranked, 300), null, 'length too far from the tab: ask');
+assert.equal(pickConfident(rankResults([r('a', 'Metallica - Nothing Else Matters', 'Metallica', 388), r('b', 'Metallica - Nothing Else Matters', 'Metallica', 389)], want), 388), null, 'tie: ask');
+assert.equal(pickConfident([], 388), null);
+assert.match(explainPick(ranked[0], want), /official/);
+assert.match(explainPick(ranked[0], want), /length/);
+// Evidence from the tab.
+const ev = tabEvidence({ type: 'Official' }, ['Lead Vocals', 'Acoustic Guitar']);
+assert.ok(ev.official && ev.vocals && ev.acousticOnly);
+assert.ok(!tabEvidence(null, ['Electric Guitar']).acousticOnly);
+const vocalPick = rankResults([
+  r('inst', 'Metallica - Nothing Else Matters (Instrumental)', 'Metallica', 388),
+  r('song', 'Metallica - Nothing Else Matters', 'Metallica', 388),
+], { ...want, evidence: ev });
+assert.equal(vocalPick[0].id, 'song');
+const dur = rankResults([r('far', 'Metallica - Nothing Else Matters', 'Metallica', 330), r('near', 'Metallica - Nothing Else Matters', 'Metallica', 389)], want);
+assert.equal(dur[0].id, 'near');
 
 console.log('ytsearch: all tests passed');

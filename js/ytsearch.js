@@ -45,7 +45,7 @@ const BAD = [
 ];
 
 // Higher is a better match for the artist's own recording of the song.
-export function scoreResult(r, { artist, title, seconds, hints }) {
+export function scoreResult(r, { artist, title, seconds, hints, evidence }) {
   const t = norm(r.title);
   const a = norm(r.author);
   const songTitle = norm(title);
@@ -83,10 +83,61 @@ export function scoreResult(r, { artist, title, seconds, hints }) {
   if (flags.piano && /\bpiano\b/.test(t)) score += 3;
   if (seconds && r.seconds) {
     const off = Math.abs(r.seconds - seconds);
-    if (off <= 15) score += 2;
-    else if (off > 90) score -= 2;
+    const rel = off / seconds;
+    if (rel <= 0.04 || off <= 8) score += 3;
+    else if (rel <= 0.08 || off <= 15) score += 2;
+    else if (rel > 0.25 || off > 90) score -= 3;
+    else if (rel > 0.15) score -= 1;
   }
+  const ev = evidence || {};
+  // A tab from an official/pro transcription follows the album recording.
+  if (ev.official && !flags.live && !/\b(live|acoustic|cover)\b/.test(t) && (byArtist || /\bofficial\b/.test(t))) score += 1;
+  // Vocal tracks in the file: the sung song, not an instrumental or a solo-guitar arrangement.
+  if (ev.vocals && /\b(instrumental|karaoke|solo guitar|fingerstyle)\b/.test(t)) score -= 2;
+  if (ev.acousticOnly && !flags.acoustic && /\b(acoustic|unplugged)\b/.test(t)) score += 2;
   return score;
+}
+
+// Extra evidence about the recording from the tab: its source link (type: Official/Pro/Guitar Pro),
+// the track names in the file. `parsed` is tabinfo.parseSource's result; `tracks` are names.
+export function tabEvidence(parsed, tracks = []) {
+  const names = (tracks || []).map((n) => norm(n));
+  const guitars = names.filter((n) => /guitar|gtr/.test(n));
+  return {
+    official: /^(Official|Pro)$/.test(parsed?.type || ''),
+    vocals: names.some((n) => /\b(vocal|vocals|voice|lead vox|vox|singer)\b/.test(n)),
+    acousticOnly: guitars.length > 0 && guitars.every((n) => /acoustic|nylon|steel/.test(n)),
+  };
+}
+
+// When one result is clearly the right one it can be attached without asking: a clear score
+// lead, and a length within 8% of the tab's (when both are known; otherwise a bigger lead).
+export function pickConfident(ranked, seconds) {
+  const [top, next] = ranked;
+  if (!top || top.score < 6) return null;
+  const lead = next ? top.score - next.score : 99;
+  const known = !!(seconds && top.seconds);
+  if (known && Math.abs(top.seconds - seconds) / seconds > 0.08) return null;
+  if (lead < (known ? 4 : 7)) return null;
+  return top;
+}
+
+// A few words on why a result was picked.
+export function explainPick(r, { artist, seconds, hints }) {
+  const why = [];
+  const a = norm(r.author).replace(/\b(vevo|topic|official|music|tv)\b/g, '').replace(/\s+/g, ' ').trim();
+  const sa = norm(artist);
+  if (sa && a && a.replace(/ /g, '') === sa.replace(/ /g, '')) why.push(/ topic$/.test(norm(r.author)) ? 'album track' : "artist's own channel");
+  if (/\bofficial\b/.test(norm(r.title))) why.push('official');
+  const f = hints?.flags || {};
+  const t = norm(r.title);
+  if ((f.live && /\blive\b/.test(t)) || (f.acoustic && /acoustic|unplugged/.test(t)) || (f.piano && /piano/.test(t))) why.push('matches the tab’s version note');
+  else if (hints?.words?.some((w) => t.includes(w))) why.push('matches the version note');
+  if (seconds && r.seconds) {
+    const pct = Math.round(Math.abs(r.seconds - seconds) / seconds * 100);
+    why.push(pct <= 1 ? 'same length as the tab' : `length within ${pct}% of the tab`);
+  }
+  return why.length ? why.join(', ') : 'best title match';
 }
 
 export function rankResults(results, want) {
@@ -144,9 +195,14 @@ export async function searchYouTube(q) {
 }
 
 // The song's recording, best match first.
-export async function findRecording(song, seconds) {
+export async function findRecording(song, seconds, evidence) {
   const q = songQuery(song);
-  const want = { ...q, seconds, hints: versionHints(song, q.text) };
+  const want = { ...q, seconds, hints: versionHints(song, q.text), evidence };
+  const ranked = await findRanked(song, want);
+  return Object.assign(ranked, { want });
+}
+
+async function findRanked(song, want) {
   if (!want.text) return [];
   // Searches: plain finds the artist's channel and album track, "official" the video, and, when
   // the tab's version note says which version it is, one with those words in.
