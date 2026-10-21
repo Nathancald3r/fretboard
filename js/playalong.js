@@ -234,9 +234,24 @@ function startIdx() {
 // With nothing saved, every bar is placed at the tab's own tempo from the start point, so a video that
 // is shorter or longer than the tab can't stretch or squeeze the whole song.
 function syncPoints() {
-  if (song?.syncPoints?.length) return song.syncPoints;
-  const at = startIdx();
   const bars = hooks.playedBars();
+  if (song?.syncPoints?.length) {
+    // Points that run backwards (left over from an earlier move of the start) make the cursor and video
+    // jump back and forth, so only an increasing run is kept; past the last point the bars carry on at
+    // the video's tempo (or the tab's) instead of leaving it to chance.
+    const kept = [];
+    for (const pt of [...song.syncPoints].sort((x, y) => x[0] - y[0])) {
+      if (!kept.length || (pt[0] > kept[kept.length - 1][0] && pt[1] > kept[kept.length - 1][1])) kept.push(pt);
+    }
+    const last = kept[kept.length - 1];
+    const bpm = song.videoBpm || hooks.tempo();
+    if (last && bars[last[0]] && bpm > 0 && last[0] < bars.length - 1) {
+      const perTick = 60000 / (bpm * 960);
+      for (let p = last[0] + 1; p < bars.length; p++) kept.push([p, Math.round(last[1] + (bars[p].start - bars[last[0]].start) * perTick)]);
+    }
+    return kept;
+  }
+  const at = startIdx();
   const tempo = hooks.tempo();
   if (!bars[at] || !(tempo > 0)) return [[at, 0]];
   const perTick = 60000 / (tempo * 960);
