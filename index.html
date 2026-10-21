@@ -170,8 +170,9 @@
       <div class="pa-video-frame"></div>
       <div class="pa-video-ctl">
         <button id="pa-vid-play" class="ghost small" aria-label="Play or pause the video">▶</button>
-        <span id="pa-vid-time" class="mono">0:00.0</span>
+        <span id="pa-vid-time" class="mono jog-time" title="Hold and drag left or right to scrub: 0.1 s for every 5 pixels" aria-label="Video time: hold and drag sideways to scrub finely">0:00.0</span>
         <input id="pa-vid-scrub" class="scrub-range" type="range" min="0" max="600" step="0.1" value="0" aria-label="Video position">
+        <button id="pa-hear" class="ghost small hear" aria-pressed="true" title="Hear the video while you scrub">🔊</button>
         <button id="pa-link-here" class="small primary" title="The music starts here in the video: link this moment to the bar you selected in the tab (or the bar the cursor is on)">Start here</button>
         <span id="pa-link-note" class="muted small-text"></span>
       </div>
@@ -323,12 +324,12 @@
               <h3>2 · Where the music starts</h3>
               <div class="row scrub-row">
                 <button id="pa-scrub-play" class="ghost small" aria-label="Play or pause the video">▶</button>
-                <span id="pa-scrub-time" class="mono scrub-time">0:00.0</span>
+                <span id="pa-scrub-time" class="mono scrub-time jog-time" title="Hold and drag left or right to scrub: 0.1 s for every 5 pixels" aria-label="Video time: hold and drag sideways to scrub finely">0:00.0</span>
                 <input id="pa-scrub" class="scrub-range" type="range" min="0" max="600" step="0.1" value="0" aria-label="Video position" disabled>
               </div>
               <div class="row scrub-nudges">
                 <button class="ghost small" data-scrub="-5">−5 s</button><button class="ghost small" data-scrub="-1">−1</button><button class="ghost small" data-scrub="-0.1">−0.1</button>
-                <button class="ghost small" data-scrub="0.1">+0.1</button><button class="ghost small" data-scrub="1">+1</button><button class="ghost small" data-scrub="5">+5 s</button>
+                <button id="pa-hear2" class="ghost small hear" aria-pressed="true" title="Hear the video while you scrub">🔊 Hear</button> <button class="ghost small" data-scrub="0.1">+0.1</button><button class="ghost small" data-scrub="1">+1</button><button class="ghost small" data-scrub="5">+5 s</button>
               </div>
               <p class="step-title small-text"><b>Which part of the tab starts there?</b></p>
               <div id="pa-start-chips" class="row chips"></div>

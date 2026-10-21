@@ -892,29 +892,78 @@ export function initPlayAlong(h) {
     media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)));
   };
   // The position sliders: the number shown is the video's own time, to a tenth of a second.
+  let hear = true;
+  try { hear = localStorage.getItem('fretboard-scrub-hear') !== '0'; } catch { /* ignore */ }
+  const paintHear = () => ['pa-hear', 'pa-hear2'].forEach((id) => { $(id).classList.toggle('on', hear); $(id).setAttribute('aria-pressed', String(hear)); });
+  paintHear();
+  ['pa-hear', 'pa-hear2'].forEach((id) => $(id).addEventListener('click', () => {
+    hear = !hear;
+    try { localStorage.setItem('fretboard-scrub-hear', hear ? '1' : '0'); } catch { /* ignore */ }
+    paintHear();
+  }));
+  // While scrubbing the video plays (if you want to hear it) and goes quiet again when you let go.
+  let resumeQuiet = false;
+  const startScrub = () => {
+    scrubbing = true;
+    if (hear && media && !media.isPlaying) { resumeQuiet = true; media.play(); }
+  };
+  const endScrub = () => {
+    scrubbing = false;
+    if (resumeQuiet) { resumeQuiet = false; media?.pause(); }
+  };
+  const finishScrub = (sec) => {
+    seekTo(sec);
+    if (hasStart()) applyStartAt(sec * 1000);
+    endScrub();
+    setTimeout(() => media && paintScrub(media.nowReal()), 300);
+  };
   const bindScrub = (slider, time) => {
     let last = 0;
-    slider.addEventListener('pointerdown', () => { scrubbing = true; });
+    slider.addEventListener('pointerdown', startScrub);
     slider.addEventListener('input', () => {
       if (!media) return;
       const sec = Number(slider.value);
-      scrubbing = true;
       $(time).textContent = fmtT(sec * 1000);
       const now = performance.now();
-      if (now - last > 150) { last = now; seekTo(sec); }
+      if (now - last > 90) { last = now; seekTo(sec); }
     });
-    slider.addEventListener('change', () => {
-      scrubbing = false;
+    slider.addEventListener('change', () => media && finishScrub(Number(slider.value)));
+    slider.addEventListener('pointerup', () => { if (!media) endScrub(); });
+  };
+  // The time itself is a fine scrubber, like the tempo number: hold it and drag sideways,
+  // 0.1 s for every 5 pixels in a straight line, so the number is exactly where the video is.
+  const bindJog = (el, slider) => {
+    let from = null;
+    let last = 0;
+    el.addEventListener('pointerdown', (e) => {
       if (!media) return;
-      const sec = Number(slider.value);
-      seekTo(sec);
-      if (hasStart()) applyStartAt(sec * 1000);
-      setTimeout(() => paintScrub(media.nowReal()), 300);
+      el.setPointerCapture(e.pointerId);
+      from = { x: e.clientX, sec: media.nowReal() / 1000, target: media.nowReal() / 1000, moved: false };
     });
-    slider.addEventListener('pointerup', () => { scrubbing = false; });
+    el.addEventListener('pointermove', (e) => {
+      if (!from) return;
+      if (!from.moved) { if (Math.abs(e.clientX - from.x) < 4) return; from.moved = true; startScrub(); el.classList.add('on'); }
+      from.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, from.sec + Math.round((e.clientX - from.x) / 5) / 10));
+      el.textContent = fmtT(from.target * 1000);
+      slider.value = from.target;
+      const now = performance.now();
+      if (now - last > 70) { last = now; seekTo(from.target); }
+    });
+    const end = () => {
+      if (!from) return;
+      const j = from;
+      from = null;
+      el.classList.remove('on');
+      if (!j.moved) { if (media.isPlaying) media.pause(); else media.play(); setTimeout(() => paintScrub(media.nowReal()), 250); return; } // a tap plays or pauses
+      finishScrub(j.target);
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
   };
   bindScrub($('pa-scrub'), 'pa-scrub-time');
   bindScrub($('pa-vid-scrub'), 'pa-vid-time');
+  bindJog($('pa-scrub-time'), $('pa-scrub'));
+  bindJog($('pa-vid-time'), $('pa-vid-scrub'));
   $('pa-vid-play').addEventListener('click', () => $('pa-scrub-play').click());
   // From the song screen: the video is at the moment the music starts; the selected bar (or the
   // one the cursor is on) is what starts there.
@@ -931,6 +980,7 @@ export function initPlayAlong(h) {
     const to = media.nowReal() / 1000 + Number(b.dataset.scrub);
     seekTo(to);
     $('pa-scrub-time').textContent = fmtT(Math.max(0, to) * 1000);
+    if (hear && !media.isPlaying) { media.play(); setTimeout(() => { if (!scrubbing) media?.pause(); }, 600); } // a short listen at the new spot
     if (hasStart()) applyStartAt(Math.max(0, to) * 1000);
   }));
   $('pa-scrub-play').addEventListener('click', () => {

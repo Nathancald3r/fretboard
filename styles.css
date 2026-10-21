@@ -1091,3 +1091,9 @@ body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
   body:not(.video-open) #pa-video .pa-video-ctl { display: none; }
   .pa-video-ctl .small { min-height: 40px; }
 }
+
+.jog-time { cursor: ew-resize; touch-action: none; user-select: none; border: 1px solid var(--line); border-radius: 8px; padding: .25rem .5rem; background: var(--bg); text-align: center; }
+.jog-time.on { border-color: var(--accent); }
+.hear.on { border-color: var(--accent); color: var(--accent); }
+.hear:not(.on) { opacity: .6; }
+.pa-video-ctl .jog-time { min-width: 4.4rem; font-size: 1.1rem; }
