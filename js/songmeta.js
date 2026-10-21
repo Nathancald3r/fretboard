@@ -60,3 +60,26 @@ export function versionLabel(song) {
   const who = v.artist ? ` · ${v.artist}` : '';
   return `${v.live ? 'Live cover' : 'Cover'}${who}`;
 }
+
+/**
+ * Songs that older imports split into one library entry per part ("Champion (Piano)",
+ * "Champion (Shaker)"...), grouped so they can be combined into one song: the parts kept as
+ * sheet music, joined to the song's tab ("Champion") when there is one.
+ * @returns {{ title, artist, base: object|null, parts: { song, name }[] }[]}
+ */
+export function splitGroups(songs) {
+  const groups = new Map();
+  const low = (s) => (s || '').trim().toLowerCase();
+  for (const s of songs) {
+    const m = s.kind === 'sheet' && !s.sheets?.length && /^(.*\S)\s+\(([^()]+)\)$/.exec(s.title || '');
+    if (!m) continue;
+    const key = low(m[1]) + '\u0000' + low(s.artist);
+    if (!groups.has(key)) groups.set(key, { title: m[1].trim(), artist: s.artist || '', parts: [] });
+    groups.get(key).parts.push({ song: s, name: m[2].trim() });
+  }
+  return [...groups.values()].map((g) => ({
+    ...g,
+    base: songs.filter((s) => s.kind !== 'sheet' && low(s.title) === low(g.title) && low(s.artist) === low(g.artist))
+      .sort((a, b) => (b.added || 0) - (a.added || 0))[0] || null,
+  })).filter((g) => g.base || g.parts.length > 1);
+}

@@ -10,7 +10,7 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
-import { versionLabel, syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
+import { versionLabel, syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars, splitGroups } from './songmeta.js';
 import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
@@ -99,6 +99,7 @@ async function renderLibrary() {
   const total = all.filter((s) => chartType(s) !== 'exercise').length;
   document.querySelectorAll('#lib-chart [data-chart]').forEach((b) => b.classList.toggle('on', b.dataset.chart === chartFilter));
   $('lib-controls').hidden = !total;
+  renderTidy(all);
 
   $('library-list').innerHTML = songs.map((s) => {
     const type = chartType(s);
@@ -129,6 +130,55 @@ async function renderLibrary() {
         <a class="button big ghost" href="#practice">Go to Practice</a>
       </div>
       <p class="muted small-text">Add a song by searching for it above, importing a Guitar Pro file, or pasting a tab. Scales, chord changes, rhythm and vocal training are on the Practice page.</p></div>`);
+}
+
+/* ---------- combining songs that older imports split up ---------- */
+
+let undoCombine = null; // what the last Combine changed, until the library is left
+
+function renderTidy(all) {
+  const box = $('lib-tidy');
+  const groups = splitGroups(all);
+  if (undoCombine) {
+    box.innerHTML = '<span></span><button class="small ghost" data-tidy="undo">Undo</button><button class="small ghost" data-tidy="ok">OK</button>';
+    box.firstChild.textContent = undoCombine.text;
+  } else if (groups.length) {
+    const g = groups[0];
+    box.innerHTML = '<span></span><button class="small primary" data-tidy="combine">Combine</button>';
+    box.firstChild.textContent = `“${g.title}” is split into ${g.parts.length + (g.base ? 1 : 0)} entries (${g.parts.map((p) => p.name).join(', ')}). Combine them into one song?${groups.length > 1 ? ` ${groups.length - 1} more song${groups.length > 2 ? 's' : ''} after this.` : ''}`;
+  }
+  box.hidden = !undoCombine && !groups.length;
+}
+
+async function combineSplit() {
+  const g = splitGroups(await listSongs())[0];
+  if (!g) return;
+  const sheets = g.parts.map(({ song, name }) => {
+    const k = PARTS.findIndex(([, , re]) => re.test(name));
+    return { name, program: k >= 0 ? PARTS[k][1] : 0, fileName: song.fileName || '', data: song.data };
+  });
+  const undo = { removed: g.parts.map((p) => p.song), text: `Combined “${g.title}” into one song.` };
+  if (g.base) {
+    undo.base = { id: g.base.id, sheets: g.base.sheets };
+    await updateSong(g.base.id, { sheets: [...(g.base.sheets || []), ...sheets] });
+  } else {
+    const { song } = g.parts[0];
+    undo.created = await putSong({ kind: 'sheet', title: g.title, artist: g.artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, ...(song.folder ? { folder: song.folder } : {}), added: Date.now() });
+  }
+  for (const s of undo.removed) await deleteSong(s.id);
+  undoCombine = undo;
+  renderLibrary();
+}
+
+async function undoCombineSplit() {
+  const u = undoCombine;
+  undoCombine = null;
+  if (!u) return;
+  for (const s of u.removed) await putSong(s); // back with their own ids
+  if (u.base) await updateSong(u.base.id, { sheets: u.base.sheets });
+  if (u.created) await deleteSong(u.created);
+  toast('Undone: the separate entries are back.');
+  renderLibrary();
 }
 
 async function onLibraryClick(e) {
@@ -619,6 +669,13 @@ async function main() {
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);
+  $('lib-tidy').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-tidy]')?.dataset.tidy;
+    if (act === 'combine') combineSplit().catch((err) => { console.error(err); toast('Couldn’t combine them.'); });
+    else if (act === 'undo') undoCombineSplit();
+    else if (act === 'ok') { undoCombine = null; renderLibrary(); }
+  });
+  window.addEventListener('hashchange', () => { undoCombine = null; });
   initCardMenu();
   $('library-list').addEventListener('change', async (e) => {
     if (e.target.dataset.act !== 'folder') return;
