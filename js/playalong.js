@@ -1068,6 +1068,10 @@ export function initPlayAlong(h) {
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
   });
   $('pa-tempo-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapVideoBeat(); });
+  window.addEventListener('fbpin', (e) => {
+    const bar = e.detail;
+    $('pa-link-here').textContent = bar === null ? 'Music starts here' : `Music starts at bar ${bar + 1}`;
+  });
   $('pl-sync').addEventListener('click', () => document.querySelector('[data-sheet-btn=playalong]')?.click());
   $('pa-sync-status').addEventListener('click', (e) => {
     if (!e.target.closest('#pa-sync-done') || !song) return;

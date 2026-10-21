@@ -617,6 +617,13 @@ function initEditMode() {
 
 /* ---------- right-click menu on the tab ---------- */
 
+function linkNow(bar) {
+  const link = $('pa-link-here');
+  if (!link || link.disabled) { toast('Open the linked video first (Video button), then play it to the right moment.'); return; }
+  if (hooks.pinned() === null && bar !== null) hooks.pin(bar);
+  setTimeout(() => link.click(), 80);
+}
+
 function pinHere() {
   const link = $('pa-link-here');
   if (!link || link.disabled) { toast('Open the linked video first (Video button), then play it to the right moment.'); return; }
@@ -647,10 +654,21 @@ function showCtx(items, x, y) {
 function initContextMenu() {
   const area = $('score-scroll');
   area.addEventListener('pointerdown', (e) => { ctxPending = e.button === 2; }, true);
-  area.addEventListener('contextmenu', (e) => {
+  area.addEventListener('contextmenu', (e) => { e.preventDefault(); openTabMenu(e.clientX, e.clientY); });
+  // On a phone: press and hold on the tab.
+  let hold = 0;
+  let from = null;
+  area.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    from = { x: e.clientX, y: e.clientY };
+    hold = setTimeout(() => openTabMenu(from.x, from.y), 600);
+  });
+  area.addEventListener('pointermove', (e) => { if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10) clearTimeout(hold); });
+  ['pointerup', 'pointercancel'].forEach((t) => area.addEventListener(t, () => clearTimeout(hold)));
+  function openTabMenu(x, y) {
     const song = hooks.song();
     if (!song) return;
-    e.preventDefault();
+    const barUnder = hooks.barAt(x, y);
     // pickBeat has run for this right-click by now (it selects the bar under the pointer in edit mode).
     setTimeout(() => {
       ctxPending = false;
@@ -678,15 +696,18 @@ function initContextMenu() {
           { label: 'Save this loop', off: !r, run: () => document.querySelector('#pl-loops [data-save]')?.click() },
           { label: 'Clear selection', key: 'Esc', off: !r, run: deselect },
           '-',
+          hooks.pinned() !== null
+            ? { label: `📍 Unpin bar ${hooks.pinned() + 1}`, run: () => hooks.pin(null) }
+            : { label: '📍 Pin this bar (lock it as where the music starts)', off: barUnder === null, run: () => hooks.pin(barUnder) },
+          { label: hooks.pinned() !== null ? `🎧 Link the video now to bar ${hooks.pinned() + 1}` : '🎧 Link the video now to this bar', off: hooks.pinned() === null && barUnder === null, run: () => linkNow(barUnder) },
           { label: hooks.holdScroll() ? '📌 Let the tab follow the playhead' : '📌 Keep the tab still while playing', run: () => hooks.toggleHold() },
-          { label: '📍 Pin the video here: music starts at this bar', run: pinHere },
           '-',
           { label: '✎ Edit this tab', run: () => { location.hash = `edit/${song.id}`; } },
         ];
       }
-      showCtx(items, e.clientX, e.clientY);
+      showCtx(items, x, y);
     }, 30);
-  });
+  }
   document.addEventListener('pointerdown', (e) => { if (ctxEl && !e.target.closest('.ctx-menu')) closeCtx(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCtx(); });
   window.addEventListener('hashchange', closeCtx);

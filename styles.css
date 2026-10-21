@@ -1230,3 +1230,8 @@ body.edit-mode .ed-close { display: none; }
 .ctx-menu button:disabled { opacity: .4; }
 .ctx-menu { z-index: 120; }
 @media (pointer: coarse) { .ctx-menu { min-width: 15rem; } }
+
+/* Pinned bar */
+#pin-marker { position: absolute; background: rgba(255, 140, 0, .22); border: 2px solid #ff8c00; border-radius: 6px; pointer-events: none; z-index: 3; }
+.pin-tag { position: absolute; left: 0; top: -1.6rem; background: #ff8c00; color: #111; font-size: .75rem; font-weight: 700; padding: .15rem .45rem; border-radius: 6px; white-space: nowrap; pointer-events: auto; }
+.pin-x { border: 0; background: transparent; color: #111; font-weight: 700; min-width: 28px; min-height: 24px; padding: 0 .2rem; cursor: pointer; }

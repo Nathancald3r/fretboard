@@ -88,6 +88,7 @@ function ensureApi() {
   api.renderStarted.on(() => { $('pl-loading').hidden = false; });
   api.renderFinished.on(() => { $('pl-loading').hidden = true; });
   api.postRenderFinished?.on(drawSectionLabels);
+  api.postRenderFinished?.on(drawPin);
   api.error.on((e) => {
     $('pl-loading').hidden = false;
     $('pl-loading').textContent = 'Could not load this file: ' + (e?.message || e);
@@ -264,7 +265,8 @@ function scrollToPlayhead() {
 let frozenTop = null;
 let userScrolled = 0;
 let holdScroll = false;
-const frozen = () => holdScroll || document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
+let pinnedBar = null; // a bar you locked as the spot the video's music starts at
+const frozen = () => pinnedBar !== null || holdScroll || document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
 function initScrollHold() {
   const box = $('score-scroll');
   const touch = () => { userScrolled = Date.now(); };
@@ -1009,6 +1011,8 @@ function nextInSetlistHint() {
 export async function openPlayer(s) {
   song = s;
   holdScroll = false;
+  pinnedBar = null;
+  $('pin-marker')?.remove();
   frozenTop = null;
   score = null;
   mix = [];
@@ -1114,6 +1118,35 @@ let shownSection = null;
 
 // Each section's name at the bar it begins, drawn over the score (alphaTab's own marker is
 // switched off while chords show, since it covers the first chord).
+// The pinned bar: an orange block over it (with an ✕ to unpin) that stays until you unpin or link.
+function drawPin() {
+  let el = $('pin-marker');
+  if (pinnedBar === null) { el?.remove(); return; }
+  const systems = api?.renderer?.boundsLookup?.staffSystems;
+  const sys = systems?.find((s) => s.bars.some((b) => b.index === pinnedBar));
+  const bar = sys?.bars.find((b) => b.index === pinnedBar);
+  if (!bar) { el?.remove(); return; }
+  const box = bar.realBounds || bar.visualBounds;
+  const sysBox = sys.realBounds || sys.visualBounds;
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pin-marker';
+    el.innerHTML = '<span class="pin-tag">📍 Music starts here <button type="button" class="pin-x" aria-label="Unpin">✕</button></span>';
+    el.querySelector('.pin-x').addEventListener('click', (e) => { e.stopPropagation(); setPin(null); });
+    $('sec-labels').parentElement.append(el);
+  }
+  const at = $('alphatab');
+  Object.assign(el.style, { left: `${at.offsetLeft + box.x}px`, top: `${at.offsetTop + sysBox.y}px`, width: `${box.w}px`, height: `${sysBox.h}px` });
+}
+
+function setPin(masterIndex) {
+  pinnedBar = masterIndex;
+  drawPin();
+  if (masterIndex !== null) scrollBarToTop(masterIndex, false);
+  else frozenTop = null;
+  window.dispatchEvent(new CustomEvent('fbpin', { detail: masterIndex }));
+}
+
 function drawSectionLabels() {
   const layer = $('sec-labels');
   layer.textContent = '';
@@ -1192,7 +1225,7 @@ function jumpToSection(sec) {
 
 // Brings the line of the tab holding a bar to the top of the score view. alphaTab only
 // scrolls when the cursor would leave the view, so a jumped-to section could stay low.
-function scrollBarToTop(masterIndex) {
+function scrollBarToTop(masterIndex, smooth = true) {
   const go = () => {
     const systems = api?.renderer?.boundsLookup?.staffSystems;
     const sys = systems?.find((s) => s.bars.some((b) => b.index === masterIndex));
@@ -1200,7 +1233,8 @@ function scrollBarToTop(masterIndex) {
     const box = $('score-scroll');
     const offset = $('alphatab').getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
     const bounds = sys.realBounds || sys.visualBounds;
-    box.scrollTo({ top: Math.max(0, offset + bounds.y - 12), behavior: 'smooth' });
+    box.scrollTo({ top: Math.max(0, offset + bounds.y - 12), behavior: smooth ? 'smooth' : 'instant' });
+    if (!smooth) frozenTop = box.scrollTop;
   };
   // After alphaTab has moved the cursor (and done any scrolling of its own).
   setTimeout(go, 60);
@@ -1841,8 +1875,9 @@ export function initPlayer() {
     playedBars,
     tempo: () => baseTempo,
     seekToBar: (i) => seekToBar(i),
-    releaseSelection: () => { clearSelection(); setLoop(false); },
-    cursorMaster: () => { // the bar at the start of the selection, else the cursor's bar
+    releaseSelection: () => { setPin(null); clearSelection(); setLoop(false); },
+    cursorMaster: () => { // the pinned bar, else the start of the selection, else the cursor's bar
+      if (pinnedBar !== null) return pinnedBar;
       const bars = playedBars();
       const tick = api.playbackRange ? api.playbackRange.startTick : currentTick();
       const i = bars.findIndex((b) => tick >= b.start && tick < b.end);
@@ -1919,6 +1954,12 @@ export function initPlayer() {
       if (!sel || !bars[sel.a]) return null;
       const idx = bars.slice(sel.a, sel.b + 1).map((b) => b.masterBar.index);
       return { first: Math.min(...idx), last: Math.max(...idx) };
+    },
+    pin: (i) => setPin(i),
+    pinned: () => pinnedBar,
+    barAt: (x, y) => {
+      const r = $('alphatab').getBoundingClientRect();
+      return api?.renderer?.boundsLookup?.getBeatAtPos?.(x - r.left, y - r.top)?.voice.bar.index ?? null;
     },
     holdScroll: () => holdScroll,
     toggleHold: () => { holdScroll = !holdScroll; frozenTop = holdScroll ? $('score-scroll').scrollTop : null; window.dispatchEvent(new CustomEvent('fbtoast', { detail: holdScroll ? 'The tab stays put while it plays. Right-click to let it follow again.' : 'The tab follows the playhead again.' })); },
