@@ -1244,3 +1244,9 @@ body.edit-mode .ed-close { display: none; }
 
 /* A locked (pinned) playhead is red; it goes back to green when it follows the song again */
 .fb-playhead.locked path { fill: rgba(224, 48, 48, .16); stroke: #e03030; filter: drop-shadow(0 0 4px rgba(224, 48, 48, .6)); }
+
+/* which instrument is each PDF */
+.parts-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; max-width: min(92vw, 560px); }
+.parts-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.parts-dialog .row { margin: .5rem 0; gap: .6rem; flex-wrap: wrap; }
+.parts-dialog .parts-name { flex: 1 1 14rem; overflow-wrap: anywhere; font-size: .85rem; }

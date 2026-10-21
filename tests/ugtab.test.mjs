@@ -52,4 +52,12 @@ const lines = buildLyrics(sc2, vt, sc2.masterBars.map((mb, i) => ({ start: mb.st
 assert.equal(lines.flatMap((l) => l.words.map((w) => w.text + (w.joined ? '-' : ''))).join(' '), "Hel- lo my friend's");
 const total = (b) => b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
 assert.ok(sc2.tracks[1].staves[0].bars.every((b) => total(b) === total(bars[0])), 'lyric bars are as long as the tab bars');
+
+// another instrument's PDF becomes a track of its own, as long as the first
+const multi = ugToAlphaTex(strips, { title: 'Test', tempo: 72, name: 'Lead Guitar', program: 29, extra: [{ name: 'Rhythm Guitar', program: 26, strips: [strips[0]] }] });
+const imp3 = new alphaTab.importer.AlphaTexImporter();
+imp3.initFromString(multi.tex, new alphaTab.Settings());
+const sc3 = imp3.readScore();
+assert.deepEqual(sc3.tracks.map((t) => t.name), ['Lead Guitar', 'Rhythm Guitar']);
+assert.equal(sc3.tracks[1].staves[0].bars.length, 6, 'a shorter part is padded with rests');
 console.log('ugtab ok');

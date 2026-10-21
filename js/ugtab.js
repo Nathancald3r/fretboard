@@ -322,9 +322,12 @@ function lyricBar(b, T) {
  * @param strips parsed strips in reading order ({ bars, heading })
  * @returns {{ tex: string, bars: number, exact: number } | null}
  */
-export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = {}) {
+// Other instruments (extra: [{ name, strips, program }]) become tracks of their own, lined up bar for bar
+// with the first one (cut or padded with rests when a part has a different number of bars).
+export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, name = '', program = 27, extra = [] } = {}) {
   // each lyric syllable belongs to the bar it starts in
-  const bars = strips.flatMap((s) => s.bars.map((b) => ({ ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) })));
+  const barsOf = (list) => list.flatMap((s) => s.bars.map((b) => ({ ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) })));
+  const bars = barsOf(strips);
   const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
@@ -335,7 +338,6 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
   const num = T % 4 === 0 && !grouped3 ? T / 4 : T / 2;
   const den = T % 4 === 0 && !grouped3 ? 4 : 8;
   let exact = 0, sectionNo = 0;
-  let prevStrings = new Set();
   const seen = {};
   const sectionName = (b) => {
     if (!b.name) return `Part ${++sectionNo}`;
@@ -344,10 +346,12 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
   };
   const firstTempo = bars.find((b) => b.tempo)?.tempo;
   let lastTempo = firstTempo || tempo;
-  const out = bars.map((b, i) => {
+  const render = (barList, first) => {
+  let prevStrings = new Set();
+  return barList.map((b, i) => {
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
-    if (Math.round(sum) === T) exact++;
+    if (Math.round(sum) === T && first) exact++;
     else if (b.cols.length > 1) {
       // the rhythm row didn't add up: spread the bar by how far apart the notes sit
       const ends = [...b.cols.map((c) => c.cx), b.x1];
@@ -369,22 +373,31 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     const beats = b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
     if (!b.cols.length) beats.splice(0, beats.length, restTex(T));
     const head = [];
-    if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
-    if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
-    if (i === 0) head.push(`\\ts ${num} ${den}`);
+    if (first) {
+      if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
+      if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
+      if (i === 0) head.push(`\\ts ${num} ${den}`);
+    }
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
   });
+  };
+  const out = render(bars, true);
   const sung = bars.some((b) => b.lyr.length);
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
     `\\tempo ${Math.round(firstTempo || tempo)}`,
     '.',
-    `\\track ${JSON.stringify(title || 'Guitar')}`,
+    `\\track ${JSON.stringify(name || title || 'Guitar')}`,
     '\\staff {score tabs}',
     '\\tuning E4 B3 G3 D3 A2 E2',
-    '\\instrument 27',
+    `\\instrument ${program}`,
   ].filter(Boolean).join('\n');
+  const others = extra.map((part) => {
+    const list = barsOf(part.strips).slice(0, bars.length);
+    while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
+    return `\n\\track ${JSON.stringify(part.name)}\n\\staff {score tabs}\n\\tuning E4 B3 G3 D3 A2 E2\n\\instrument ${part.program ?? 27}\n${render(list, false).join(' |\n')}`;
+  }).join('');
   const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${bars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
-  return { tex: `${header}\n${out.join(' |\n')}${voice}`, bars: bars.length, exact, lyrics: sung };
+  return { tex: `${header}\n${out.join(' |\n')}${others}${voice}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }

@@ -261,21 +261,83 @@ function readScoreInfo(bytes) {
 }
 
 // "OFFICIAL CHAMPION CHORDS & TABS by Bethel Music @ Ultimate-Guitar.Com" -> Champion / Bethel Music
-function namesFromPdf(base) {
+function namesFromPdf(base, plain = false) {
   const pretty = (s) => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : s).trim();
   const m = base.replace(/\s*@.*$/, '').match(/^(?:official\s+)?(.*?)\s+(?:chords?|tabs?)(?:\s*&\s*(?:chords?|tabs?))?\s+by\s+(.+)$/i);
   // another instrument's part gets its name in the title, so the parts sit side by side in the library
   const part = (base.match(/\b(bass|drums?|ukulele|piano|keys|keyboard|vocals?|acoustic|banjo|mandolin)\b/i) || [])[1];
-  const tag = (t) => (part && !new RegExp(part, 'i').test(t) ? `${t} (${pretty(part)})` : t);
+  const tag = (t) => (part && !plain && !new RegExp(part, 'i').test(t) ? `${t} (${pretty(part)})` : t);
   if (m) return { title: tag(pretty(m[1])), artist: pretty(m[2]) };
   const title = base.replace(/\b(tab|chords?)\b|@.*$|[(\[]\d+[)\]]/gi, '').replace(/\s+/g, ' ').trim() || base;
   return { title: tag(pretty(title)), artist: '' };
+}
+
+// The instruments an Ultimate Guitar song is split into; each PDF becomes one track of a single song.
+const PARTS = [
+  ['Vocal', 53, /vocal|voice|sing/i], ['Acoustic Guitar', 25, /acoustic|nylon/i], ['Rhythm Guitar', 27, /rhythm/i],
+  ['Lead Guitar', 29, /lead(?!\s*vocal)|electric/i], ['Piano', 0, /piano|keys|keyboard/i], ['Synth Pad', 88, /pad/i],
+  ['Synth Bass', 38, /synth\s*bass/i], ['Synth Lead', 80, /synth/i], ['Bass', 33, /bass/i], ['Ukulele', 24, /uke/i],
+];
+
+// A small sheet asking which instrument each PDF is (guessed from its name), resolving to the choices or null.
+function askParts(files) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'parts-dialog';
+    const used = new Set();
+    const rows = files.map((f, i) => {
+      const guess = PARTS.findIndex(([n, , re], k) => re.test(f.name) && !used.has(k));
+      const pick = guess >= 0 ? guess : PARTS.findIndex((_, k) => !used.has(k) && k > 0);
+      used.add(pick);
+      const opts = PARTS.map(([n], k) => `<option value="${k}"${k === pick ? ' selected' : ''}>${n}</option>`).join('') + '<option value="-1">Skip this PDF</option>';
+      return `<label class="row"><span class="parts-name"></span><select data-i="${i}">${opts}</select></label>`;
+    });
+    dlg.innerHTML = `<h2>Which instrument is each PDF?</h2><p class="muted small-text">They are combined into one song, one track per instrument. Every PDF should be the same song, bar for bar.</p>${rows.join('')}<div class="row"><button class="primary" data-go>Combine into one song</button><button class="ghost" data-no>Import separately</button></div>`;
+    dlg.querySelectorAll('.parts-name').forEach((el, i) => { el.textContent = files[i].name; });
+    dlg.addEventListener('click', (e) => {
+      if (e.target.closest('[data-go]')) { resolve([...dlg.querySelectorAll('select')].map((sel) => ({ file: files[Number(sel.dataset.i)], part: Number(sel.value) })).filter((c) => c.part >= 0)); dlg.close(); }
+      else if (e.target.closest('[data-no]')) { resolve(null); dlg.close(); }
+    });
+    dlg.addEventListener('close', () => { resolve(null); dlg.remove(); });
+    document.body.append(dlg);
+    dlg.showModal();
+  });
+}
+
+async function importPdfParts(chosen) {
+  const { pdfToTab } = await import('./pdftab.js');
+  const { ugToAlphaTex } = await import('./ugtab.js');
+  const { title, artist } = namesFromPdf(chosen[0].file.name.replace(/\.[^.]+$/, ''), true);
+  const singer = chosen.findIndex((c) => PARTS[c.part][0] === 'Vocal');
+  const parts = [];
+  for (let i = 0; i < chosen.length; i++) {
+    const { file, part } = chosen[i];
+    toast(`Reading ${PARTS[part][0]} (${i + 1} of ${chosen.length})…`, 8000);
+    const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist, lyrics: i === (singer >= 0 ? singer : 0) });
+    if (r.strips?.length) parts.push({ name: PARTS[part][0], program: PARTS[part][1], strips: r.strips });
+  }
+  if (!parts.length) return null;
+  const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
+  if (!made) return null;
+  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: chosen[0].file.name, added: Date.now() });
+  toast(`Combined ${parts.length} instrument${parts.length > 1 ? 's' : ''} into “${title}”, ${made.bars} bars.${made.lyrics ? ' Lyrics included.' : ''} Check each track in the player.`, 8000);
+  return id;
 }
 
 async function importFiles(files, { quietIfEmpty = false } = {}) {
   let added = 0;
   const ids = [];
   const failed = [];
+  const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
+  if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
+    const chosen = await askParts(pdfs);
+    if (chosen?.length) {
+      try {
+        const id = await importPdfParts(chosen);
+        if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
+      } catch (err) { console.error(err); }
+    }
+  }
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '');
     if (/\.txt$/i.test(file.name)) {
