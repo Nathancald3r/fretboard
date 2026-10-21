@@ -454,14 +454,34 @@ function fillStartBars() {
     : media ? 'Not set yet: the video starts with the tab. Scrub to the music, pick the part, or press H.' : 'Turn on “Play with the linked video” above, then scrub to find where the music starts.';
 }
 
+// Where bar `p` falls in the video, given the synced points: between two points it is interpolated,
+// beyond the ends it follows the video's tempo (or the tab's).
+function timeOf(pts, p) {
+  const bars = hooks.playedBars();
+  const perTick = 60000 / ((song?.videoBpm || hooks.tempo() || 100) * 960);
+  const sorted = [...pts].sort((a, b) => a[0] - b[0]);
+  const exact = sorted.find(([q]) => q === p);
+  if (exact) return exact[1];
+  const tick = (q) => bars[q]?.start ?? 0;
+  const next = sorted.find(([q]) => q > p);
+  const prev = [...sorted].reverse().find(([q]) => q < p);
+  if (prev && next) return prev[1] + ((tick(p) - tick(prev[0])) / Math.max(1, tick(next[0]) - tick(prev[0]))) * (next[1] - prev[1]);
+  const from = prev || next;
+  return from ? from[1] + (tick(p) - tick(from[0])) * perTick : 0;
+}
+
 function setStartBar(master) {
   if (!song) return;
   const oldAt = startIdx();
+  const oldPts = syncPoints(); // what is playing now (saved points, or the tab's own tempo)
   const oldPt = song.syncPoints?.find(([p]) => p === oldAt);
   song.videoMaster = master;
   const at = startIdx();
-  const rest = (song.syncPoints || []).filter(([p]) => p !== oldAt && p !== at);
-  song.syncPoints = [[at, oldPt ? oldPt[1] : 0], ...rest].sort((a, b) => a[0] - b[0]);
+  // Moving the start must not change how long the bars last: every later bar keeps its distance from the start.
+  const base = oldPt ? oldPt[1] : 0;
+  const here = timeOf(oldPts, at);
+  const rest = oldPts.filter(([p]) => p > at).map(([p, t]) => [p, Math.max(0, Math.round(base + t - here))]);
+  song.syncPoints = [[at, base], ...rest];
   updateSong(song.id, { videoMaster: master, syncPoints: song.syncPoints });
   if (on) applySync(); else showSync();
 }
