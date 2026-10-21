@@ -57,7 +57,7 @@ function ensureApi() {
   installTone();
   api = new AT.AlphaTabApi($('alphatab'), {
     core: { fontDirectory: VENDOR + 'font/', scriptFile: VENDOR + 'alphaTab.js' },
-    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1 },
+    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, resources: { barNumberColor: '#222222' } },
     player: {
       playerMode: AT.PlayerMode.EnabledSynthesizer,
       soundFont: customSoundFont ? undefined : VENDOR + 'soundfont/sonivox.sf2',
@@ -67,6 +67,12 @@ function ensureApi() {
       scrollOffsetY: -40,
     },
   });
+
+  // Quiet italic bar numbers and bold serif section names, like Ultimate Guitar's Tab Pro.
+  const fonts = api.settings.display.resources.elementFonts;
+  fonts.set(AT.NotationElement.BarNumber, new AT.model.Font('Georgia, serif', 11, AT.model.FontStyle.Italic));
+  fonts.set(AT.NotationElement.EffectMarker, new AT.model.Font('Georgia, serif', 15, AT.model.FontStyle.Plain, AT.model.FontWeight.Bold));
+  api.updateSettings();
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
   playheadCtl = installPlayhead(api);
