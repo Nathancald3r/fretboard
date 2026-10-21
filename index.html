@@ -213,7 +213,7 @@
           <p class="muted small-text keys-hint">
             <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> previous/next bar (<kbd>Shift</kbd> = 4 bars) ·
             <kbd>↑</kbd> <kbd>↓</kbd> previous/next line · <kbd>Home</kbd> back to start · <kbd>[</kbd> <kbd>]</kbd> tempo −/+ 5 BPM · <kbd>L</kbd> loop · <kbd>C</kbd> count-in · <kbd>B</kbd> click ·
-            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> linked video on/off · <kbd>T</kbd> tap sync · <kbd>V</kbd> tap video beat · <kbd>H</kbd> music starts here · <kbd>F</kbd> fretboard · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
+            <kbd>M</kbd> mute / <kbd>S</kbd> solo this track · <kbd>R</kbd> linked video on/off · <kbd>G</kbd> start the video from this part · <kbd>T</kbd> tap sync · <kbd>V</kbd> tap video beat · <kbd>H</kbd> music starts here · <kbd>F</kbd> fretboard · <kbd>/</kbd> search songs · <kbd>Esc</kbd> close panel / clear selection
           </p>
         </section>
 
@@ -272,18 +272,19 @@
         <section class="sheet pa-sheet" data-sheet="playalong" hidden>
           <div class="sheet-head"><h2>Linked video</h2>
             <details class="pa-help"><summary>How it works</summary>
-              <p class="muted small-text">While a video is linked, the song plays with the video's sound instead of the built-in guitar and the tab follows it, at any speed without changing pitch. Pick a video (or your own audio file), find where the music starts, match the tempo, and skip any interlude. Everything is remembered for this song and video. Keys: <kbd>V</kbd> tap the beat, <kbd>H</kbd> music starts now, <kbd>T</kbd> tap beat 1 of a bar, <kbd>R</kbd> video on/off.</p>
+              <p class="muted small-text">While a video is linked, the song plays with the video's sound instead of the built-in guitar and the tab follows it, at any speed without changing pitch. Pick a video (or your own audio file), find where the music starts, match the tempo, and skip any interlude. Everything is remembered for this song and video. Keys: <kbd>V</kbd> tap the beat, <kbd>H</kbd> music starts now, <kbd>T</kbd> tap beat 1 of a bar, <kbd>R</kbd> video on/off, <kbd>G</kbd> start the video from the part you are on.</p>
             </details>
             <button class="ghost small" data-close>Close</button></div>
           <div class="pa-grid">
             <div class="pa-col">
               <h3>1 · Pick the video</h3>
               <div class="row">
-                <button id="pa-find" class="primary" title="Searches YouTube for this song; press again for different videos">Find it on YouTube</button>
+                <button id="pa-find" class="primary" title="Searches YouTube for this song; press again to close the list">Find it on YouTube</button>
                 <label class="button ghost small">Audio file…<input id="pa-file" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" hidden></label>
                 <a id="pa-yt-search" class="small-text" target="_blank" rel="noopener">youtube.com ↗</a>
               </div>
               <form id="pa-yt-form" class="row"><input id="pa-yt-url" placeholder="…or paste a YouTube link" autocomplete="off"><button class="ghost">Use</button></form>
+              <div id="pa-yt-nav" class="row" hidden><button id="pa-yt-back" class="ghost small" aria-label="Previous search">‹</button><span id="pa-yt-page" class="muted small-text"></span><button id="pa-yt-fwd" class="ghost small" aria-label="Next search, or look for more">›</button></div>
               <span id="pa-find-state" class="muted small-text"></span>
               <p id="pa-using" class="small-text" hidden><span id="pa-using-text"></span> <button id="pa-using-change" type="button" class="link-btn">(change)</button><br><span id="pa-using-why" class="muted"></span></p>
               <ol id="pa-yt-results" class="yt-results" hidden></ol>

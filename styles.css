@@ -849,3 +849,6 @@ label.block input, label.block textarea { background: var(--bg); color: var(--te
   .pa-sheet .jog .mono { font-size: 1.3rem; }
 }
 #pa-bt.on { border-color: var(--accent); color: var(--accent); }
+.yt-results .yt-group { margin: .35rem 0 .1rem; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+.pa-sheet .yt-results { max-height: 14rem; overflow: auto; }
+#pa-find.open { box-shadow: inset 0 0 0 2px var(--accent-ink, #0003); }

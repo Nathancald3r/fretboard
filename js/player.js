@@ -18,7 +18,7 @@ import {
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
 } from './click.js';
 import { parseSource, sourceLine, facts as tabFacts } from './tabinfo.js';
-import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, tapVideoBeat, setStartHere, toggleRecording } from './playalong.js';
+import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, tapVideoBeat, setStartHere, toggleRecording, startVideoHere } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
@@ -1806,6 +1806,7 @@ export function initPlayer() {
       s: () => score && setSolo(trackIndex),
       t: () => { if (!tapSync() && recordingOn()) openSheet('playalong'); },
       r: toggleRecording,
+      g: startVideoHere,
       v: () => { if (recordingOn()) tapVideoBeat(); },
       h: () => { if (recordingOn()) setStartHere(); },
       f: () => { $('pl-fretboard').checked = !fretboardOn(); $('pl-fretboard').dispatchEvent(new Event('change')); },

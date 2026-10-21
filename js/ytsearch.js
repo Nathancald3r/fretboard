@@ -112,7 +112,8 @@ export function tabEvidence(parsed, tracks = []) {
 
 // When one result is clearly the right one it can be attached without asking: a clear score
 // lead, and a length within 8% of the tab's (when both are known; otherwise a bigger lead).
-export function pickConfident(ranked, seconds) {
+export function pickConfident(all, seconds) {
+  const ranked = all.filter((r) => !r.cat || r.cat === 'official' || r.cat === 'artist'); // never a cover, lyric video or lesson
   const [top, next] = ranked;
   if (!top || top.score < 6) return null;
   const lead = next ? top.score - next.score : 99;
@@ -140,12 +141,63 @@ export function explainPick(r, { artist, seconds, hints }) {
   return why.length ? why.join(', ') : 'best title match';
 }
 
+// Which kind of video a result is, so the list can be shown in sections:
+// official (the artist's own recording), artist (their live/other versions and re-uploads),
+// cover (someone else playing it), lyrics (lyric videos), practice (lessons, play-alongs, backing tracks).
+export const CATEGORIES = [
+  { key: 'official', label: 'Official', cap: 2 },
+  { key: 'artist', label: 'More from the artist: live and other versions', cap: 2 },
+  { key: 'cover', label: 'Covers by others', cap: 1 },
+  { key: 'lyrics', label: 'Lyric videos', cap: 1 },
+  { key: 'practice', label: 'Practice: lessons, play-alongs, backing tracks', cap: 2 },
+];
+const PRACTICE = /\b(lesson|tutorial|how to play|play along|playalong|backing track|karaoke|learn|chords?|tabs?|guitar cover tutorial|easy guitar|guitar lesson)\b/;
+
+export function categorize(r, { artist, title, hints }) {
+  const t = norm(r.title);
+  const a = norm(r.author);
+  const songTitle = norm(title);
+  const songArtist = norm(artist);
+  const channel = a.replace(/\b(vevo|topic|official|music|tv)\b/g, '').replace(/\s+/g, ' ').trim();
+  const byArtist = !!(songArtist && channel && (channel === songArtist || channel.replace(/ /g, '') === songArtist.replace(/ /g, '')));
+  // A band named in the version note (Passion, Hillsong…) counts as the artist's side.
+  const related = (hints?.words || []).some((w) => w.length > 3 && (a.includes(w) || t.includes(w)));
+  if (songTitle) {
+    const words = songTitle.split(' ').filter((w) => w.length > 2);
+    if (!t.includes(songTitle) && !(words.length && words.filter((w) => t.includes(w)).length / words.length >= 0.7)) return 'off'; // another song
+  }
+  if (PRACTICE.test(t) && !PRACTICE.test(songTitle)) return 'practice';
+  if (/\blyrics?\b/.test(t) && !/\blyrics?\b/.test(songTitle) && !byArtist) return 'lyrics';
+  if (/\b(cover|covered by|tribute|reimagined)\b/.test(t) && !byArtist) return 'cover';
+  const ofArtist = byArtist || related || (songArtist && t.includes(songArtist));
+  if (!ofArtist) return 'cover';
+  const other = /\b(live|acoustic|unplugged|session|version|remix|concert|tour|performance|medley)\b/.test(t) && !/\b(live|acoustic|unplugged|session|version|remix|concert|tour|performance|medley)\b/.test(songTitle);
+  if (/\blyrics?\b/.test(t) && !byArtist) return 'lyrics';
+  // The label or band the tab's version note names (Passion Music) is the official source of that version.
+  if (related && (hints?.words || []).some((w) => w.length > 3 && a.includes(w))) return 'official';
+  if (other) return 'artist';
+  if (byArtist || /vevo| topic$/.test(a) || /\bofficial\b/.test(t)) return 'official';
+  return 'artist'; // a fan's re-upload of the original
+}
+
 export function rankResults(results, want) {
   const seen = new Set();
   return results
     .filter((r) => r.id && !seen.has(r.id) && seen.add(r.id))
-    .map((r) => ({ ...r, score: scoreResult(r, want) }))
+    .map((r) => ({ ...r, score: scoreResult(r, want), cat: categorize(r, want) }))
     .sort((x, y) => y.score - x.score);
+}
+
+// The ranked list in sections, in the order the user wants to see them. Inside a section the
+// ranked order stays; videos already shown (`seen`) only fill what is left.
+export function groupResults(ranked, seen = new Set()) {
+  const groups = [];
+  for (const c of CATEGORIES) {
+    const inCat = ranked.filter((r) => r.cat === c.key);
+    const items = [...inCat.filter((r) => !seen.has(r.id)), ...inCat.filter((r) => seen.has(r.id))].slice(0, c.cap);
+    if (items.length) groups.push({ ...c, items });
+  }
+  return groups;
 }
 
 /* ---------- searching ---------- */
@@ -197,7 +249,7 @@ export async function searchYouTube(q) {
 // The song's recording, best match first.
 // Each further press of "Find" (round 1, 2, ...) searches with other words, so it turns up
 // other uploads; ids already shown (`seen`) go to the back of the list.
-export const ROUND_WORDS = ['live', 'audio', 'lyrics', 'acoustic', 'full song', 'hd', 'performance', 'version'];
+export const ROUND_WORDS = ['live', 'lyrics video', 'guitar tutorial', 'acoustic', 'official audio', 'cover', 'performance', 'hd'];
 export async function findRecording(song, seconds, evidence, round = 0, seen = []) {
   const q = songQuery(song);
   const want = { ...q, seconds, hints: versionHints(song, q.text), evidence };
@@ -223,9 +275,12 @@ async function findRanked(song, want, round = 0) {
   // Searches: plain finds the artist's channel and album track, "official" the video, and, when
   // the tab's version note says which version it is, one with those words in.
   const extra = want.hints.words.length ? searchYouTube(`${want.text} ${want.hints.words.join(' ')}`) : Promise.resolve([]);
-  const [plain, official, versioned] = await Promise.allSettled([searchYouTube(want.text), searchYouTube(`${want.text} official`), extra]);
-  if (plain.status === 'rejected' && official.status === 'rejected' && versioned.status === 'rejected') throw plain.reason;
-  return rankResults([...(versioned.value || []), ...(official.value || []), ...(plain.value || [])], want);
+  // And one each for the other sections: lyric videos, lessons / play-alongs, live versions.
+  const more = ['lyrics', 'guitar lesson play along', 'live'].map((w) => searchYouTube(`${want.text} ${w}`));
+  const [plain, official, versioned, ...others] = await Promise.allSettled([searchYouTube(want.text), searchYouTube(`${want.text} official`), extra, ...more]);
+  if ([plain, official, versioned, ...others].every((x) => x.status === 'rejected')) throw plain.reason;
+  const got = (x) => x.value || [];
+  return rankResults([...got(versioned), ...got(official), ...got(plain), ...others.flatMap(got)], want);
 }
 
 export const youTubeSearchUrl = (song) => {

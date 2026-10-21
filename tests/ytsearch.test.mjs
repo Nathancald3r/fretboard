@@ -1,6 +1,6 @@
 // Run: node tests/ytsearch.test.mjs
 import assert from 'node:assert/strict';
-import { freshFirst, songQuery, rankResults, versionHints, pickConfident, explainPick, tabEvidence } from '../js/ytsearch.js';
+import { categorize, groupResults, freshFirst, songQuery, rankResults, versionHints, pickConfident, explainPick, tabEvidence } from '../js/ytsearch.js';
 
 assert.deepEqual(songQuery({ title: 'Chris Tomlin - Here I Am To Worship' }), { artist: 'Chris Tomlin', title: 'Here I Am To Worship', text: 'Chris Tomlin Here I Am To Worship' });
 assert.equal(songQuery({ artist: 'Oasis', title: 'Wonderwall' }).text, 'Oasis Wonderwall');
@@ -73,5 +73,25 @@ assert.equal(dur[0].id, 'near');
 
 // Pressing Find again shows videos not shown before first.
 assert.deepEqual(freshFirst([{ id: 'a' }, { id: 'b' }, { id: 'c' }], new Set(['a'])).map((r) => r.id), ['b', 'c', 'a']);
+
+// Sections: official first, then the artist's other versions, covers, lyric videos, practice.
+{
+  const w = { artist: 'Chris Tomlin', title: 'Here I Am To Worship', seconds: 276, hints: { words: ['passion'], flags: {} } };
+  const mk = (id, title, author) => ({ id, title, author, seconds: 280 });
+  const ranked = rankResults([
+    mk('p1', 'Here I Am To Worship - Guitar Lesson', 'Some Teacher'),
+    mk('l1', 'Chris Tomlin - Here I Am To Worship (Lyrics)', 'Lyric Channel'),
+    mk('c1', 'Here I Am To Worship (cover) by Jane', 'Jane'),
+    mk('a1', 'Here I Am To Worship (Live) - Passion 2005', 'Passion'),
+    mk('o1', 'Chris Tomlin - Here I Am To Worship (Official Music Video)', 'Chris Tomlin'),
+    mk('o2', 'Here I Am To Worship', 'Chris Tomlin - Topic'),
+  ], w);
+  const cat = Object.fromEntries(ranked.map((r) => [r.id, r.cat]));
+  assert.deepEqual(cat, { p1: 'practice', l1: 'lyrics', c1: 'cover', a1: 'official', o1: 'official', o2: 'official' });
+  const g = groupResults(ranked);
+  assert.deepEqual(g.map((x) => x.key), ['official', 'cover', 'lyrics', 'practice']);
+  assert.equal(g[0].items.length, 2);
+  assert.deepEqual(groupResults(ranked, new Set(['o1']))[0].items.map((r) => r.id), ['o2', 'a1']);
+}
 
 console.log('ytsearch: all tests passed');

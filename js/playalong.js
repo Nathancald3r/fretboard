@@ -3,7 +3,7 @@
 // Sync: tap T on beat 1 of each bar as you hear it; every tap becomes a sync point, so the
 // tab follows the band's real tempo (including drift) between tapped bars.
 import { updateSong } from './db.js';
-import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence } from './ytsearch.js';
+import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence, groupResults } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
@@ -636,22 +636,76 @@ function linkInScore() {
   return m ? { id: m[1], title: 'linked in the tab file', author: '', seconds: 0 } : null;
 }
 
-// Searches for the song and lists the matches; the choice is the user's.
+// Searches for the song and shows the matches in sections (official, the artist's other
+// versions, covers, lyric videos, practice); the choice is the user's. Each search is a
+// page: ‹ › go back and forward through the pages, › at the last one looks for more.
+let pages = []; // { groups, results, note }
+let pageIdx = -1;
+
+function collapseResults() {
+  $('pa-yt-results').hidden = true;
+  $('pa-yt-nav').hidden = true;
+  $('pa-find-state').textContent = '';
+  $('pa-find').classList.remove('open');
+}
+
+function renderPage(i) {
+  const page = pages[i];
+  if (!page) return;
+  pageIdx = i;
+  const list = $('pa-yt-results');
+  list.innerHTML = '';
+  for (const g of page.groups) {
+    const h = document.createElement('li');
+    h.className = 'yt-group';
+    h.textContent = g.label;
+    list.append(h);
+    for (const r of g.items) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.dataset.id = r.id;
+      b.title = r.title;
+      const img = document.createElement('img');
+      img.src = `https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`;
+      img.alt = '';
+      img.loading = 'lazy';
+      const t = document.createElement('span');
+      t.className = 'yt-title';
+      t.textContent = r.title;
+      const meta = document.createElement('span');
+      meta.className = 'yt-meta';
+      meta.textContent = [r.author, r.seconds ? clock(r.seconds) : ''].filter(Boolean).join(' · ');
+      b.append(img, t, meta);
+      b.addEventListener('click', () => tryVideo(r));
+      li.append(b);
+      list.append(li);
+    }
+  }
+  matches = page.results;
+  list.hidden = false;
+  $('pa-yt-nav').hidden = false;
+  $('pa-yt-page').textContent = `Search ${i + 1} of ${pages.length}`;
+  $('pa-yt-back').disabled = i === 0;
+  $('pa-find-state').textContent = page.note;
+  $('pa-find').classList.add('open');
+  showState();
+}
+
 async function findOnYouTube() {
   if (!song) return;
   const mine = ++finding;
   const state = $('pa-find-state');
-  const list = $('pa-yt-results');
   $('pa-error').textContent = '';
   state.textContent = 'Searching YouTube…';
   $('pa-find').disabled = true;
+  $('pa-yt-fwd').disabled = true;
+  if (findSongId !== song.id) { findSongId = song.id; findRound = 0; shownIds = new Set(); pages = []; pageIdx = -1; }
+  const round = findRound++;
   let results = [];
   let want = null;
   let confident = null;
   let whyPicked = '';
-  usingBox(null);
-  if (findSongId !== song.id) { findSongId = song.id; findRound = 0; shownIds = new Set(); }
-  const round = findRound++;
+  if (round === 0) usingBox(null);
   try {
     const linked = round === 0 ? linkInScore() : null;
     const secs = hooks.songSeconds?.() || 0;
@@ -662,47 +716,41 @@ async function findOnYouTube() {
     else if (round > 0) { confident = null; whyPicked = ''; } // asked again: show choices, don't pick for them
     else { confident = pickConfident(results, secs); whyPicked = confident && want ? explainPick(confident, want) : ''; }
   } catch (e) {
+    findRound--;
     if (mine === finding) {
       state.textContent = '';
       $('pa-error').textContent = `${e?.message || e} Use “Search on youtube.com”, then paste the link.`;
       $('pa-find').disabled = false;
+      $('pa-yt-fwd').disabled = false;
     }
     return;
   }
   if (mine !== finding) return;
   $('pa-find').disabled = false;
-  results = results.slice(0, 6);
-  results.forEach((r) => shownIds.add(r.id));
-  matches = results;
-  if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
-  state.textContent = confident ? '' : round ? 'Different videos. Press Find again for more, or click one:' : 'Best matches first. Click one to play it with the tab:';
-  list.innerHTML = '';
-  for (const r of results) {
-    const li = document.createElement('li');
-    const b = document.createElement('button');
-    b.dataset.id = r.id;
-    b.title = r.title;
-    const img = document.createElement('img');
-    img.src = `https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`;
-    img.alt = '';
-    img.loading = 'lazy';
-    const t = document.createElement('span');
-    t.className = 'yt-title';
-    t.textContent = r.title;
-    const meta = document.createElement('span');
-    meta.className = 'yt-meta';
-    meta.textContent = [r.author, r.seconds ? clock(r.seconds) : ''].filter(Boolean).join(' · ');
-    b.append(img, t, meta);
-    b.addEventListener('click', () => tryVideo(r));
-    li.append(b);
-    list.append(li);
+  $('pa-yt-fwd').disabled = false;
+  const groups = groupResults(results, shownIds);
+  if (linked_in(results)) groups.unshift({ key: 'official', label: 'Linked in the tab file', items: results.filter((r) => !r.cat) });
+  const flat = groups.flatMap((g) => g.items);
+  flat.forEach((r) => shownIds.add(r.id));
+  if (!flat.length) {
+    findRound--;
+    state.textContent = pages.length ? 'No more videos found.' : 'Nothing found. Try “Search on youtube.com”.';
+    return;
   }
-  list.hidden = !!confident; // a confident pick keeps the others one click away
-  showState();
+  pages.push({ groups, results: flat, note: round ? 'Different videos. › looks for more.' : (confident ? 'Other matches:' : 'Official first, then other versions, covers, lyrics and practice videos:') });
+  renderPage(pages.length - 1);
   if (confident) {
-    if (!song.recording) { usingBox(confident, whyPicked); await useVideo(confident); } // attach only; never replaces a video already chosen
-    else list.hidden = false;
+    if (!song.recording) { usingBox(confident, whyPicked); await useVideo(confident); collapseResults(); } // attach only; never replaces a video already chosen
   }
+}
+const linked_in = (list) => list.some((r) => !r.cat);
+
+/** The Find button: opens the results, and closes them when they are already showing. */
+function findButton() {
+  if (!song) return;
+  if (!$('pa-yt-results').hidden) { collapseResults(); return; }
+  if (pages.length && findSongId === song.id) { renderPage(pageIdx); return; }
+  findOnYouTube();
 }
 
 // "Using: <title> (change)" with the reason; (change) shows the runner-ups.
@@ -752,6 +800,20 @@ export async function playAlongSongOpened(s) {
 }
 
 /** Toggle from the play bar. */
+/** G: start the video from the part of the song being played (or looked at). */
+export async function startVideoHere() {
+  const api = hooks.api();
+  if (!api || !song) return;
+  if (!song.recording) { hooks.showSheet('playalong'); findButton(); return; }
+  const bars = hooks.playedBars();
+  const tick = api.tickPosition;
+  let idx = 0;
+  bars.forEach((b, i) => { if (b.start <= tick) idx = i; });
+  if (!on) { remember(true); await setOn(true); }
+  const go = () => { hooks.seekToBar(idx); api.play(); };
+  setTimeout(go, on ? 250 : 0);
+}
+
 export function toggleRecording() {
   if (!song?.recording) { hooks.showSheet('playalong'); findOnYouTube(); return; }
   remember(!on);
@@ -781,8 +843,10 @@ export function initPlayAlong(h) {
     await setRecording({ kind: 'youtube', id });
   });
   $('pa-remove').addEventListener('click', () => setRecording(null));
-  $('pa-find').addEventListener('click', () => findOnYouTube());
-  $('pa-using-change').addEventListener('click', () => { $('pa-yt-results').hidden = false; $('pa-find-state').textContent = 'Other matches. Click one to play it with the tab:'; });
+  $('pa-find').addEventListener('click', findButton);
+  $('pa-yt-back').addEventListener('click', () => renderPage(Math.max(0, pageIdx - 1)));
+  $('pa-yt-fwd').addEventListener('click', () => { if (pageIdx < pages.length - 1) renderPage(pageIdx + 1); else findOnYouTube(); });
+  $('pa-using-change').addEventListener('click', () => { if (pages.length) renderPage(pageIdx); else findOnYouTube(); });
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
