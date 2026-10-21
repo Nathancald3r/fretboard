@@ -1,5 +1,5 @@
 // App shell: routing, library, file import, text-tab editor and "find tabs online" links.
-import { listSongs, getSong, putSong, deleteSong, updateSong } from './db.js';
+import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { initText, openText, closeText, cleanTabText } from './texttab.js';
 import { initMetronome, stopMetronome } from './metronome.js';
@@ -135,6 +135,10 @@ async function onLibraryClick(e) {
     const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
     if (!ok) return;
     await deleteSong(id);
+    try { // it leaves its setlists too, so Next / Previous never point at a deleted song
+      const lists = (await getValue('setlists')) || [];
+      if (lists.some((l) => l.songIds.includes(id))) await setValue('setlists', lists.map((l) => ({ ...l, songIds: l.songIds.filter((x) => x !== id) })));
+    } catch { /* ignore */ }
     toast(`Deleted “${song.title}”.`);
     renderLibrary();
   } else if (act === 'rename') {

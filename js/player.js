@@ -1697,7 +1697,7 @@ function initDock() {
   });
 
   const chords = $('pl-chords');
-  chords.checked = localStorage.getItem('fretboard-chords') !== '0';
+  try { chords.checked = localStorage.getItem('fretboard-chords') !== '0'; } catch { /* storage blocked */ }
   chords.addEventListener('change', () => {
     try { localStorage.setItem('fretboard-chords', chords.checked ? '1' : '0'); } catch { /* ignore */ }
     showChordSettings();

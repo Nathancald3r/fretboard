@@ -1108,7 +1108,7 @@ body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
 /* Phone feel: no overscroll glow chaining, no 300 ms tap delay, no shadow repainting under the video */
 html, body { overscroll-behavior: none; }
 #score-scroll, .drawer-body, .sheet { overscroll-behavior: contain; }
-button, a, input, select, label, .jog-pad, .jog-time { touch-action: manipulation; }
+button, a, input, select, label { touch-action: manipulation; }
 @media (max-width: 640px) { .playbar-row > #pa-video, .playbar-row > #pa-video.mini, .playbar-row > #pa-video.collapsed { box-shadow: none; border-top: 1px solid var(--line); } }
 
 /* ---------- Navigation and tap-target pass ---------- */
@@ -1132,3 +1132,5 @@ kbd { }
   .sheet input[type=range] { height: 44px; }
   .sheet-head .ghost { min-height: 44px; min-width: 64px; }
 }
+
+.jog-pad, .jog-time { touch-action: none; }

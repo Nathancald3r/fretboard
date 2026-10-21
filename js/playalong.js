@@ -120,6 +120,8 @@ async function youTubeHandler(rec) {
     });
     ytPlayer = player;
   }
+  // The length is 0 until YouTube has loaded the video's details; the tab's timing needs it.
+  for (let i = 0; i < 50 && !(player.getDuration?.() > 0); i++) await new Promise((r) => setTimeout(r, 100));
   let timer = 0;
   let rate = 1;
   let dead = false; // a switched-off handler must not move or play anything
@@ -228,8 +230,16 @@ function startIdx() {
   return Math.max(0, i);
 }
 
+// With nothing saved, every bar is placed at the tab's own tempo from the start point, so a video that
+// is shorter or longer than the tab can't stretch or squeeze the whole song.
 function syncPoints() {
-  return song?.syncPoints?.length ? song.syncPoints : [[startIdx(), 0]];
+  if (song?.syncPoints?.length) return song.syncPoints;
+  const at = startIdx();
+  const bars = hooks.playedBars();
+  const tempo = hooks.tempo();
+  if (!bars[at] || !(tempo > 0)) return [[at, 0]];
+  const perTick = 60000 / (tempo * 960);
+  return bars.map((b, p) => [p, Math.round((b.start - bars[at].start) * perTick)]).filter(([p]) => p >= at);
 }
 
 function applySync() {
@@ -480,6 +490,7 @@ export function tapSync() {
     if (into > 0.5 && i + 1 < bars.length) i++;
     taps = { next: i, points: [] };
   }
+  if (taps.next >= bars.length) return false; // past the last bar
   taps.points.push([taps.next, Math.round(ms)]);
   $('pa-tap-state').textContent = `Bar ${taps.next + 1} ✓ — keep tapping beat 1 of each bar, then pause.`;
   taps.next++;
@@ -919,9 +930,9 @@ export function initPlayAlong(h) {
   ['pa-hear', 'pa-hear2'].forEach((id) => $(id).addEventListener('click', listen));
   const startScrub = () => { stopListening(); scrubbing = true; };
   const endScrub = () => { scrubbing = false; };
-  const finishScrub = (sec) => {
+  const finishScrub = (sec, moved = true) => {
     seekTo(sec);
-    if (hasStart()) applyStartAt(sec * 1000);
+    if (moved && hasStart()) applyStartAt(sec * 1000); // a plain tap or a cancelled touch must not move the start
     endScrub();
     setTimeout(() => media && paintScrub(media.nowReal()), 300);
   };
@@ -957,13 +968,14 @@ export function initPlayAlong(h) {
       const now = performance.now();
       if (now - last > 250) { last = now; seekTo(from.target, false); }
     });
-    const end = () => {
+    const end = (e) => {
       if (!from) return;
       const j = from;
       from = null;
       el.classList.remove('on');
-      if (!j.moved) { if (media.isPlaying) media.pause(); else media.play(); setTimeout(() => paintScrub(media.nowReal()), 250); return; } // a tap plays or pauses
-      finishScrub(j.target);
+      if (!media) { endScrub(); return; }
+      if (!j.moved) { if (e.type === 'pointerup') { if (media.isPlaying) media.pause(); else media.play(); setTimeout(() => media && paintScrub(media.nowReal()), 250); } return; } // a tap plays or pauses
+      finishScrub(j.target, Math.abs(j.target - j.sec) >= 0.05);
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
@@ -989,17 +1001,17 @@ export function initPlayAlong(h) {
     stickHeld = true;
     pad.classList.add('on');
     startScrub();
-    hold = { x: e.clientX, dx: 0, target: media.nowReal() / 1000, t: performance.now(), seek: 0 };
+    hold = { x: e.clientX, dx: 0, target: media.nowReal() / 1000, start: media.nowReal() / 1000, t: performance.now(), seek: 0 };
     requestAnimationFrame(step);
   });
   pad.addEventListener('pointermove', (e) => { if (hold) hold.dx = e.clientX - hold.x; });
   const release = () => {
     if (!hold) return;
-    const t = hold.target;
+    const { target: t, start } = hold;
     hold = null;
     stickHeld = false;
     pad.classList.remove('on');
-    finishScrub(t);
+    finishScrub(t, Math.abs(t - start) >= 0.05);
   };
   pad.addEventListener('pointerup', release);
   pad.addEventListener('pointercancel', release);
