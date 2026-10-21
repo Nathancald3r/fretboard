@@ -1894,6 +1894,7 @@ export function initPlayer() {
       const idx = bars.slice(sel.a, sel.b + 1).map((b) => b.masterBar.index);
       return { first: Math.min(...idx), last: Math.max(...idx) };
     },
+    clearSelection: () => { clearSelection(); setLoop(false); },
     selectBars: (first, last) => {
       const staff = score?.tracks[trackIndex]?.staves[0];
       const a = staff?.bars[first]?.voices[0]?.beats[0];

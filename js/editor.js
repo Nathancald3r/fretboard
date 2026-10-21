@@ -283,6 +283,8 @@ export function pickBeat(beat) {
   sel = { track: bar.staff.track.index, staff: bar.staff.index, bar: bar.index, beat: beat.index, string: top || bar.staff.tuning.length };
   if (editMode()) {
     // Tapping a bar selects it; with Extend on, everything from the first bar to this one.
+    const cur = selectionRange();
+    if (!extending && cur && cur.a === bar.index && cur.b === bar.index) { deselect(); paintBeat(); return; } // tap the selected bar again to deselect
     const from = extending && anchor !== null ? anchor : bar.index;
     if (!extending || anchor === null) anchor = bar.index;
     setTimeout(() => hooks.selectBars(Math.min(from, bar.index), Math.max(from, bar.index)), 0);
@@ -528,11 +530,19 @@ function restBars() {
   }), '', { a: r.a, b: r.b });
 }
 
+function deselect() {
+  anchor = null;
+  extending = false;
+  $('ed-extend').setAttribute('aria-pressed', 'false');
+  hooks.clearSelection();
+}
+
 function paintBar() {
   const r = selectionRange();
   ['ed-copy', 'ed-cut', 'ed-dup', 'ed-rest', 'ed-del'].forEach((id) => { $(id).disabled = !r; });
   $('ed-paste').disabled = !clip || (!r && !sel);
   $('ed-addbar').disabled = !r && !sel;
+  $('ed-deselect').hidden = !r;
 }
 
 function paintVersion() {
@@ -572,6 +582,7 @@ function initEditMode() {
     e.preventDefault();
     location.hash = `edit/${hooks.song().id}`;
   }, true);
+  $('ed-deselect').addEventListener('click', deselect);
   $('ed-copy').addEventListener('click', () => copyBars(false));
   $('ed-cut').addEventListener('click', () => copyBars(true));
   $('ed-paste').addEventListener('click', pasteBars);
@@ -645,6 +656,7 @@ export function initEditor(h) {
     if (document.getElementById('view-player')?.hidden || typing(e) || !hooks.song()) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    if (k === 'escape' && selectionRange() && editMode()) { deselect(); return; }
     if (mod && k === 'z') { e.preventDefault(); (e.shiftKey ? redoEdit : undoEdit)(); }
     else if (mod && k === 'y') { e.preventDefault(); redoEdit(); }
     else if (mod && editMode() && k === 'c' && selectionRange()) { e.preventDefault(); copyBars(false); }
