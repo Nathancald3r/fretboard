@@ -257,7 +257,25 @@ function scrollToPlayhead() {
 
 // While the video pop-up covers the bottom of the tab, the cursor's line is brought to the top before
 // it gets under the pop-up, so the playhead is always in view.
+// Pinning the music's start: with a bar selected and the video open, the tab holds still while the
+// video plays (the cursor still moves), so the bar you are matching stays where you can see it.
+let frozenTop = null;
+let userScrolled = 0;
+const frozen = () => document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
+function initScrollHold() {
+  const box = $('score-scroll');
+  const touch = () => { userScrolled = Date.now(); };
+  ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown'].forEach((t) => box.addEventListener(t, touch, { passive: true }));
+  box.addEventListener('scroll', () => {
+    if (!frozen()) { frozenTop = null; return; }
+    if (Date.now() - userScrolled < 600) { frozenTop = box.scrollTop; return; } // you moved it: that is the new place to hold
+    if (frozenTop === null) frozenTop = box.scrollTop;
+    else if (Math.abs(box.scrollTop - frozenTop) > 1) box.scrollTop = frozenTop;
+  }, { passive: true });
+}
+
 function keepPlayheadInView() {
+  if (frozen()) return;
   const pop = $('pa-video');
   if (!document.body.classList.contains('video-open') || pop.hidden) return;
   const cur = document.querySelector('#alphatab .at-cursor-bar, #alphatab .at-cursor-beat');
@@ -1817,6 +1835,7 @@ export function initPlayer() {
     playedBars,
     tempo: () => baseTempo,
     seekToBar: (i) => seekToBar(i),
+    releaseSelection: () => { clearSelection(); setLoop(false); },
     cursorMaster: () => { // the bar at the start of the selection, else the cursor's bar
       const bars = playedBars();
       const tick = api.playbackRange ? api.playbackRange.startTick : currentTick();
@@ -1881,6 +1900,7 @@ export function initPlayer() {
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
   initLoops();
+  initScrollHold();
   initEditor({
     AT,
     song: () => song,

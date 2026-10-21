@@ -1044,6 +1044,7 @@ export function initPlayAlong(h) {
     setStartBar(master);
     applyStartAt(media.nowReal());
     hooks.seekToBar(startIdx());
+    hooks.releaseSelection?.(); // pinned: the tab follows the video again
     $('pa-link-note').textContent = `Bar ${master + 1} = ${fmtT(media.nowReal())}`;
   });
   document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
