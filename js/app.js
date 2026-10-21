@@ -283,25 +283,47 @@ const PARTS = [
   ['Vocal', 53, /vocal|voice|sing/i], ['Acoustic Guitar', 25, /acoustic|nylon/i], ['Rhythm Guitar', 27, /rhythm/i],
   ['Lead Guitar', 29, /lead(?!\s*vocal)|electric/i], ['Piano', 0, /piano|keys|keyboard/i], ['Synth Pad', 88, /pad/i],
   ['Synth Bass', 38, /synth\s*bass/i], ['Synth Lead', 80, /synth/i], ['Bass', 33, /bass/i], ['Ukulele', 24, /uke/i],
+  ['Drums', 0, /drum|shaker|percussion|tambourine|cajon|conga|bongo/i],
 ];
 
-// A small sheet asking which instrument each PDF is (guessed from its name), resolving to the choices or null.
+// The instrument a PDF's name says it is: "Song - Artist - Synth Lead 2.pdf" (as ug_collect.py names them) -> "Synth Lead 2".
+function partFromName(fileName) {
+  const d = fileName.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)$/, '').split(' - ');
+  return d.length >= 3 ? d[d.length - 1].trim() : '';
+}
+
+// A small sheet asking which instrument each PDF is (read from its name), resolving to the choices or null.
+// Each choice is { file, name, program }.
 function askParts(files) {
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'parts-dialog';
-    const used = new Set();
+    const named = files.map((f) => partFromName(f.name));
     const rows = files.map((f, i) => {
-      const guess = PARTS.findIndex(([n, , re], k) => re.test(f.name) && !used.has(k));
-      const pick = guess >= 0 ? guess : PARTS.findIndex((_, k) => !used.has(k) && k > 0);
-      used.add(pick);
-      const opts = PARTS.map(([n], k) => `<option value="${k}"${k === pick ? ' selected' : ''}>${n}</option>`).join('') + '<option value="-1">Skip this PDF</option>';
+      const own = named[i];
+      const guess = PARTS.findIndex(([n, , re]) => re.test(own || f.name));
+      // a name of its own ("Synth Lead 2", "Shaker") is kept as the track name, first in the list
+      const extra = own && !PARTS.some(([n]) => n.toLowerCase() === own.toLowerCase());
+      const pick = extra ? 'own' : String(guess >= 0 ? guess : PARTS.findIndex(([n]) => n === 'Rhythm Guitar'));
+      const opts = (extra ? '<option value="own" selected></option>' : '')
+        + PARTS.map(([n], k) => `<option value="${k}"${String(k) === pick ? ' selected' : ''}>${n}</option>`).join('')
+        + '<option value="-1">Skip this PDF</option>';
       return `<label class="row"><span class="parts-name"></span><select data-i="${i}">${opts}</select></label>`;
     });
     dlg.innerHTML = `<h2>Which instrument is each PDF?</h2><p class="muted small-text">They are combined into one song, one track per instrument. Every PDF should be the same song, bar for bar.</p>${rows.join('')}<div class="row"><button class="primary" data-go>Combine into one song</button><button class="ghost" data-no>Import separately</button></div>`;
     dlg.querySelectorAll('.parts-name').forEach((el, i) => { el.textContent = files[i].name; });
+    dlg.querySelectorAll('select').forEach((sel) => { const o = sel.querySelector('[value=own]'); if (o) o.textContent = named[Number(sel.dataset.i)]; });
+    const choice = (sel) => {
+      const i = Number(sel.dataset.i);
+      if (sel.value === 'own') { // its program comes from what the name sounds like (Synth Lead 2 -> synth lead)
+        const k = PARTS.findIndex(([, , re]) => re.test(named[i]));
+        return { file: files[i], name: named[i], program: k >= 0 ? PARTS[k][1] : 0 };
+      }
+      const k = Number(sel.value);
+      return k < 0 ? null : { file: files[i], name: PARTS[k][0], program: PARTS[k][1] };
+    };
     dlg.addEventListener('click', (e) => {
-      if (e.target.closest('[data-go]')) { resolve([...dlg.querySelectorAll('select')].map((sel) => ({ file: files[Number(sel.dataset.i)], part: Number(sel.value) })).filter((c) => c.part >= 0)); dlg.close(); }
+      if (e.target.closest('[data-go]')) { resolve([...dlg.querySelectorAll('select')].map(choice).filter(Boolean)); dlg.close(); }
       else if (e.target.closest('[data-no]')) { resolve(null); dlg.close(); }
     });
     dlg.addEventListener('close', () => { resolve(null); dlg.remove(); });
@@ -314,15 +336,15 @@ async function importPdfParts(chosen) {
   const { pdfToTab } = await import('./pdftab.js');
   const { ugToAlphaTex } = await import('./ugtab.js');
   const { title, artist } = namesFromPdf(chosen[0].file.name.replace(/\.[^.]+$/, ''), true);
-  const singer = chosen.findIndex((c) => PARTS[c.part][0] === 'Vocal');
+  const singer = chosen.findIndex((c) => /vocal/i.test(c.name));
   const parts = [];
   const sheets = [];
   for (let i = 0; i < chosen.length; i++) {
-    const { file, part } = chosen[i];
-    toast(`Reading ${PARTS[part][0]} (${i + 1} of ${chosen.length})…`, 8000);
+    const { file, name, program } = chosen[i];
+    toast(`Reading ${name} (${i + 1} of ${chosen.length})…`, 8000);
     const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist, lyrics: i === (singer >= 0 ? singer : 0) });
-    if (r.strips?.length) parts.push({ name: PARTS[part][0], program: PARTS[part][1], strips: r.strips });
-    else sheets.push({ file, name: PARTS[part][0] });
+    if (r.strips?.length) parts.push({ name, program, strips: r.strips });
+    else sheets.push({ file, name });
   }
   // parts written as standard notation (piano, vocal staff) have no tab to combine; keep each as sheet music
   for (const s of sheets) {

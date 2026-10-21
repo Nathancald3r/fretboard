@@ -54,8 +54,23 @@ async function checkDownloads(importFiles, toast) {
   await setValue('importedFiles', [...seen].slice(-500));
 }
 
-// Every PDF in the folder for the song typed in the search box (all its words are in the file name):
-// one click for each instrument's tab. Files already imported are skipped.
+// Where ug_collect.py saves: Downloads\UG Songs\<Song - Artist (Key X)>. Given the remembered folder
+// (Downloads, or UG Songs itself), the UG Songs folder in it, or null.
+async function ugSongs(dir) {
+  if (/^UG Songs$/i.test(dir.name)) return dir;
+  try { return await dir.getDirectoryHandle('UG Songs'); } catch { return null; }
+}
+
+// Every PDF in the folder and its song folders (two levels: UG Songs\<song>), with the folder names.
+async function* pdfsIn(dir, path = '', depth = 0) {
+  for await (const entry of dir.values()) {
+    if (entry.kind === 'file' && /\.pdf$/i.test(entry.name)) yield { entry, path };
+    else if (entry.kind === 'directory' && depth < 2) yield* pdfsIn(entry, `${path}${entry.name} `, depth + 1);
+  }
+}
+
+// Every PDF for the song typed in the search box (all its words are in the file or folder name), from the
+// folder and its UG Songs song folders: one click for each instrument's tab. Files already imported are skipped.
 async function importSongPdfs(importFiles, toast) {
   const query = $('find-query').value.trim();
   if (!query) { toast('Type the song in the box at the top first, then press this.', 5000); $('find-query').focus(); return; }
@@ -63,17 +78,41 @@ async function importSongPdfs(importFiles, toast) {
   try { dir = await folderHandle(); } catch { return; }
   const seen = new Set((await getValue('importedFiles')) || []);
   const found = [];
-  for await (const entry of dir.values()) {
-    if (entry.kind !== 'file' || !/\.pdf$/i.test(entry.name) || matchScore(entry.name, query) < 0.99) continue;
+  for await (const { entry, path } of pdfsIn(dir)) {
+    if (matchScore(path + entry.name, query) < 0.99) continue;
     const file = await entry.getFile();
     if (!seen.has(fileKey(file))) found.push(file);
   }
-  if (!found.length) { toast(`No new PDFs for “${query}” in “${dir.name}”.`, 5000); return; }
+  if (!found.length) { toast(`No new PDFs for “${query}” in “${dir.name}” or its UG Songs folders.`, 5000); return; }
   found.sort((a, b) => a.name.localeCompare(b.name));
   await importFiles(found, { quietIfEmpty: true });
   found.forEach((f) => seen.add(fileKey(f)));
   await setValue('importedFiles', [...seen].slice(-500));
   toast(`Added ${found.length} PDF${found.length > 1 ? 's' : ''} for “${query}”.`, 6000);
+}
+
+// "Import files" opens in the song folder collected last (UG Songs\latest.txt names it), else UG Songs,
+// else the folder used last time, so the PDFs are right there.
+async function pickFiles(importFiles) {
+  let startIn = 'downloads';
+  const dir = await grantedFolder();
+  const ug = dir && (await ugSongs(dir));
+  if (ug) {
+    startIn = ug;
+    try {
+      const name = (await (await (await ug.getFileHandle('latest.txt')).getFile()).text()).trim();
+      if (name) startIn = await ug.getDirectoryHandle(name);
+    } catch { /* no latest song: UG Songs itself */ }
+  }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({ id: 'tab-import', startIn, multiple: true });
+  } catch (err) {
+    if (err?.name === 'AbortError') return;
+    $('file-input').click(); // picker not allowed here: the plain file chooser
+    return;
+  }
+  importFiles(await Promise.all(handles.map((h) => h.getFile())));
 }
 
 async function changeFolder(toast) {
@@ -193,4 +232,11 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   $('btn-song-pdfs').addEventListener('click', () => importSongPdfs(importFiles, toast));
   $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast).then(showAuto));
   $('btn-folder').addEventListener('click', () => changeFolder(toast));
+  if (canWatch && 'showOpenFilePicker' in window) {
+    $('file-input').closest('label').addEventListener('click', (e) => {
+      if (e.target === $('file-input')) return; // the fallback's own click
+      e.preventDefault();
+      pickFiles(importFiles);
+    });
+  }
 }

@@ -147,6 +147,8 @@ def main():
           f"Saving each one into {out} by itself; keep hands off keyboard and mouse until it says Done.\n")
 
     out.mkdir(parents=True, exist_ok=True)
+    if not a.out:  # Fretboard's "Import files" opens in the newest song folder
+        (Path(a.root) / "latest.txt").write_text(folder, encoding="utf-8")
     for n in names:
         label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
         dest = out / f"{label}.pdf"
