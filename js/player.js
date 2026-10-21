@@ -124,6 +124,7 @@ function ensureApi() {
     if (e.state === PLAYING) measureLag.start();
   });
   api.playerPositionChanged.on(onPosition);
+  api.playedBeatChanged.on(() => keepPlayheadInView());
   api.playedBeatChanged.on(onBeat);
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
   api.playerFinished.on(() => {
@@ -244,6 +245,19 @@ function scrollToPlayhead() {
     return;
   }
   api.scrollToCursor?.();
+}
+
+// While the video pop-up covers the bottom of the tab, the cursor's line is brought to the top before
+// it gets under the pop-up, so the playhead is always in view.
+function keepPlayheadInView() {
+  const pop = $('pa-video');
+  if (!document.body.classList.contains('video-open') || pop.hidden) return;
+  const cur = document.querySelector('#alphatab .at-cursor-bar, #alphatab .at-cursor-beat');
+  const box = $('score-scroll');
+  if (!cur || !box) return;
+  const c = cur.getBoundingClientRect();
+  const limit = pop.getBoundingClientRect().top - 8;
+  if (c.bottom > limit || c.top < box.getBoundingClientRect().top) box.scrollBy({ top: c.top - box.getBoundingClientRect().top - 40, behavior: 'instant' });
 }
 
 // Starts playback from the current position, with the count-in if it's on.
@@ -1612,7 +1626,7 @@ function initCompact() {
     peek.textContent = '▶ Video';
     peek.title = 'Show the linked video';
     $('pa-video').after(peek);
-    const pop = (on) => document.body.classList.toggle('video-open', on);
+    const pop = (on) => { document.body.classList.toggle('video-open', on); if (on) setTimeout(keepPlayheadInView, 300); };
     peek.addEventListener('click', () => pop(!document.body.classList.contains('video-open')));
     $('pa-video-close').addEventListener('click', () => pop(false));
     $('pa-video-sync').addEventListener('click', () => pop(false));

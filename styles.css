@@ -1051,3 +1051,12 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
   #pa-video.collapsed .pa-video-frame, #pa-video.mini .pa-video-frame { position: static; width: auto; max-height: 34vh; aspect-ratio: 16 / 9; margin: 0 auto; }
   #pa-video #pa-video-close, #pa-video #pa-video-sync { display: inline-flex; }
 }
+
+/* Video settings button, attached to the Video switch once the video is on */
+.vid-group #pa-gear { display: none; }
+.vid-group #pa-toggle.on ~ #pa-gear { display: inline-flex; }
+@media (max-width: 640px) {
+  .toggles .tog-group.vid-group #pa-gear { display: none; }
+  .toggles .tog-group.vid-group #pa-toggle.on ~ #pa-gear { display: inline-flex; }
+  .vid-group #pa-toggle.on { border-radius: 999px 0 0 999px; }
+}
