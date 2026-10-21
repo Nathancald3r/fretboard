@@ -60,4 +60,8 @@ imp3.initFromString(multi.tex, new alphaTab.Settings());
 const sc3 = imp3.readScore();
 assert.deepEqual(sc3.tracks.map((t) => t.name), ['Lead Guitar', 'Rhythm Guitar']);
 assert.equal(sc3.tracks[1].staves[0].bars.length, 6, 'a shorter part is padded with rests');
+// a misread line with more notes than the bar has beats (a notation part read as tab) must not hang
+const crowded = [{ bars: [bar(0, 220, eighths(0)), bar(220, 440, eighths(220)), bar(440, 660, Array.from({ length: 30 }, (_, i) => col(450 + i * 6, 1, [0, '3'])))] }];
+const over = ugToAlphaTex(crowded, {});
+assert.ok(over && over.bars === 3, 'a bar with too many notes is cut to fit');
 console.log('ugtab ok');

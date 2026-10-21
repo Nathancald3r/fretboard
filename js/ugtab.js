@@ -360,7 +360,17 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     }
     lens = lens.map((l) => (dur(l) ? l : snap(l)));
     let total = lens.reduce((a, c) => a + c, 0);
-    while (total > T) { const k = lens.indexOf(Math.max(...lens)); lens[k] = snap(lens[k] - (total - T)); total = lens.reduce((a, c) => a + c, 0); }
+    while (total > T) { // shorten the longest note until the bar fits
+      const k = lens.indexOf(Math.max(...lens));
+      const shorter = snap(lens[k] - (total - T));
+      if (shorter >= lens[k]) break; // every note is already as short as it goes
+      lens[k] = shorter;
+      total = lens.reduce((a, c) => a + c, 0);
+    }
+    if (total > T) { // more notes than the bar has room for (a misread line): the extra ones are dropped
+      while (total > T) total -= lens.pop();
+      b.cols = b.cols.slice(0, lens.length);
+    }
     // when the row says less than a full bar, the last note rings on to the end of the bar
     if (b.cols.length && total < T) { lens[lens.length - 1] += T - total; total = T; }
     for (const c of b.cols) {
