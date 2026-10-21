@@ -1598,6 +1598,14 @@ function initFit() {
 // Phone / focus helpers: the tempo popover, the ⚙ menu and the focus view close when you press elsewhere.
 function initCompact() {
   const body = document.body;
+  // On a phone the settings button lives in the top bar, beside the search, and the video rides in the
+  // play bar (full width above the buttons, or a small picture beside the tempo button).
+  document.querySelector('.topbar').append($('pl-more'));
+  if (matchMedia('(max-width: 640px)').matches) {
+    const chip = document.querySelector('.track-chip'); // the instrument stays in the bar, not in the menu
+    $('pl-tempo-open').after(chip);
+    chip.after($('pa-video'));
+  }
   const flip = (cls, btn, force) => {
     const on = force ?? !body.classList.contains(cls);
     body.classList.toggle(cls, on);

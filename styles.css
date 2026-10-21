@@ -925,3 +925,35 @@ body.focus #pl-info::after { content: attr(data-short); font-size: .85rem; }
 body.focus .player-head { flex-wrap: wrap; }
 body.focus .player-head > .player-title { flex: 1 1 0; }
 body.focus .head-tools { order: 1; }
+
+/* ---------- Phone, second pass: settings in the top bar, video in the play bar, full screen on the tab ---------- */
+.tab-corner { position: sticky; top: .3rem; height: 0; z-index: 6; display: flex; justify-content: flex-end; padding-right: .4rem; pointer-events: none; }
+.tab-corner .icon-btn { pointer-events: auto; width: 2.4rem; height: 2.4rem; font-size: 1.2rem; background: #101216d9; color: var(--text); border: 1px solid var(--line); border-radius: 10px; }
+.head-tools { display: none; }
+#pl-more { display: none; }
+@media (max-width: 640px) {
+  .in-player #pl-more { display: inline-flex; flex: none; width: 3rem; height: 3rem; font-size: 1.7rem; align-items: center; justify-content: center; margin-right: -.3rem; }
+  .in-player .search { min-width: 0; }
+  body.more-open .playbar-end { top: calc(var(--top-h, 52px) + .3rem); }
+  body.focus .player-head > .player-title { flex: 1 1 100%; }
+  /* The video: full width above the buttons, or a small picture beside play and tempo. */
+  .playbar-row > .pa-video, .playbar-row > .pa-video.mini, .playbar-row > .pa-video.collapsed {
+    position: relative; inset: auto; order: 0; margin: 0; max-width: 100%; box-shadow: none; flex: 0 0 auto; width: 9rem; align-self: center;
+  }
+  .playbar-row > .pa-video:not(.mini):not(.collapsed) { order: -1; flex: 0 0 100%; width: 100%; }
+  .playbar-row > .pa-video:not(.collapsed) .pa-video-frame { max-height: 19vh; aspect-ratio: 16 / 9; margin: 0 auto; }
+  .playbar-row > .pa-video.mini .pa-video-bar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 2; background: #000a; padding: 0 .1rem; justify-content: space-between;
+  }
+  .playbar-row > .pa-video.mini #pa-video-title, .playbar-row > .pa-video.mini #pa-video-prev,
+  .playbar-row > .pa-video.mini #pa-video-next, .playbar-row > .pa-video.mini #pa-video-hide { display: none; }
+  #pa-video-sync { font-weight: 600; }
+  .playbar-row > .pa-video.collapsed { width: auto; }
+}
+@media (max-width: 640px) {
+  .playbar-row > .pa-video.mini .pa-video-bar button { min-height: 28px; min-width: 0; padding: .1rem .5rem; font-size: .75rem; }
+}
+@media (max-width: 640px) {
+  .playbar-row > .track-chip { flex: 1 1 0; min-width: 8.5rem; order: 0; }
+  .playbar-row > .track-chip .track-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+}

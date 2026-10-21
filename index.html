@@ -119,7 +119,6 @@
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
       <span class="head-tools">
-        <button id="pl-focus" class="icon-btn" title="Focus view: hide everything except the tab, the title and the play controls" aria-label="Focus view" aria-pressed="false">⛶</button>
         <button id="pl-more" class="icon-btn phone-only" title="More settings: tracks, linked video, tab info, view, sound, amp and more" aria-label="More settings" aria-expanded="false">⚙</button>
       </span>
       <span id="pl-info" class="muted small-text"></span>
@@ -142,6 +141,7 @@
 
     <div id="pl-loading" class="loading">Loading score…</div>
     <div id="score-scroll" class="score-scroll">
+      <div class="tab-corner"><button id="pl-focus" class="icon-btn" title="Full screen: hide everything except the title, the tab and the play controls" aria-label="Full screen" aria-pressed="false">⛶</button></div>
       <div id="alphatab"></div>
       <div id="sec-labels" class="sec-labels" aria-hidden="true"></div>
     </div>
@@ -151,6 +151,7 @@
         <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
         <span id="pa-video-title" class="small-text">Linked video</span>
         <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
+        <button id="pa-video-sync" class="ghost small" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">Sync</button>
         <button id="pa-video-size" class="ghost small" title="Smaller / bigger" aria-label="Smaller or bigger">⤡</button>
         <button id="pa-video-hide" class="ghost small" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video">–</button>
       </div>
