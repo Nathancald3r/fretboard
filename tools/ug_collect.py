@@ -93,8 +93,11 @@ def track_names(pg):
 
 
 def song_name(pg):
+    """("Champion", "Bethel Music") from the page heading "Official Champion Tab by Bethel Music"."""
     t = re.sub(r"^Official\s+", "", pg.evaluate("document.querySelector('h1')?.innerText||document.title"), flags=re.I)
-    return re.sub(r'[\\/:*?"<>|]+', " ", re.sub(r"\s+(Tab|Chords|Pro)\b.*$", "", t.split(" by ")[0], flags=re.I)).strip() or "Song"
+    song, _, artist = t.partition(" by ")
+    clean = lambda x: re.sub(r'[\\/:*?"<>|]+', " ", x).strip()
+    return clean(re.sub(r"\s+(Tab|Chords|Pro)\b.*$", "", song, flags=re.I)) or "Song", clean(artist.split(" @")[0])
 
 
 def main():
@@ -118,7 +121,7 @@ def main():
             sys.exit("Not logged in: log in to UG Pro in that Chrome window and rerun.")
         open_instruments(pg)
         names = track_names(pg)
-        song = song_name(pg)
+        song, artist = song_name(pg)
         if not names:
             sys.exit("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, rerun.")
     if only:
@@ -129,7 +132,7 @@ def main():
 
     out.mkdir(parents=True, exist_ok=True)
     for n in names:
-        label = f"{song} - {n}"
+        label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
         dest = out / f"{label}.pdf"
         if dest.exists() and not a.again:
             print(f"  {dest.name}: already there, skipped")
@@ -157,11 +160,17 @@ def main():
             pr.locator("cr-button.action-button").first.click(no_wait_after=True, timeout=5000)
         r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(DIALOG), str(dest)],
                            capture_output=True, text=True)
-        print(f"  {dest.name}: {r.stdout.strip() or r.stderr.strip()[:80]}")
+        for _ in range(40):  # Chrome writes the file a moment after Save
+            if dest.exists():
+                break
+            time.sleep(0.5)
+        print(f"  {dest.name}: " + ("saved" if dest.exists() else
+              f"NOT saved ({r.stdout.strip() or r.stderr.strip()[:80]}); rerun later to fetch it"))
         for _ in range(30):
             if not print_open():
                 break
             time.sleep(1)
+        close_old_prints()  # a Print window that didn't close would freeze the next track
         time.sleep(a.gap)  # unhurried pace, about what printing by hand takes
     print("Done. Now use 'PDFs for this song' in Fretboard.")
 

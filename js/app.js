@@ -268,6 +268,9 @@ function namesFromPdf(base, plain = false) {
   const part = (base.match(/\b(bass|drums?|ukulele|piano|keys|keyboard|vocals?|acoustic|banjo|mandolin)\b/i) || [])[1];
   const tag = (t) => (part && !plain && !new RegExp(part, 'i').test(t) ? `${t} (${pretty(part)})` : t);
   if (m) return { title: tag(pretty(m[1])), artist: pretty(m[2]) };
+  // "Song - Artist - Instrument", as tools/ug_collect.py names each track's PDF
+  const d = base.replace(/\s*\(\d+\)$/, '').split(' - ');
+  if (d.length === 3) return { title: plain ? d[0].trim() : `${d[0].trim()} (${d[2].trim()})`, artist: d[1].trim() };
   const title = base.replace(/\b(tab|chords?)\b|@.*$|[(\[]\d+[)\]]/gi, '').replace(/\s+/g, ' ').trim() || base;
   return { title: tag(pretty(title)), artist: '' };
 }
