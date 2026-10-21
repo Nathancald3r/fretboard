@@ -788,6 +788,16 @@ function buildTrackControls() {
     row.querySelector('small').textContent = hasTab(track) ? '' : 'notation';
     list.append(row);
   });
+  // parts written as standard notation (piano, drums...) are kept as their PDF pages
+  (song?.sheets || []).forEach((s, k) => {
+    const row = document.createElement('a');
+    row.className = 'sheet-row';
+    row.href = `#song/${song.id}/sheet/${k}`;
+    row.title = 'Show this part as sheet music';
+    row.innerHTML = '<span class="ticon">📄</span><span class="tname"></span><small>sheet music</small>';
+    row.querySelector('.tname').textContent = s.name;
+    list.append(row);
+  });
   applyMix();
 }
 

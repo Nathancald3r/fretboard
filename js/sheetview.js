@@ -4,15 +4,24 @@ import { loadPdfjs } from './pdftab.js';
 const $ = (id) => document.getElementById(id);
 let run = 0;
 
-export async function openSheet(song) {
+// A song's notation parts sit in song.sheets ({ name, data }); `k` is the part shown.
+export async function openSheet(song, k = 0) {
   const mine = ++run;
+  const parts = song.sheets || [];
+  const part = parts[k] || parts[0];
   $('sh-title').textContent = song.title || 'Sheet music';
-  $('sh-artist').textContent = song.artist || '';
+  $('sh-artist').textContent = [song.artist, part?.name].filter(Boolean).join(' · ');
+  const nav = $('sh-parts');
+  nav.textContent = '';
+  // the song's tab (when it has one) and each sheet-music part, to switch between them
+  if (song.kind !== 'sheet') nav.append(link(`#song/${song.id}`, '‹ Tab', false));
+  if (parts.length > 1 || song.kind !== 'sheet') parts.forEach((s, i) => nav.append(link(`#song/${song.id}/sheet/${i}`, s.name, s === part)));
+  nav.hidden = !nav.childElementCount;
   const box = $('sh-pages');
   box.textContent = 'Loading pages…';
   try {
     const lib = await loadPdfjs();
-    const pdf = await lib.getDocument({ data: new Uint8Array(song.data.slice(0)) }).promise;
+    const pdf = await lib.getDocument({ data: new Uint8Array((part?.data || song.data).slice(0)) }).promise;
     if (mine !== run) return;
     box.textContent = '';
     const width = Math.min(box.clientWidth || 900, 1100);
@@ -33,6 +42,14 @@ export async function openSheet(song) {
     console.error(err);
     if (mine === run) box.textContent = 'Could not show this PDF.';
   }
+}
+
+function link(href, text, on) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.textContent = text;
+  if (on) { a.className = 'on'; a.setAttribute('aria-current', 'page'); }
+  return a;
 }
 
 export function closeSheet() {

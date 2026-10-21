@@ -46,8 +46,9 @@ async function route() {
   let editing = false;
   if (name === 'song') {
     song = await getSong(Number(arg));
-    const asText = song?.kind === 'text' && location.hash.split('/')[2] !== 'play';
-    view = !song ? 'library' : song.kind === 'sheet' ? 'sheet' : asText ? 'text' : 'player';
+    const sub = location.hash.split('/')[2];
+    const asText = song?.kind === 'text' && sub !== 'play';
+    view = !song ? 'library' : song.kind === 'sheet' || (sub === 'sheet' && song.sheets?.length) ? 'sheet' : asText ? 'text' : 'player';
   } else if (name === 'edit') { // edit mode: the tab editor instead of the practice tools
     song = await getSong(Number(arg));
     editing = !!song && chartType(song) !== 'chords' && song.kind !== 'tex' && song.kind !== 'sheet';
@@ -75,7 +76,7 @@ async function route() {
   if (view === 'keys') renderKeys();
   if (view === 'player') { await openPlayer(song); if (editing) window.dispatchEvent(new Event('fbeditmode')); }
   if (view === 'text') openText(song);
-  if (view === 'sheet') openSheet(song);
+  if (view === 'sheet') openSheet(song, Number(location.hash.split('/')[3]) || 0);
   if (view !== 'text') window.scrollTo(0, 0);
 }
 
@@ -344,18 +345,20 @@ async function importPdfParts(chosen) {
     toast(`Reading ${name} (${i + 1} of ${chosen.length})…`, 8000);
     const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist, lyrics: i === (singer >= 0 ? singer : 0) });
     if (r.strips?.length) parts.push({ name, program, strips: r.strips });
-    else sheets.push({ file, name });
+    else sheets.push({ name, program, fileName: file.name, data: await file.arrayBuffer() });
   }
-  // parts written as standard notation (piano, vocal staff) have no tab to combine; keep each as sheet music
-  for (const s of sheets) {
-    await putSong({ kind: 'sheet', title: `${title} (${s.name})`, artist, data: await s.file.arrayBuffer(), fileName: s.file.name, added: Date.now() });
+  // parts written as standard notation (piano, drums) have no tab to combine: they stay in the same
+  // song as their PDF pages, listed with its tracks
+  if (!parts.length && sheets.length) {
+    const id = await putSong({ kind: 'sheet', title, artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, added: Date.now() });
+    toast(`Saved “${title}” as sheet music, ${sheets.length} part${sheets.length > 1 ? 's' : ''}.`, 6000);
+    return id;
   }
-  if (!parts.length && sheets.length) { toast(`Saved ${sheets.length} PDF${sheets.length > 1 ? 's' : ''} as sheet music.`, 6000); return -1; }
   if (!parts.length) return null;
   const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
   if (!made) return null;
-  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: chosen[0].file.name, added: Date.now() });
-  toast(`Combined ${parts.length} instrument${parts.length > 1 ? 's' : ''} into “${title}”, ${made.bars} bars.${made.lyrics ? ' Lyrics included.' : ''} Check each track in the player.`, 8000);
+  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: chosen[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() });
+  toast(`Combined ${parts.length} instrument${parts.length > 1 ? 's' : ''} into “${title}”, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''} Check each track in the player.`, 8000);
   return id;
 }
 
@@ -369,8 +372,7 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
     if (chosen?.length) {
       try {
         const id = await importPdfParts(chosen);
-        if (id === -1) { added++; files = files.filter((f) => !pdfs.includes(f)); } // all kept as sheet music
-        else if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
+        if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
       } catch (err) { console.error(err); }
     }
   }

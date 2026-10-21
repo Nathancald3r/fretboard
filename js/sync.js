@@ -59,13 +59,15 @@ export function songRecord(song) {
   for (const [k, v] of Object.entries(song)) {
     if (LOCAL_ONLY.includes(k)) continue;
     if (RECORDING_FIELDS.includes(k) && localRecording(song)) continue;
-    rec[k] = k === 'data' && isBytes(v) ? { $b64: toBase64(v) } : v;
+    rec[k] = k === 'data' && isBytes(v) ? { $b64: toBase64(v) }
+      : k === 'sheets' && Array.isArray(v) ? v.map((s) => ({ ...s, data: isBytes(s.data) ? { $b64: toBase64(s.data) } : s.data }))
+      : v;
   }
   return rec;
 }
 
 /** A song from its synced form; `local` (the copy on this device) keeps its local-only fields. */
-const SONG_KINDS = ['gp', 'xml', 'tex', 'text'];
+const SONG_KINDS = ['gp', 'xml', 'tex', 'text', 'sheet'];
 const NUMBER_FIELDS = ['speed', 'bestSpeed', 'practiceSeconds', 'added', 'updated', 'lastOpened', 'trackIndex', 'syncOffset', 'videoMaster'];
 
 export function songFromRecord(rec, local = null) {
@@ -77,6 +79,12 @@ export function songFromRecord(rec, local = null) {
     song[k] = k === 'data' && v && v.$b64 !== undefined ? fromBase64(v.$b64).buffer : v;
   }
   if (!SONG_KINDS.includes(song.kind)) song.kind = 'text';
+  if (song.sheets !== undefined) { // notation parts: { name, program, fileName, data (PDF bytes) }
+    song.sheets = Array.isArray(song.sheets) ? song.sheets.filter((s) => s && s.data?.$b64 !== undefined).map((s) => ({
+      name: String(s.name || 'Part').slice(0, 80), program: Number.isFinite(s.program) ? s.program : 0,
+      fileName: String(s.fileName || '').slice(0, 200), data: fromBase64(s.data.$b64).buffer })) : [];
+    if (!song.sheets.length) delete song.sheets;
+  }
   for (const k of NUMBER_FIELDS) if (song[k] !== undefined && !Number.isFinite(song[k])) delete song[k];
   if (song.sourceUrl !== undefined && !(typeof song.sourceUrl === 'string' && /^https?:\/\//.test(song.sourceUrl))) delete song.sourceUrl;
   if (song.version !== undefined) {

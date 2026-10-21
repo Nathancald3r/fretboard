@@ -1252,5 +1252,12 @@ body.edit-mode .ed-close { display: none; }
 .parts-dialog .parts-name { flex: 1 1 14rem; overflow-wrap: anywhere; font-size: .85rem; }
 
 /* Sheet music PDF pages */
+.sheet-row { display: flex; align-items: center; gap: .5rem; padding: .6rem .7rem; border-radius: 8px; color: inherit; text-decoration: none; }
+.sheet-row:hover { background: var(--panel-2); }
+.sheet-row .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-row small { color: var(--muted); font-size: .72rem; }
+.sheet-parts { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.sheet-parts a { padding: .35rem .7rem; border: 1px solid var(--line); border-radius: 999px; color: inherit; text-decoration: none; font-size: .9rem; }
+.sheet-parts a.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .sheet-pages { display: flex; flex-direction: column; align-items: center; gap: .8rem; margin-top: .8rem; }
 .sheet-page { width: 100%; max-width: 1100px; height: auto; background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }

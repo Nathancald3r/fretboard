@@ -45,6 +45,12 @@ assert.deepEqual([...new Uint8Array(back.data)], [1, 2, 255]);
 assert.equal(back.id, 4);
 assert.equal(back.recording.kind, 'file');
 assert.equal(await hashOf(songRecord(back)), await hashOf(rec));
+// notation parts (sheet music PDFs) inside a song travel with it, bytes intact
+const withSheets = { kind: 'tex', title: 'Champion', data: 'tex', sheets: [{ name: 'Piano', program: 0, fileName: 'p.pdf', data: new Uint8Array([37, 80, 68, 70]).buffer }] };
+const sb = songFromRecord(JSON.parse(JSON.stringify(songRecord(withSheets))));
+assert.deepEqual([...new Uint8Array(sb.sheets[0].data)], [37, 80, 68, 70]);
+assert.equal(sb.sheets[0].name, 'Piano');
+assert.equal(songFromRecord(JSON.parse(JSON.stringify(songRecord({ kind: 'sheet', data: new Uint8Array([1]).buffer })))).kind, 'sheet', 'sheet music stays sheet music');
 assert.ok(songRecord({ ...gp, recording: { kind: 'youtube', url: 'x' } }).recording, 'YouTube links sync');
 
 // Two devices.
