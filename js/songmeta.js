@@ -2,7 +2,7 @@
 
 /** 'pro' (Guitar Pro / MusicXML), 'tab' (typed tab lines), 'chords' (chords over lyrics), 'exercise'. */
 export function chartType(song) {
-  if (song.kind === 'tex') return 'exercise';
+  if (song.kind === 'tex') return song.fileName && /\.pdf$/i.test(song.fileName) ? 'pro' : 'exercise'; // a PDF read into notes is a song, not a practice exercise
   if (song.kind !== 'text') return 'pro';
   return /^\s*[eEbBgGdDaA]?\|?[-0-9hpbrx/\~()]{0,3}\|?[-0-9hpbrx/\~()|]{8,}/m.test(String(song.data || '')) && /-{3,}/.test(String(song.data || '')) ? 'tab' : 'chords';
 }

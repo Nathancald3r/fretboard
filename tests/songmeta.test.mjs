@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { chartType, filterSongs, folderNames, SORTS } from '../js/songmeta.js';
 
 assert.equal(chartType({ kind: 'gp' }), 'pro');
+assert.equal(chartType({ kind: 'tex', fileName: 'Song.pdf' }), 'pro'); // read from a PDF: shown in the library
+assert.equal(chartType({ kind: 'tex' }), 'exercise');
 assert.equal(chartType({ kind: 'xml' }), 'pro');
 assert.equal(chartType({ kind: 'tex' }), 'exercise');
 assert.equal(chartType({ kind: 'text', data: 'e|-----0-----3-----|\nB|---1-----0-----1---|' }), 'tab');
