@@ -35,8 +35,10 @@ def close_old_prints():
     stale = [t for t in ts if t["url"].startswith("chrome://print") and t["type"] == "page"]
     if stale:  # the tab that opened it can stay frozen, so close the UG tabs too; a fresh one opens
         stale += [t for t in ts if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"]]
-        # keep a blank tab so closing those never closes the whole Chrome window
-        urllib.request.urlopen(urllib.request.Request(f"http://localhost:{PORT}/json/new?about:blank", method="PUT"), timeout=5).read()
+        # keep a tab open so closing those never closes the whole Chrome window
+        ids = {t["id"] for t in stale}
+        if not any(t["type"] == "page" and t["id"] not in ids for t in ts):
+            urllib.request.urlopen(urllib.request.Request(f"http://localhost:{PORT}/json/new?about:blank", method="PUT"), timeout=5).read()
     for t in stale:
         urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
     time.sleep(1)
@@ -96,8 +98,11 @@ def track_names(pg):
 
 def song_name(pg):
     """("Champion", "Bethel Music") from the page heading "Official Champion Tab by Bethel Music"."""
-    t = re.sub(r"^Official\s+", "", pg.evaluate("document.querySelector('h1')?.innerText||document.title"), flags=re.I)
+    h1, link = pg.evaluate("[document.querySelector('h1')?.innerText||'', document.querySelector('a[href*=\"/artist/\"]')?.innerText||'']")
+    t = re.sub(r"^Official\s+", "", h1.strip(), flags=re.I)
     song, _, artist = t.partition(" by ")
+    # the heading sometimes loads without "by <artist>": use the artist link, else the URL (/tab/bethel-music/...)
+    artist = artist or link.strip() or pg.url.split("/tab/")[-1].split("/")[0].replace("-", " ").title()
     clean = lambda x: re.sub(r'[\\/:*?"<>|]+', " ", x).strip()
     return clean(re.sub(r"\s+(Tab|Chords|Pro)\b.*$", "", song, flags=re.I)) or "Song", clean(artist.split(" @")[0])
 
@@ -108,7 +113,8 @@ def main():
     ap.add_argument("url")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--only", default="")
-    ap.add_argument("--out", default="")
+    ap.add_argument("--out", default="", help="exact folder to save into")
+    ap.add_argument("--root", default=str(Path.home() / "Downloads" / "UG Songs"), help="parent of the per-song folders")
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     a = ap.parse_args()
     PORT = a.port
@@ -132,7 +138,7 @@ def main():
         names = [n for n in names if n.lower() in only]
     # one folder per song: Downloads\UG Songs\Champion - Bethel Music (Key Bb)
     folder = " - ".join(x for x in (song, artist) if x) + (f" (Key {key})" if key else "")
-    out = (Path(a.out) if a.out else Path.home() / "Downloads" / "UG Songs" / folder).resolve()
+    out = (Path(a.out) if a.out else Path(a.root) / folder).resolve()
     old = Path.home() / "Downloads" / f"UG {song}"  # earlier runs saved here; move them over
     if not a.out and old.is_dir() and not out.exists():
         out.parent.mkdir(parents=True, exist_ok=True)
