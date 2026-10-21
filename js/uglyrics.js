@@ -38,7 +38,7 @@ export async function readLyricLine(page, scale, st, limitY) {
   const wk = await getWorker();
   if (!wk) return [];
   const x0 = Math.round(st.x0 - 10), x1 = Math.round(st.x1 + 10);
-  const y0 = Math.round(st.ys[5] + 2.9 * st.u), y1 = Math.round(Math.min(st.ys[5] + 4.9 * st.u, limitY));
+  const y0 = Math.round(st.ys[st.ys.length - 1] + 2.9 * st.u), y1 = Math.round(Math.min(st.ys[st.ys.length - 1] + 4.9 * st.u, limitY));
   if (y1 - y0 < 1.2 * st.u) return [];
   const canvas = document.createElement('canvas');
   canvas.width = (x1 - x0) * K;

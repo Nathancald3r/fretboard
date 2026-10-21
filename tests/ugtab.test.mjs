@@ -2,7 +2,7 @@
 // Run: node tests/ugtab.test.mjs
 import assert from 'node:assert/strict';
 import * as alphaTab from '@coderline/alphatab';
-import { ugToAlphaTex } from '../js/ugtab.js';
+import { ugToAlphaTex, parseTuning } from '../js/ugtab.js';
 
 const col = (cx, len, ...notes) => ({ cx, len, beamed: len < 4, notes: notes.map(([s, t]) => ({ s, t })) });
 const bar = (x0, x1, cols) => ({ x0, x1, cols });
@@ -65,3 +65,23 @@ const crowded = [{ bars: [bar(0, 220, eighths(0)), bar(220, 440, eighths(220)), 
 const over = ugToAlphaTex(crowded, {});
 assert.ok(over && over.bars === 3, 'a bar with too many notes is cut to fit');
 console.log('ugtab ok');
+
+// the tuning printed under the title, lowest string first
+assert.deepEqual(parseTuning('Tuning: E A D G B E'), [40, 45, 50, 55, 59, 64]);
+assert.deepEqual(parseTuning('Tuning: E ♭ A♭ D♭ G♭ B♭ E♭'), [39, 44, 49, 54, 58, 63]);
+assert.deepEqual(parseTuning('Tuning: D A D G'), [26, 33, 38, 43]);
+assert.deepEqual(parseTuning('Tuning: B E A D G'), [23, 28, 33, 38, 43]);
+assert.equal(parseTuning('Tuning: C C C C C C'), null, 'drum parts');
+
+// a four-string bass part with a drop-D tuning
+{
+  const bass = [{ strings: 4, tuning: [26, 33, 38, 43], bars: [bar(0, 220, [0, 1, 2, 3].map((i) => col(30 + i * 50, 4, [3, String(i)])))] }];
+  const m = ugToAlphaTex(bass, { title: 'Bass', program: 33 });
+  assert.ok(m.tex.includes("tuning G2 D2 A1 D1"));
+  const im = new alphaTab.importer.AlphaTexImporter();
+  im.initFromString(m.tex, new alphaTab.Settings());
+  const sc = im.readScore();
+  assert.equal(sc.tracks[0].staves[0].tuning.length, 4);
+  assert.equal(sc.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].realValue, 26, 'open low string is D1');
+}
+console.log('ugtab tuning ok');

@@ -3,7 +3,7 @@
 // stems, beams, flags and dots, and builds alphaTex. Image sizes are normalised to a staff
 // spacing of UG_UNIT pixels by the caller (see pdftab.js).
 import { UG_ATLAS, UG_W, UG_H } from './ugatlas.js';
-import { readHeading } from './ugtext.js';
+import { readHeading, readRestCount } from './ugtext.js';
 
 export const UG_UNIT = 18;
 const TEMPLATES = UG_ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -11,8 +11,9 @@ const MAX_MISS = 40;
 
 /* ---------- staves and bars ---------- */
 
-// Every group of six equally spaced long horizontal lines.
-export function findStaves(light, w, h, ink) {
+// Every group of equally spaced long horizontal lines: six for guitar, or another count the
+// page's "Tuning:" line asks for (four for bass...). Five-line music staves are left alone.
+export function findStaves(light, w, h, ink, counts = [6]) {
   const lines = [];
   for (let y = 0; y < h; y++) {
     let n = 0, run = 0, longest = 0;
@@ -29,23 +30,30 @@ export function findStaves(light, w, h, ink) {
   }
   const ys = lines.map((l) => l.sum / l.n);
   const out = [];
-  for (let i = 0; i + 5 < ys.length;) {
-    const d = [1, 2, 3, 4, 5].map((k) => ys[i + k] - ys[i + k - 1]);
-    if (Math.min(...d) > 6 && Math.max(...d) - Math.min(...d) < 3) {
-      const rows = ys.slice(i, i + 6);
-      const y = Math.round(rows[0]);
-      let x0 = 0, x1 = w - 1;
-      while (x0 < w && !light[y * w + x0]) x0++;
-      while (x1 > 0 && !light[y * w + x1]) x1--;
-      out.push({ ys: rows, x0, x1, u: (rows[5] - rows[0]) / 5 });
-      i += 6;
+  for (let i = 0; i + 1 < ys.length;) {
+    const gap = ys[i + 1] - ys[i];
+    let j = i + 1; // the run of lines spaced like the first two
+    while (j + 1 < ys.length && Math.abs(ys[j + 1] - ys[j] - gap) < 3) j++;
+    const n = j - i + 1;
+    // a longer run counts only if it splits evenly into six-line staves
+    const size = counts.includes(n) ? n : n > 7 && n % 6 === 0 && counts.includes(6) ? 6 : 0;
+    if (gap > 6 && size) {
+      for (let k = i; k + size <= j + 1; k += size) {
+        const rows = ys.slice(k, k + size);
+        const y = Math.round(rows[0]);
+        let x0 = 0, x1 = w - 1;
+        while (x0 < w && !light[y * w + x0]) x0++;
+        while (x1 > 0 && !light[y * w + x1]) x1--;
+        out.push({ ys: rows, x0, x1, u: (rows[size - 1] - rows[0]) / (size - 1) });
+      }
+      i = j + 1;
     } else i++;
   }
   return out;
 }
 
 function barLines(light, w, st) {
-  const t = Math.round(st.ys[0]), b = Math.round(st.ys[5]);
+  const t = Math.round(st.ys[0]), b = Math.round(st.ys[st.ys.length - 1]);
   const xs = [];
   for (let x = st.x0; x <= st.x1; x++) {
     let n = 0;
@@ -57,7 +65,10 @@ function barLines(light, w, st) {
     if (groups.length && x - groups[groups.length - 1][groups[groups.length - 1].length - 1] <= 2) groups[groups.length - 1].push(x);
     else groups.push([x]);
   }
-  return groups.map((g) => g.reduce((a, c) => a + c, 0) / g.length);
+  const out = groups.map((g) => g.reduce((a, c) => a + c, 0) / g.length);
+  // some systems end without a closing bar line: the staff's end closes the last bar
+  if (out.length && st.x1 - out[out.length - 1] > 4 * st.u) out.push(st.x1);
+  return out;
 }
 
 /* ---------- fret numbers ---------- */
@@ -78,7 +89,7 @@ function glyphAt(comp) {
 
 export function components(ink, w, st, bars) {
   const u = st.u;
-  const t = Math.max(0, Math.round(st.ys[0] - 0.8 * u)), b = Math.round(st.ys[5] + 0.8 * u);
+  const t = Math.max(0, Math.round(st.ys[0] - 0.8 * u)), b = Math.round(st.ys[st.ys.length - 1] + 0.8 * u);
   const seen = new Uint8Array(w * (b + 1));
   const isBar = (x) => bars.some((bx) => Math.abs(x - bx) <= 2);
   const comps = [];
@@ -115,7 +126,7 @@ function readNotes(ink, w, st, bars) {
   for (const c of components(ink, w, st, bars)) {
     const cy = (c.y0 + c.y1) / 2;
     if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u || c.w <= 4) continue; // (a bracket is thinner than any digit)
-    if (cy < st.ys[0] - 0.45 * u || cy > st.ys[5] + 0.45 * u) continue;
+    if (cy < st.ys[0] - 0.45 * u || cy > st.ys[st.ys.length - 1] + 0.45 * u) continue;
     const ch = glyphAt(c);
     if (ch === null) continue;
     let s = 0;
@@ -150,7 +161,7 @@ function readNotes(ink, w, st, bars) {
 
 function stemsBelow(ink, w, h, st) {
   const u = st.u;
-  const y0 = Math.round(st.ys[5] + 0.5 * u), y1 = Math.min(h - 1, Math.round(st.ys[5] + 3.2 * u));
+  const y0 = Math.round(st.ys[st.ys.length - 1] + 0.5 * u), y1 = Math.min(h - 1, Math.round(st.ys[st.ys.length - 1] + 3.2 * u));
   const cols = [];
   for (let x = st.x0; x <= st.x1; x++) {
     let best = 0, cur = 0, end = 0;
@@ -208,6 +219,22 @@ function stemLength(ink, w, s, u) {
   return { len: dot ? base * 1.5 : base, beamed: false };
 }
 
+// A multi-bar rest is a thick horizontal bar across the middle of the staff, between two lines.
+function thickRest(ink, w, st, xa, xb) {
+  const mid = (st.ys[0] + st.ys[st.ys.length - 1]) / 2;
+  const half = st.ys.length % 2 ? 0.5 * st.u : 0; // odd line count: the middle is a line, so look just off it
+  const runAt = (y) => {
+    y = Math.round(y);
+    let run = 0, best = 0, end = 0;
+    for (let x = Math.round(xa) + 3; x < xb - 3; x++) { run = ink[y * w + x] ? run + 1 : 0; if (run > best) { best = run; end = x + 1; } }
+    return [best, end];
+  };
+  const need = Math.min(3 * st.u, 0.4 * (xb - xa));
+  const runs = [-0.15, 0, 0.15].map((k) => runAt(mid + half + k * st.u));
+  if (!runs.every((r) => r[0] >= need)) return null;
+  return { x0: runs[1][1] - runs[1][0], x1: runs[1][1] }; // where the thick bar is
+}
+
 /* ---------- strips -> bars ---------- */
 
 export function readStrip(ink, light, w, h, st) {
@@ -229,7 +256,13 @@ export function readStrip(ink, light, w, h, st) {
       const r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false };
       c.len = r.len; c.beamed = r.beamed;
     }
-    bars.push({ x0: bl[i], x1: bl[i + 1], cols });
+    const bar = { x0: bl[i], x1: bl[i + 1], cols };
+    const thick = !cols.length && thickRest(ink, w, st, bl[i], bl[i + 1]);
+    if (thick) { // the number sits centred over the thick bar
+      const c = (thick.x0 + thick.x1) / 2;
+      bar.rest = readRestCount(ink, w, st, c - 2.2 * st.u, c + 2.2 * st.u) || 1;
+    }
+    bars.push(bar);
   }
   // The text above the staff: a section name starts a new section, a tempo mark changes the tempo.
   const dbg = [];
@@ -245,7 +278,37 @@ export function readStrip(ink, light, w, h, st) {
   };
   for (const sec of hd.sections) Object.assign(barAt(sec.x, sec.x1), { heading: true, name: sec.name, numbered: sec.numbered });
   for (const t of hd.tempos) barAt(t.x).tempo = t.v;
-  return { bars, dbg };
+  return { bars, dbg, strings: st.ys.length };
+}
+
+/* ---------- tuning ---------- */
+
+const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// Standard tunings, lowest string first (MIDI).
+const STANDARD = { 4: [28, 33, 38, 43], 5: [23, 28, 33, 38, 43], 6: [40, 45, 50, 55, 59, 64], 7: [35, 40, 45, 50, 55, 59, 64] };
+
+/** "Tuning: E♭ A♭ D♭ G♭ B♭ E♭" (lowest string first) -> MIDI pitches, each in the octave nearest the standard one. */
+export function parseTuning(text) {
+  const m = String(text || '').match(/Tuning:\s*((?:[A-G]\s?[#b♭♯]?\s*){4,7})/);
+  if (!m) return null;
+  const names = m[1].match(/[A-G]\s?[#b♭♯]?/g).map((s) => s.replace(/\s/g, ''));
+  const std = STANDARD[names.length];
+  if (!std || names.every((n) => n === names[0])) return null; // "C C C C C C" is what drum parts say
+  return names.map((n, i) => {
+    const pc = (PC[n[0]] + (/[#♯]/.test(n) ? 1 : /[b♭]/.test(n) ? -1 : 0) + 12) % 12;
+    let d = (((pc - std[i]) % 12) + 12) % 12;
+    if (d > 6) d -= 12;
+    return std[i] + d;
+  });
+}
+
+// alphaTex lists the strings top line (highest) first.
+function tuningTex(strips) {
+  const n = strips.find((s) => s.strings)?.strings || 6;
+  const given = strips.find((s) => s.tuning)?.tuning;
+  const midi = given && given.length === n ? given : STANDARD[n] || STANDARD[6];
+  return [...midi].reverse().map((m) => SHARPS[m % 12] + (Math.floor(m / 12) - 1)).join(' ');
 }
 
 /* ---------- alphaTex ---------- */
@@ -326,7 +389,11 @@ function lyricBar(b, T) {
 // with the first one (cut or padded with rests when a part has a different number of bars).
 export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, name = '', program = 27, extra = [] } = {}) {
   // each lyric syllable belongs to the bar it starts in
-  const barsOf = (list) => list.flatMap((s) => s.bars.map((b) => ({ ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) })));
+  // a multi-bar rest ("16" over a thick bar) stands for that many empty bars, so every part keeps the same bar count
+  const barsOf = (list) => list.flatMap((s) => s.bars.flatMap((b) => {
+    const one = { ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) };
+    return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [] }))] : [one];
+  }));
   const bars = barsOf(strips);
   const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
@@ -400,14 +467,14 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     '.',
     `\\track ${JSON.stringify(name || title || 'Guitar')}`,
     '\\staff {score tabs}',
-    '\\tuning E4 B3 G3 D3 A2 E2',
+    `\\tuning ${tuningTex(strips)}`,
     `\\instrument ${program}`,
   ].filter(Boolean).join('\n');
   const others = extra.map((part) => {
     const list = barsOf(part.strips).slice(0, bars.length);
     while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
     lists.push(list);
-    return `\n\\track ${JSON.stringify(part.name)}\n\\staff {score tabs}\n\\tuning E4 B3 G3 D3 A2 E2\n\\instrument ${part.program ?? 27}\n${render(list, false).join(' |\n')}`;
+    return `\n\\track ${JSON.stringify(part.name)}\n\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}\n${render(list, false).join(' |\n')}`;
   }).join('');
   // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order)
   const sungBars = lists.find((l) => l.some((b) => b.lyr.length));

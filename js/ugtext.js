@@ -102,8 +102,68 @@ const group = (items, key, gap) => {
   return out;
 };
 
+// The bold digits UG prints over a multi-bar rest, as 10x14 ink grids of their bounding box (0-9 per
+// cell) plus width/height. 1 2 3 6 8 are averaged from real Tab Pro printouts; the others are drawn
+// from a similar font (Century Schoolbook Bold), so they match less closely.
+const REST_DIGITS = [
+  ['0', 0.682, '00595575000990005950599000599059500009909950000999995000099999500009999950000999995000099959500009905950002990099000595000950079200009995000', false],
+  ['1', 0.663, '00299980000189999000039999900029999990007828999000961899900020189990000018999000001899900000189990000018999000001999900036699997653999999997', true],
+  ['2', 0.724, '02789986102970059981699702999689991299976998049995087108998000007998300058852015059400005939963100866889976891850899997095018999306400288300', true],
+  ['3', 0.717, '05999995106950179980999002999599920199955980059992009999995003999998000000079980292002999989910199999992019997797005999029655999500299999000', true],
+  ['4', 0.682, '00000059000000059900000009990000005999000000599900002509990000500999000520099900250009990099999999995555599955000009990000000999000009999990', false],
+  ['5', 0.636, '00955555900099999700009999900009000000000900000000097557950059000099902500000995252000099999900009999990000999995000099029200297000099990000', false],
+  ['6', 0.783, '00289996100399515970089600899339940089936993005960899558860089998899509997007995899500699869940039993995005995069800897002797697200007986000', true],
+  ['7', 0.636, '59999999995999999990900000050070000005005000000500000000920000000590000000079000000059000000009900000005990000000999000000099900000000950000', false],
+  ['8', 0.750, '00259952000797557920299000079059900005995997500790099999797005999999500997999990592002799999000009995900000599297000299505999999200009999000', true],
+  ['9', 0.682, '00795575002970002970995000099099500009959950000999997000299959900099990579992999000000099509900009905999005970599900595029900595000059990000', false],
+].map(([ch, ar, s, real]) => ({ ch, ar, real, g: Float32Array.from(s, (v) => +v / 9) }));
+const DGX = 10, DGY = 14;
+
+function restDigit(c) {
+  const g = new Float32Array(DGX * DGY), n = new Float32Array(DGX * DGY);
+  const on = new Set(c.px.map(([x, y]) => (y - c.y0) * c.w + (x - c.x0)));
+  for (let y = 0; y < c.h; y++) {
+    for (let x = 0; x < c.w; x++) {
+      const k = Math.min(DGY - 1, Math.floor((y / c.h) * DGY)) * DGX + Math.min(DGX - 1, Math.floor((x / c.w) * DGX));
+      n[k]++;
+      if (on.has(y * c.w + x)) g[k]++;
+    }
+  }
+  for (let i = 0; i < g.length; i++) g[i] = n[i] ? g[i] / n[i] : 0;
+  let top = [Infinity, null, false];
+  for (const t of REST_DIGITS) {
+    let d = 0;
+    for (let i = 0; i < g.length; i++) d += Math.abs(g[i] - t.g[i]);
+    d = d / g.length + 0.5 * Math.abs(c.w / c.h - t.ar);
+    if (d < top[0]) top = [d, t.ch, t.real];
+  }
+  return top;
+}
+
 /**
- * @returns {{ sections: {name: string, x: number, x1: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
+ * The bold number over a multi-bar rest ("16" = sixteen bars of rest), read from the ink above the
+ * staff over x0..x1. Returns 0 when there is none.
+ */
+export function readRestCount(ink, w, st, x0, x1, { debug = null } = {}) {
+  const u = st.u;
+  const y0 = Math.max(0, Math.round(st.ys[0] - 2.8 * u)), y1 = Math.round(st.ys[0] - 0.15 * u);
+  const comps = labelRegion(ink, w, Math.max(st.x0, Math.round(x0)), Math.min(st.x1, Math.round(x1)), y0, y1)
+    .filter((c) => c.h >= 0.9 * u && c.h <= 2 * u && c.w <= 1.6 * u && c.px.length >= 10 && c.y1 >= st.ys[0] - 1.2 * u)
+    .sort((a, b) => a.x0 - b.x0);
+  if (!comps.length || comps.length > 3) return 0;
+  let txt = '';
+  for (const c of comps) {
+    const [d, ch, real] = restDigit(c);
+    if (debug) debug.push({ ch, d, w: c.w, h: c.h });
+    if (d > (real ? 0.25 : 0.4)) return 0; // not a digit after all
+    txt += ch;
+  }
+  const n = Number(txt);
+  return n >= 2 && n <= 400 ? n : 0;
+}
+
+/**
+ * @returns {{ sections:{name: string, x: number, x1: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
  */
 export function readHeading(ink, w, st, { debug = null } = {}) {
   const u = st.u;

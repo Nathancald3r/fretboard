@@ -3,7 +3,7 @@
 //  - Scanned / image-only PDFs (like Ultimate Guitar's "print" PDFs): the monospace tab lines
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
-import { findStaves, readStrip, ugToAlphaTex, UG_UNIT } from './ugtab.js';
+import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
 import { readLyricLine, closeLyricReader } from './uglyrics.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -291,11 +291,14 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
   const pages = [];
   const seen = new Set();
   let how = 'image', unknown = 0, systems = 0;
+  let tuning = null;
   const strips = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     onProgress(n, pdf.numPages);
     const page = await pdf.getPage(n);
-    const lines = textLines((await page.getTextContent()).items);
+    const items = (await page.getTextContent()).items;
+    const lines = textLines(items);
+    tuning ||= parseTuning(items.map((i) => i.str).join(' ')); // "Tuning: E A D G" under the title
     if (looksLikeTab(lines)) {
       how = 'text';
       pages.push(lines.join('\n'));
@@ -303,19 +306,22 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     }
     const base = PAGE_WIDTH / page.getViewport({ scale: 1 }).width;
     let r = await renderInk(page, base);
-    let staves = findStaves(r.light, r.w, r.h, r.ink);
+    // a staff with as many lines as the tuning has strings (bass: 4); six-line guitar staves always
+    const counts = [...new Set([6, tuning?.length || 6])];
+    let staves = findStaves(r.light, r.w, r.h, r.ink, counts);
     if (staves.length) { // a graphic TAB staff (Ultimate Guitar Tab Pro)
       how = 'staff';
       let scale = base;
       if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
         scale = base * UG_UNIT / staves[0].u;
         r = await renderInk(page, scale);
-        staves = findStaves(r.light, r.w, r.h, r.ink);
+        staves = findStaves(r.light, r.w, r.h, r.ink, counts);
       }
       for (let i = 0; i < staves.length; i++) {
         const st = staves[i];
         const strip = readStrip(r.ink, r.light, r.w, r.h, st);
         if (!strip) continue;
+        if (tuning?.length === strip.strings) strip.tuning = tuning;
         strip.lyr = lyrics ? await readLyricLine(page, scale, st, r.h) : []; // the line under the rhythm row
         strips.push(strip);
         onProgress(n, pdf.numPages, `line ${i + 1} of ${staves.length}`);
