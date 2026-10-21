@@ -260,6 +260,15 @@ function readScoreInfo(bytes) {
   }
 }
 
+// "OFFICIAL CHAMPION CHORDS & TABS by Bethel Music @ Ultimate-Guitar.Com" -> Champion / Bethel Music
+function namesFromPdf(base) {
+  const pretty = (s) => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : s).trim();
+  const m = base.replace(/\s*@.*$/, '').match(/^(?:official\s+)?(.*?)\s+(?:chords?|tabs?)(?:\s*&\s*(?:chords?|tabs?))?\s+by\s+(.+)$/i);
+  if (m) return { title: pretty(m[1]), artist: pretty(m[2]) };
+  const title = base.replace(/\b(tab|chords?)\b|@.*$|[(\[]\d+[)\]]/gi, '').replace(/\s+/g, ' ').trim() || base;
+  return { title: pretty(title), artist: '' };
+}
+
 async function importFiles(files, { quietIfEmpty = false } = {}) {
   let added = 0;
   const ids = [];
@@ -275,12 +284,15 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
       try {
         const { pdfToTab } = await import('./pdftab.js');
         toast('Reading the PDF…', 8000);
-        const r = await pdfToTab(await file.arrayBuffer());
-        if (!r.text.trim()) { failed.push(file.name); continue; }
-        const title = base.replace(/\b(tab|chords?)\b|@.*$|[(\[]\d+[)\]]/gi, '').replace(/\s+/g, ' ').trim() || base;
-        ids.push(await putSong({ kind: 'text', title, artist: '', data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));
+        const { title, artist } = namesFromPdf(base);
+        const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist });
+        if (!r.tex && !r.text.trim()) { failed.push(file.name); continue; }
+        ids.push(await putSong(r.tex
+          ? { kind: 'tex', title, artist, data: r.tex, fileName: file.name, added: Date.now() }
+          : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));
         added++;
-        if (r.unknown) toast(`PDF read, but ${r.unknown} mark${r.unknown > 1 ? 's' : ''} couldn’t be read. Check the tab.`, 6000);
+        if (r.tex) toast(`Read ${r.bars} bars from the PDF. Set the tempo and check the rhythm in Edit.`, 7000);
+        else if (r.unknown) toast(`PDF read, but ${r.unknown} mark${r.unknown > 1 ? 's' : ''} couldn’t be read. Check the tab.`, 6000);
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;
     }

@@ -3,6 +3,7 @@
 //  - Scanned / image-only PDFs (like Ultimate Guitar's "print" PDFs): the monospace tab lines
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
+import { findStaves, readStrip, ugToAlphaTex, UG_UNIT } from './ugtab.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
 const PAGE_WIDTH = 1634; // the width the templates were made at
@@ -245,8 +246,13 @@ async function renderInk(page, scale) {
   await page.render({ canvasContext: ctx, viewport }).promise;
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const ink = new Uint8Array(width * height);
-  for (let i = 0; i < ink.length; i++) ink[i] = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3 < 150 ? 1 : 0;
-  return { ink, w: width, h: height };
+  const light = new Uint8Array(width * height); // also the pale staff lines
+  for (let i = 0; i < ink.length; i++) {
+    const g = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3;
+    ink[i] = g < 150 ? 1 : 0;
+    light[i] = g < 205 ? 1 : 0;
+  }
+  return { ink, light, w: width, h: height };
 }
 
 // Lines of text from a page's text layer, with characters placed in monospace columns.
@@ -278,12 +284,13 @@ const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test
  * @param {ArrayBuffer} buf the PDF
  * @returns {Promise<{ text: string, how: 'text'|'image', systems: number, unknown: number }>}
  */
-export async function pdfToTab(buf, onProgress = () => {}) {
+export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '' } = {}) {
   const lib = await loadPdfjs();
   const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
   const pages = [];
   const seen = new Set();
   let how = 'image', unknown = 0, systems = 0;
+  const strips = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     onProgress(n, pdf.numPages);
     const page = await pdf.getPage(n);
@@ -295,6 +302,19 @@ export async function pdfToTab(buf, onProgress = () => {}) {
     }
     const base = PAGE_WIDTH / page.getViewport({ scale: 1 }).width;
     let r = await renderInk(page, base);
+    let staves = findStaves(r.light, r.w, r.h, r.ink);
+    if (staves.length) { // a graphic TAB staff (Ultimate Guitar Tab Pro)
+      how = 'staff';
+      if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
+        r = await renderInk(page, base * UG_UNIT / staves[0].u);
+        staves = findStaves(r.light, r.w, r.h, r.ink);
+      }
+      for (const st of staves) {
+        const strip = readStrip(r.ink, r.light, r.w, r.h, st);
+        if (strip) strips.push(strip);
+      }
+      continue;
+    }
     let res = readTabPage(r.ink, r.w, r.h);
     if (res.pitch && Math.abs(res.pitch - PITCH) > 0.25) { // different size: redo at the size the templates fit
       r = await renderInk(page, base * PITCH / res.pitch);
@@ -306,6 +326,10 @@ export async function pdfToTab(buf, onProgress = () => {}) {
     seen.add(text);
     systems += res.systems.length;
     pages.push(text);
+  }
+  if (strips.length) {
+    const made = ugToAlphaTex(strips, { tempo, title, artist });
+    return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
   }
   return { text: pages.filter(Boolean).join('\n\n'), how, systems, unknown };
 }
