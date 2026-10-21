@@ -896,25 +896,29 @@ export function initPlayAlong(h) {
     media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)), ahead);
   };
   // The position sliders: the number shown is the video's own time, to a tenth of a second.
-  let hear = true;
-  try { hear = localStorage.getItem('fretboard-scrub-hear') !== '0'; } catch { /* ignore */ }
-  const paintHear = () => ['pa-hear', 'pa-hear2'].forEach((id) => { $(id).classList.toggle('on', hear); $(id).setAttribute('aria-pressed', String(hear)); });
-  paintHear();
-  ['pa-hear', 'pa-hear2'].forEach((id) => $(id).addEventListener('click', () => {
-    hear = !hear;
-    try { localStorage.setItem('fretboard-scrub-hear', hear ? '1' : '0'); } catch { /* ignore */ }
-    paintHear();
-  }));
-  // While scrubbing the video plays (if you want to hear it) and goes quiet again when you let go.
-  let resumeQuiet = false;
-  const startScrub = () => {
-    scrubbing = true;
-    if (hear && media && !media.isPlaying) { resumeQuiet = true; media.play(); }
+  // The speaker: listen to 3 seconds from where the video is, then it goes back to that same spot.
+  let listening = null;
+  const stopListening = () => {
+    if (!listening) return;
+    const { at, timer } = listening;
+    listening = null;
+    clearTimeout(timer);
+    media?.pause();
+    media?.seekReal(at);
+    ['pa-hear', 'pa-hear2'].forEach((id) => $(id).classList.remove('on'));
+    setTimeout(() => media && paintScrub(media.nowReal()), 400);
   };
-  const endScrub = () => {
-    scrubbing = false;
-    if (resumeQuiet) { resumeQuiet = false; media?.pause(); }
+  const listen = () => {
+    if (!media) return;
+    if (listening) { stopListening(); return; }
+    const at = media.nowReal();
+    listening = { at, timer: setTimeout(stopListening, 3000) };
+    ['pa-hear', 'pa-hear2'].forEach((id) => $(id).classList.add('on'));
+    media.play();
   };
+  ['pa-hear', 'pa-hear2'].forEach((id) => $(id).addEventListener('click', listen));
+  const startScrub = () => { stopListening(); scrubbing = true; };
+  const endScrub = () => { scrubbing = false; };
   const finishScrub = (sec) => {
     seekTo(sec);
     if (hasStart()) applyStartAt(sec * 1000);
@@ -976,9 +980,7 @@ export function initPlayAlong(h) {
     hold.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, hold.target + speed(hold.dx) * ((now - hold.t) / 1000)));
     hold.t = now;
     $('pa-vid-time').textContent = fmtT(hold.target * 1000);
-    // With sound on, the video plays and is pulled back to the target every half second, like a tape scrub:
-    // you hear a short snippet of the spot you are on, moving as you push. With sound off it only moves on release.
-    if (hear && now - hold.seek > 500) { hold.seek = now; seekTo(hold.target, false); }
+    if (now - hold.seek > 300) { hold.seek = now; seekTo(hold.target, false); } // moves the picture; the sound is the speaker button
     requestAnimationFrame(step);
   };
   pad.addEventListener('pointerdown', (e) => {
@@ -1016,7 +1018,6 @@ export function initPlayAlong(h) {
     const to = media.nowReal() / 1000 + Number(b.dataset.scrub);
     seekTo(to);
     $('pa-scrub-time').textContent = fmtT(Math.max(0, to) * 1000);
-    if (hear && !media.isPlaying) { media.play(); setTimeout(() => { if (!scrubbing) media?.pause(); }, 600); } // a short listen at the new spot
     if (hasStart()) applyStartAt(Math.max(0, to) * 1000);
   }));
   $('pa-scrub-play').addEventListener('click', () => {
