@@ -392,7 +392,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   });
   };
   const out = render(bars, true);
-  const sung = bars.some((b) => b.lyr.length);
+  const lists = [bars];
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
@@ -406,8 +406,12 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const others = extra.map((part) => {
     const list = barsOf(part.strips).slice(0, bars.length);
     while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
+    lists.push(list);
     return `\n\\track ${JSON.stringify(part.name)}\n\\staff {score tabs}\n\\tuning E4 B3 G3 D3 A2 E2\n\\instrument ${part.program ?? 27}\n${render(list, false).join(' |\n')}`;
   }).join('');
-  const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${bars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
+  // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order)
+  const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
+  const sung = !!sungBars;
+  const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${sungBars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
   return { tex: `${header}\n${out.join(' |\n')}${others}${voice}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }

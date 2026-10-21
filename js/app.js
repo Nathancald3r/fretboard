@@ -293,72 +293,147 @@ function partFromName(fileName) {
   return d.length >= 3 ? d[d.length - 1].trim() : '';
 }
 
-// A small sheet asking which instrument each PDF is (read from its name), resolving to the choices or null.
-// Each choice is { file, name, program }.
-function askParts(files) {
-  return new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'parts-dialog';
-    const named = files.map((f) => partFromName(f.name));
-    const rows = files.map((f, i) => {
-      const own = named[i];
-      const guess = PARTS.findIndex(([n, , re]) => re.test(own || f.name));
-      // a name of its own ("Synth Lead 2", "Shaker") is kept as the track name, first in the list
-      const extra = own && !PARTS.some(([n]) => n.toLowerCase() === own.toLowerCase());
-      const pick = extra ? 'own' : String(guess >= 0 ? guess : PARTS.findIndex(([n]) => n === 'Rhythm Guitar'));
-      const opts = (extra ? '<option value="own" selected></option>' : '')
-        + PARTS.map(([n], k) => `<option value="${k}"${String(k) === pick ? ' selected' : ''}>${n}</option>`).join('')
-        + '<option value="-1">Skip this PDF</option>';
-      return `<label class="row"><span class="parts-name"></span><select data-i="${i}">${opts}</select></label>`;
-    });
-    dlg.innerHTML = `<h2>Which instrument is each PDF?</h2><p class="muted small-text">They are combined into one song, one track per instrument. Every PDF should be the same song, bar for bar.</p>${rows.join('')}<div class="row"><button class="primary" data-go>Combine into one song</button><button class="ghost" data-no>Import separately</button></div>`;
-    dlg.querySelectorAll('.parts-name').forEach((el, i) => { el.textContent = files[i].name; });
-    dlg.querySelectorAll('select').forEach((sel) => { const o = sel.querySelector('[value=own]'); if (o) o.textContent = named[Number(sel.dataset.i)]; });
-    const choice = (sel) => {
-      const i = Number(sel.dataset.i);
-      if (sel.value === 'own') { // its program comes from what the name sounds like (Synth Lead 2 -> synth lead)
-        const k = PARTS.findIndex(([, , re]) => re.test(named[i]));
-        return { file: files[i], name: named[i], program: k >= 0 ? PARTS[k][1] : 0 };
+// The PARTS entry a name sounds like ("Synth Lead 2" -> Synth Lead), or -1.
+const partIndex = (name) => PARTS.findIndex(([, , re]) => re.test(name));
+
+function partDialog(html) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'parts-dialog';
+  dlg.innerHTML = html;
+  dlg.addEventListener('cancel', (e) => e.preventDefault()); // Esc doesn't drop the work; Cancel does
+  document.body.append(dlg);
+  dlg.showModal();
+  return dlg;
+}
+
+class Cancelled extends Error {}
+
+// Step 1: read every PDF (a minute or two for a whole Ultimate Guitar song). Nothing is saved yet.
+// Resolves to one item per PDF, or null when cancelled.
+async function readParts(files, title) {
+  const { pdfToTab } = await import('./pdftab.js');
+  const { ugToAlphaTex } = await import('./ugtab.js');
+  const dlg = partDialog(`<h2>Reading the PDFs</h2>
+    <p class="muted small-text">You can keep using the computer. Nothing is added to your library until you check the result and press Create song.</p>
+    <progress max="${files.length}" value="0"></progress><p class="parts-now small-text"></p>
+    <div class="row"><button class="ghost" data-no>Cancel</button></div>`);
+  let stop = false;
+  dlg.querySelector('[data-no]').addEventListener('click', () => { stop = true; dlg.querySelector('.parts-now').textContent = 'Stopping…'; });
+  const items = files.map((file) => {
+    const name = partFromName(file.name) || PARTS[Math.max(0, partIndex(file.name))][0];
+    const k = partIndex(name);
+    return { file, name, program: k >= 0 ? PARTS[k][1] : 0 };
+  });
+  const singer = Math.max(0, items.findIndex((it) => /vocal|voice|sing/i.test(it.name)));
+  try {
+    for (const [i, it] of items.entries()) {
+      const say = (extra = '') => {
+        if (stop) throw new Cancelled();
+        dlg.querySelector('progress').value = i;
+        dlg.querySelector('.parts-now').textContent = `${i + 1} of ${items.length}: ${it.name}${extra}`;
+      };
+      say();
+      try {
+        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer });
+        if (r.strips?.length) {
+          it.strips = r.strips;
+          it.bars = ugToAlphaTex(r.strips, { title, name: it.name, program: it.program })?.bars || 0;
+        }
+      } catch (err) {
+        if (err instanceof Cancelled) throw err;
+        console.error(err);
+        it.error = true; // kept as sheet music, so the part isn't lost
       }
-      const k = Number(sel.value);
-      return k < 0 ? null : { file: files[i], name: PARTS[k][0], program: PARTS[k][1] };
+    }
+    return items;
+  } catch (err) {
+    if (err instanceof Cancelled) return null;
+    throw err;
+  } finally {
+    dlg.close();
+    dlg.remove();
+  }
+}
+
+// Step 2: everything found, to check and fix before saving: names, instruments, which parts, order.
+// Resolves to { title, artist, items } or null (cancelled).
+function reviewParts(items, title, artist) {
+  return new Promise((resolve) => {
+    const opts = PARTS.map(([n], k) => `<option value="${k}">${n}</option>`).join('') + '<option value="-1">Other</option>';
+    const dlg = partDialog(`<h2>Check before it’s added</h2>
+      <p class="muted small-text">One song with a track per instrument. Rename anything that came out wrong, untick parts you don’t want, and use the arrows for the order (the first tab track opens first). Parts with no tab (written as notes) stay in the song as sheet music.</p>
+      <div class="parts-meta"><label>Title <input data-f="title" maxlength="120"></label><label>Artist <input data-f="artist" maxlength="120"></label></div>
+      <ol class="parts-list"></ol>
+      <div class="row"><button class="primary" data-go>Create song</button><button class="ghost" data-no>Cancel</button></div>`);
+    dlg.querySelector('[data-f=title]').value = title;
+    dlg.querySelector('[data-f=artist]').value = artist;
+    const list = dlg.querySelector('.parts-list');
+    for (const it of items) {
+      const li = document.createElement('li');
+      li.className = 'parts-item';
+      li.innerHTML = `<input type="checkbox" checked aria-label="Include this part">
+        <input class="parts-label" maxlength="60" aria-label="Track name">
+        <select aria-label="Instrument sound">${opts}</select>
+        <span class="parts-badge"></span>
+        <span class="parts-btns"><button class="ghost small" data-act="view" title="Open this PDF">View</button><button class="ghost small" data-act="up" title="Move up" aria-label="Move up">↑</button><button class="ghost small" data-act="down" title="Move down" aria-label="Move down">↓</button></span>`;
+      li.item = it;
+      li.querySelector('.parts-label').value = it.name;
+      li.querySelector('select').value = String(partIndex(it.name));
+      const badge = li.querySelector('.parts-badge');
+      badge.textContent = it.strips ? `Tab · ${it.bars} bars` : it.error ? 'Couldn’t read: sheet music' : 'Sheet music';
+      badge.classList.add(it.strips ? 'is-tab' : 'is-sheet');
+      list.append(li);
+    }
+    const urls = [];
+    const done = (v) => {
+      urls.forEach((u) => setTimeout(() => URL.revokeObjectURL(u), 60000));
+      dlg.close();
+      dlg.remove();
+      resolve(v);
     };
     dlg.addEventListener('click', (e) => {
-      if (e.target.closest('[data-go]')) { resolve([...dlg.querySelectorAll('select')].map(choice).filter(Boolean)); dlg.close(); }
-      else if (e.target.closest('[data-no]')) { resolve(null); dlg.close(); }
+      const act = e.target.closest('[data-act]')?.dataset.act;
+      const li = e.target.closest('.parts-item');
+      if (act === 'view') { const u = URL.createObjectURL(li.item.file); urls.push(u); window.open(u, '_blank'); }
+      else if (act === 'up' && li.previousElementSibling) li.previousElementSibling.before(li);
+      else if (act === 'down' && li.nextElementSibling) li.nextElementSibling.after(li);
+      else if (e.target.closest('[data-go]')) {
+        const chosen = [...list.children].filter((el) => el.querySelector('[type=checkbox]').checked).map((el) => {
+          const k = Number(el.querySelector('select').value);
+          return { ...el.item, name: el.querySelector('.parts-label').value.trim() || el.item.name, program: k >= 0 ? PARTS[k][1] : el.item.program };
+        });
+        if (!chosen.length) { toast('Tick at least one part, or Cancel.'); return; }
+        done({ title: dlg.querySelector('[data-f=title]').value.trim() || title, artist: dlg.querySelector('[data-f=artist]').value.trim(), items: chosen });
+      } else if (e.target.closest('[data-no]')) done(null);
     });
-    dlg.addEventListener('close', () => { resolve(null); dlg.remove(); });
-    document.body.append(dlg);
-    dlg.showModal();
   });
 }
 
-async function importPdfParts(chosen) {
-  const { pdfToTab } = await import('./pdftab.js');
-  const { ugToAlphaTex } = await import('./ugtab.js');
-  const { title, artist } = namesFromPdf(chosen[0].file.name.replace(/\.[^.]+$/, ''), true);
-  const singer = chosen.findIndex((c) => /vocal/i.test(c.name));
-  const parts = [];
-  const sheets = [];
-  for (let i = 0; i < chosen.length; i++) {
-    const { file, name, program } = chosen[i];
-    toast(`Reading ${name} (${i + 1} of ${chosen.length})…`, 8000);
-    const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist, lyrics: i === (singer >= 0 ? singer : 0) });
-    if (r.strips?.length) parts.push({ name, program, strips: r.strips });
-    else sheets.push({ name, program, fileName: file.name, data: await file.arrayBuffer() });
-  }
+// Several PDFs of one song (one per instrument, as tools/ug_collect.py saves them): read, check, then one song.
+// Returns the new song's id, or null when cancelled or nothing could be made.
+async function importPdfParts(files) {
+  const first = namesFromPdf(files[0].name.replace(/\.[^.]+$/, ''), true);
+  const items = await readParts(files, first.title);
+  if (!items) { toast('Cancelled: nothing was added.'); return null; }
+  const pick = await reviewParts(items, first.title, first.artist);
+  if (!pick) { toast('Cancelled: nothing was added.'); return null; }
+  const { title, artist } = pick;
+  const tabs = pick.items.filter((it) => it.strips);
   // parts written as standard notation (piano, drums) have no tab to combine: they stay in the same
   // song as their PDF pages, listed with its tracks
-  if (!parts.length && sheets.length) {
+  const sheets = [];
+  for (const it of pick.items.filter((x) => !x.strips)) sheets.push({ name: it.name, program: it.program, fileName: it.file.name, data: await it.file.arrayBuffer() });
+  if (!tabs.length) {
     const id = await putSong({ kind: 'sheet', title, artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, added: Date.now() });
-    toast(`Saved “${title}” as sheet music, ${sheets.length} part${sheets.length > 1 ? 's' : ''}.`, 6000);
+    toast(`Added “${title}” as sheet music, ${sheets.length} part${sheets.length > 1 ? 's' : ''}.`, 6000);
     return id;
   }
-  if (!parts.length) return null;
+  const { ugToAlphaTex } = await import('./ugtab.js');
+  const parts = tabs.map(({ name, program, strips }) => ({ name, program, strips }));
   const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
-  if (!made) return null;
-  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: chosen[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() });
-  toast(`Combined ${parts.length} instrument${parts.length > 1 ? 's' : ''} into “${title}”, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''} Check each track in the player.`, 8000);
+  if (!made) { toast('Couldn’t combine these PDFs into a song.', 6000); return null; }
+  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: tabs[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() });
+  toast(`Added “${title}”: ${parts.length} tab track${parts.length > 1 ? 's' : ''}, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''}`, 8000);
   return id;
 }
 
@@ -367,14 +442,13 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
   const ids = [];
   const failed = [];
   const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
+  let open = 0;
   if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
-    const chosen = await askParts(pdfs);
-    if (chosen?.length) {
-      try {
-        const id = await importPdfParts(chosen);
-        if (id) { ids.push(id); added++; files = files.filter((f) => !pdfs.includes(f)); }
-      } catch (err) { console.error(err); }
-    }
+    files = files.filter((f) => !pdfs.includes(f)); // cancelling adds none of them
+    try {
+      const id = await importPdfParts(pdfs);
+      if (id) { ids.push(id); added++; if (!files.length) open = id; }
+    } catch (err) { console.error(err); failed.push(...pdfs.map((f) => f.name)); }
   }
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '');
@@ -423,7 +497,8 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
   if (added) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
   if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
-  else if (!quietIfEmpty) toast('Nothing to import.');
+  else if (!quietIfEmpty && pdfs.length < 2) toast('Nothing to import.'); // a cancelled PDF import already said so
+  if (open) { location.hash = `#song/${open}`; return { added, failed, ids }; } // straight to the new song
   renderLibrary();
   return { added, failed, ids };
 }

@@ -1249,6 +1249,19 @@ body.edit-mode .ed-close { display: none; }
 .parts-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; max-width: min(92vw, 560px); }
 .parts-dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .parts-dialog .row { margin: .5rem 0; gap: .6rem; flex-wrap: wrap; }
+.parts-dialog { width: min(92vw, 760px); max-width: min(92vw, 760px); }
+.parts-dialog progress { width: 100%; height: 10px; }
+.parts-meta { display: flex; flex-wrap: wrap; gap: .6rem; margin: .6rem 0; }
+.parts-meta label { display: flex; flex-direction: column; align-items: stretch; gap: .2rem; flex: 1 1 14rem; font-size: .85rem; color: var(--muted); text-align: left; }
+.parts-meta input, .parts-item input.parts-label, .parts-item select { width: 100%; min-width: 0; }
+.parts-list { list-style: none; margin: .4rem 0; padding: 0; max-height: 55vh; overflow: auto; }
+.parts-item { display: grid; grid-template-columns: auto minmax(0, 1fr) 10rem 9.5rem auto; align-items: center; gap: .4rem; padding: .3rem 0; border-bottom: 1px solid var(--line); }
+.parts-item .parts-label { min-width: 0; }
+.parts-badge { justify-self: start; font-size: .75rem; padding: .15rem .5rem; border-radius: 999px; white-space: nowrap; }
+.parts-badge.is-tab { background: #23402c; color: #9fe0b0; }
+.parts-badge.is-sheet { background: var(--panel-2); color: var(--muted); }
+.parts-btns { display: flex; gap: .2rem; }
+@media (max-width: 600px) { .parts-item { grid-template-columns: auto 1fr auto; } .parts-item select, .parts-btns { grid-column: 2 / -1; } }
 .parts-dialog .parts-name { flex: 1 1 14rem; overflow-wrap: anywhere; font-size: .85rem; }
 
 /* Sheet music PDF pages */
