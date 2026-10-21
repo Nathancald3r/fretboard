@@ -49,3 +49,13 @@ export function syncState(song) {
   const label = { none: 'No video', progress: `Syncing ${count - 1}/3`, synced: 'Synced' }[state];
   return { state, steps, label };
 }
+
+/** "Studio original", "Live", "Cover · Artist" or "Live cover · Artist"; '' when no version is set. */
+export function versionLabel(song) {
+  const v = song.version;
+  if (!v?.type) return '';
+  if (v.type === 'official') return 'Studio original';
+  if (v.type === 'live') return 'Live';
+  const who = v.artist ? ` · ${v.artist}` : '';
+  return `${v.live ? 'Live cover' : 'Cover'}${who}`;
+}

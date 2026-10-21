@@ -50,7 +50,7 @@ const isBytes = (d) => d instanceof ArrayBuffer || ArrayBuffer.isView(d);
 const localRecording = (song) => song.recording && song.recording.kind !== 'youtube';
 // Fields that are this device's own: the local id, when it was last opened, and a play-along
 // audio file with its sync points.
-const LOCAL_ONLY = ['id', 'lastOpened'];
+const LOCAL_ONLY = ['id', 'lastOpened', 'original']; // the untouched file from before editing stays on this device
 const RECORDING_FIELDS = ['recording', 'syncPoints', 'syncOffset'];
 
 /** The synced form of a song: plain JSON, bytes as base64. */
@@ -79,6 +79,13 @@ export function songFromRecord(rec, local = null) {
   if (!SONG_KINDS.includes(song.kind)) song.kind = 'text';
   for (const k of NUMBER_FIELDS) if (song[k] !== undefined && !Number.isFinite(song[k])) delete song[k];
   if (song.sourceUrl !== undefined && !(typeof song.sourceUrl === 'string' && /^https?:\/\//.test(song.sourceUrl))) delete song.sourceUrl;
+  if (song.version !== undefined) {
+    const v = song.version;
+    song.version = v && ['official', 'live', 'cover'].includes(v.type)
+      ? { type: v.type, artist: String(v.artist || '').slice(0, 80), live: !!v.live, note: String(v.note || '').slice(0, 120) }
+      : undefined;
+    if (!song.version) delete song.version;
+  }
   if (song.versionNote !== undefined && typeof song.versionNote !== 'string') delete song.versionNote;
   if (song.skips !== undefined) song.skips = Array.isArray(song.skips) ? song.skips.filter((k) => Array.isArray(k) && k.length === 2 && k.every(Number.isFinite) && k[1] > k[0]) : [];
   if (song.recording?.kind === 'youtube' && !/^[\w-]{11}$/.test(song.recording.id)) delete song.recording;

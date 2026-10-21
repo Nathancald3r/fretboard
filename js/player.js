@@ -1894,6 +1894,15 @@ export function initPlayer() {
       const idx = bars.slice(sel.a, sel.b + 1).map((b) => b.masterBar.index);
       return { first: Math.min(...idx), last: Math.max(...idx) };
     },
+    selectBars: (first, last) => {
+      const staff = score?.tracks[trackIndex]?.staves[0];
+      const a = staff?.bars[first]?.voices[0]?.beats[0];
+      const z = staff?.bars[last]?.voices[0]?.beats.at(-1);
+      if (a && z && api.highlightPlaybackRange) {
+        api.highlightPlaybackRange(a, z);
+        api.applyPlaybackRangeFromHighlight?.();
+      }
+    },
     cursorBar: () => playedBars()[currentBarIndex()]?.masterBar.index ?? 0,
   });
   bindBtControls({ button: $('pl-bt'), labelMs: true, title: 'Bluetooth' });

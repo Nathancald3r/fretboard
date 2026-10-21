@@ -2,6 +2,8 @@
 // The edited tab is saved as a Guitar Pro file in the song; the file it came from is kept as the song's
 // "original" (download it or go back to it from the Edit sheet).
 import { updateSong } from './db.js';
+import { versionLabel } from './songmeta.js';
+import { askVersion } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -112,9 +114,11 @@ async function restore(snap) {
   paint();
 }
 
-async function apply(label, make, merge = '') {
+async function apply(label, make, merge = '', keep = undefined) {
   const song = hooks.song();
   if (!song) return;
+  const r0 = selectionRange();
+  pendingSel = keep === undefined ? (r0 || null) : keep; // the bars stay selected after the change
   let bytes;
   try {
     bytes = make(hooks.readScore());
@@ -233,6 +237,7 @@ function paintSelection() {
   const r = selectionRange();
   $('ed-sel').textContent = r ? `Selected: bar${r.a === r.b ? ' ' + (r.a + 1) : 's ' + (r.a + 1) + '–' + (r.b + 1)}` : 'Tap bars in the tab (drag for several) to copy or remove them.';
   $('ed-bar-dup').disabled = $('ed-bar-del').disabled = !r;
+  if (typeof paintBar === 'function') paintBar();
 }
 
 const total = () => hooks.score()?.masterBars.length || 0;
@@ -251,16 +256,16 @@ function doSection(act, i) {
   if (order) apply(label, (score) => rearrange(score, order));
 }
 
-function doBars(act) {
+function doBars(act, label = '') {
   const r = selectionRange();
   if (!r) { toast('Select some bars in the tab first.'); return; }
   const n = r.b - r.a + 1;
   const word = n === 1 ? `bar ${r.a + 1}` : `bars ${r.a + 1}–${r.b + 1}`;
-  if (act === 'dup') apply(`Copy ${word}`, (score) => rearrange(score, orderDuplicateBars(total(), r.a, r.b)));
+  if (act === 'dup') apply(`Repeat ${word}`, (score) => rearrange(score, orderDuplicateBars(total(), r.a, r.b)), '', { a: r.b + 1, b: r.b + n });
   else {
     const order = orderDeleteBars(total(), r.a, r.b);
     if (!order) { toast('A tab needs at least one bar.'); return; }
-    apply(`Remove ${word}`, (score) => rearrange(score, order));
+    apply(label || `Remove ${word}`, (score) => rearrange(score, order), '', null);
   }
 }
 
@@ -276,6 +281,13 @@ export function pickBeat(beat) {
   if (beat.voice.index !== 0) { toast('Edit the first voice only.'); return; }
   const top = beat.notes.length ? Math.max(...beat.notes.map((n) => n.string)) : sel?.string;
   sel = { track: bar.staff.track.index, staff: bar.staff.index, bar: bar.index, beat: beat.index, string: top || bar.staff.tuning.length };
+  if (editMode()) {
+    // Tapping a bar selects it; with Extend on, everything from the first bar to this one.
+    const from = extending && anchor !== null ? anchor : bar.index;
+    if (!extending || anchor === null) anchor = bar.index;
+    setTimeout(() => hooks.selectBars(Math.min(from, bar.index), Math.max(from, bar.index)), 0);
+    if (extending) { extending = false; $('ed-extend').setAttribute('aria-pressed', 'false'); }
+  }
   paintBeat();
 }
 
@@ -445,12 +457,153 @@ function initNotes() {
   $('ed-bar-add').addEventListener('click', insertEmptyBar);
 }
 
+
+/* ---------- edit mode: clipboard, rests, version ---------- */
+
+const editMode = () => document.body.classList.contains('edit-mode');
+let clip = null; // copied bars, as plain data: { masters: [...], bars: [track][staff][bar] }
+let anchor = null; // first bar of a range being extended
+let extending = false;
+let pendingSel = null;
+
+function capture(score, a, b) {
+  const AT = hooks.AT;
+  const o = AT.model.JsonConverter.scoreToJsObject(score);
+  const pick = (list) => range(a, b).map((i) => structuredClone(list[i]));
+  return {
+    masters: pick(o.get('masterbars')),
+    bars: o.get('tracks').map((t) => t.get('staves').map((s) => pick(s.get('bars')))),
+  };
+}
+
+function copyBars(cut) {
+  const r = selectionRange();
+  if (!r) { toast('Select some bars first: tap a bar in the tab.'); return; }
+  clip = capture(hooks.readScore(), r.a, r.b);
+  paintBar();
+  const word = r.a === r.b ? `bar ${r.a + 1}` : `bars ${r.a + 1}–${r.b + 1}`;
+  if (cut) doBars('del', `Cut ${word}`);
+  else toast(`Copied ${word}. Tap where it should go, then Paste.`);
+}
+
+function pasteBars() {
+  if (!clip) { toast('Copy or cut some bars first.'); return; }
+  const r = selectionRange();
+  const at = r ? r.b : sel?.bar;
+  if (at === undefined) { toast('Tap the bar to paste after.'); return; }
+  const n = clip.masters.length;
+  apply(`Paste ${n} bar${n > 1 ? 's' : ''} after bar ${at + 1}`, (score) => viaJson(score, (o) => {
+    const tracks = o.get('tracks');
+    if (tracks.length !== clip.bars.length) throw new Error('This tab has different tracks than the copied bars.');
+    o.get('masterbars').splice(at + 1, 0, ...clip.masters.map((m) => freshIds(structuredClone(m))));
+    tracks.forEach((t, ti) => t.get('staves').forEach((s, si) => {
+      s.get('bars').splice(at + 1, 0, ...(clip.bars[ti][si] || []).map((b) => freshIds(structuredClone(b))));
+    }));
+  }), '', { a: at + 1, b: at + n });
+}
+
+// Empties the selected bars: each becomes rests (one rest per beat of the time signature).
+function restBars() {
+  const r = selectionRange();
+  if (!r) { toast('Select some bars first.'); return; }
+  apply(r.a === r.b ? `Rest in bar ${r.a + 1}` : `Rests in bars ${r.a + 1}–${r.b + 1}`, (score) => viaJson(score, (o) => {
+    const mbs = o.get('masterbars');
+    o.get('tracks').forEach((t) => t.get('staves').forEach((s) => {
+      for (let i = r.a; i <= r.b; i++) {
+        const mb = mbs[i];
+        const n = Math.min(32, mb.get('timesignaturenumerator') || 4);
+        const d = mb.get('timesignaturedenominator') || 4;
+        s.get('bars')[i].get('voices').forEach((v, vi) => {
+          const first = v.get('beats')[0];
+          if (!first) return;
+          first.set('notes', []);
+          first.set('duration', d);
+          first.set('dots', 0);
+          first.set('tupletnumerator', 1);
+          first.set('tupletdenominator', 1);
+          v.set('beats', vi === 0 ? range(0, n - 1).map((k) => (k === 0 ? first : freshIds(structuredClone(first)))) : [first]);
+        });
+      }
+    }));
+  }), '', { a: r.a, b: r.b });
+}
+
+function paintBar() {
+  const r = selectionRange();
+  ['ed-copy', 'ed-cut', 'ed-dup', 'ed-rest', 'ed-del'].forEach((id) => { $(id).disabled = !r; });
+  $('ed-paste').disabled = !clip || (!r && !sel);
+  $('ed-addbar').disabled = !r && !sel;
+}
+
+function paintVersion() {
+  const song = hooks.song();
+  const label = song ? versionLabel(song) : '';
+  const pill = $('pl-version');
+  pill.hidden = !label && !editMode();
+  pill.textContent = label ? `🎧 ${label}` : '🎧 Set version…';
+  pill.title = song?.version?.note ? song.version.note : 'Which recording this tab follows';
+  $('ed-version-chip').textContent = label || 'Set version…';
+  $('ed-back').href = song ? `#song/${song.id}` : '#library';
+}
+
+async function chooseVersion() {
+  const song = hooks.song();
+  if (!song) return;
+  await askVersion(song);
+  paintVersion();
+}
+
+function enterEditMode() {
+  const song = hooks.song();
+  if (!song) return;
+  paintVersion();
+  const sheet = $('ed-sheet');
+  if (sheet.hidden) document.querySelector('[data-sheet-btn=edit]')?.click();
+  if (!song.version) setTimeout(chooseVersion, 500); // first thing: which recording is this based on?
+}
+
+function initEditMode() {
+  window.addEventListener('fbeditmode', enterEditMode);
+  // From the practice player, "Edit tab" goes to the editing mode instead of opening a sheet.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sheet-btn=edit]');
+    if (!b || editMode() || !hooks.song()) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    location.hash = `edit/${hooks.song().id}`;
+  }, true);
+  $('ed-copy').addEventListener('click', () => copyBars(false));
+  $('ed-cut').addEventListener('click', () => copyBars(true));
+  $('ed-paste').addEventListener('click', pasteBars);
+  $('ed-dup').addEventListener('click', () => doBars('dup'));
+  $('ed-del').addEventListener('click', () => doBars('del'));
+  $('ed-rest').addEventListener('click', restBars);
+  $('ed-addbar').addEventListener('click', insertEmptyBar);
+  $('ed-extend').addEventListener('click', () => {
+    extending = !extending;
+    $('ed-extend').setAttribute('aria-pressed', String(extending));
+  });
+  $('ed-version-chip').addEventListener('click', chooseVersion);
+  $('pl-version').addEventListener('click', () => { if (editMode()) chooseVersion(); });
+  window.addEventListener('fbscore', () => {
+    paintVersion();
+    if (pendingSel) {
+      const p = pendingSel;
+      pendingSel = null;
+      const last = total() - 1;
+      setTimeout(() => hooks.selectBars(Math.min(p.a, last), Math.min(p.b, last)), 150);
+    }
+  });
+  window.addEventListener('fbselection', paintBar);
+}
+
 const sheetOpen = () => !$('ed-sheet').hidden;
 const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
 
 export function initEditor(h) {
   hooks = h;
   initNotes();
+  initEditMode();
   $('ed-body').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (b) doSection(b.dataset.act, Number(b.closest('.ed-sec').dataset.i));
@@ -494,6 +647,9 @@ export function initEditor(h) {
     const k = e.key.toLowerCase();
     if (mod && k === 'z') { e.preventDefault(); (e.shiftKey ? redoEdit : undoEdit)(); }
     else if (mod && k === 'y') { e.preventDefault(); redoEdit(); }
+    else if (mod && editMode() && k === 'c' && selectionRange()) { e.preventDefault(); copyBars(false); }
+    else if (mod && editMode() && k === 'x' && selectionRange()) { e.preventDefault(); copyBars(true); }
+    else if (mod && editMode() && k === 'v') { e.preventDefault(); pasteBars(); }
     else if (mod && k === 'd' && selectionRange()) { e.preventDefault(); doBars('dup'); }
     else if (mod && k === 'e') { e.preventDefault(); document.querySelector('[data-sheet-btn=edit]')?.click(); }
     else if (sheetOpen() && sel && !mod && !e.altKey && /^[0-9]$/.test(e.key)) { e.preventDefault(); typeDigit(Number(e.key)); }

@@ -1183,3 +1183,33 @@ kbd { }
 #ed-sheet { max-height: min(40vh, 340px) !important; overflow-y: auto; }
 
 body.editing #score-scroll { padding-bottom: 42vh; }
+
+/* Version badges and the song menu */
+.badge.ver-official { color: var(--accent); border-color: var(--accent); }
+.badge.ver-live { color: #d4668b; border-color: #d4668b; }
+.badge.ver-cover { color: #8d7be0; border-color: #8d7be0; }
+.ver-pill { cursor: default; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+body.edit-mode .ver-pill { cursor: pointer; }
+.ver-dialog { max-width: min(92vw, 28rem); }
+.ver-dialog form { display: grid; gap: .7rem; }
+.ver-types { display: grid; gap: .4rem; }
+.ver-types label { display: flex; align-items: center; gap: .6rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 10px; min-height: 44px; }
+.ver-types input:checked + span { color: var(--accent); font-weight: 700; }
+.ver-dialog input:not([type=radio]):not([type=checkbox]) { width: 100%; }
+.card-menu { position: fixed; z-index: 90; min-width: 13rem; display: grid; padding: .3rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.card-menu button { text-align: left; background: transparent; border: 0; color: var(--text); padding: .6rem .8rem; min-height: 44px; border-radius: 8px; display: grid; }
+.card-menu button small { color: var(--muted); font-size: .72rem; }
+.card-menu button:hover, .card-menu button:focus-visible { background: var(--panel-2); }
+.card-menu button.danger { color: #ff7b7b; }
+@media (max-width: 640px) { .card-menu { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; } }
+
+/* Edit mode: the editor, without the practice tools */
+body.edit-mode .mode-seg, body.edit-mode .sheet-btns, body.edit-mode #pl-more, body.edit-mode .live-only,
+body.edit-mode #pl-sync, body.edit-mode #pl-recording-badge, body.edit-mode .tab-corner { display: none !important; }
+body.edit-mode .ed-close { display: none; }
+.ed-back { font-weight: 700; color: var(--accent); text-decoration: none; margin-right: .4rem; }
+#ed-version-chip { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-bar { display: flex; flex-wrap: wrap; gap: .3rem; position: sticky; top: 2.6rem; z-index: 1; padding: .3rem 0; background: var(--panel); }
+.ed-bar button { min-height: 44px; min-width: 44px; flex: 1 1 auto; }
+.ed-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.ed-bar button:disabled { opacity: .4; }

@@ -1,6 +1,7 @@
 // App shell: routing, library, file import, text-tab editor and "find tabs online" links.
 import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
+import { askVersion } from './version.js';
 import { initText, openText, closeText, cleanTabText } from './texttab.js';
 import { initMetronome, stopMetronome } from './metronome.js';
 import { initLayers, resetLayers } from './layers.js';
@@ -8,7 +9,7 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
-import { syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
+import { versionLabel, syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
 import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
@@ -41,11 +42,17 @@ async function route() {
   const [name, arg] = (location.hash.slice(1) || 'library').split('/');
   let view = VIEWS.includes(name) ? name : 'library';
   let song = null;
+  let editing = false;
   if (name === 'song') {
     song = await getSong(Number(arg));
     const asText = song?.kind === 'text' && location.hash.split('/')[2] !== 'play';
     view = !song ? 'library' : asText ? 'text' : 'player';
+  } else if (name === 'edit') { // edit mode: the tab editor instead of the practice tools
+    song = await getSong(Number(arg));
+    editing = !!song && chartType(song) !== 'chords' && song.kind !== 'tex';
+    view = editing ? 'player' : song ? (song.kind === 'text' ? 'text' : 'player') : 'library';
   }
+  document.body.classList.toggle('edit-mode', editing);
 
   resetLayers(); // sheets, menus, pop-ups and full screen never carry over to another page or song
   if (currentView === 'player') closePlayer(); // also when switching songs
@@ -64,7 +71,7 @@ async function route() {
   if (view === 'practice') renderPractice();
   if (view === 'scales') renderScales();
   if (view === 'keys') renderKeys();
-  if (view === 'player') openPlayer(song);
+  if (view === 'player') { await openPlayer(song); if (editing) window.dispatchEvent(new Event('fbeditmode')); }
   if (view === 'text') openText(song);
   if (view !== 'text') window.scrollTo(0, 0);
 }
@@ -91,11 +98,12 @@ async function renderLibrary() {
 
   $('library-list').innerHTML = songs.map((s) => {
     const type = chartType(s);
-    return `<article class="card" data-id="${escape(s.id)}">
+    return `<article class="card" data-id="${escape(s.id)}" data-type="${type}">
       <div class="title">${escape(s.title)}</div>
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
         <span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>
+        ${versionLabel(s) ? `<span class="badge ver-${s.version.type}" title="The recording this tab follows">${escape(versionLabel(s))}</span>` : ''}
         ${type === 'pro' || type === 'tab' ? (() => { const y = syncState(s); return `<span class="badge sync-${y.state}" title="Play-along video">${y.state === 'synced' ? '✓ Synced' : y.state === 'none' ? '○ No video' : '◐ ' + escape(y.label)}</span>`; })() : ''}
         ${s.folder ? `<span class="badge folder">📁 ${escape(s.folder)}</span>` : ''}
         ${s.practiceSeconds ? `<span>${formatDuration(s.practiceSeconds)} practiced</span>` : ''}
@@ -105,6 +113,7 @@ async function renderLibrary() {
       <div class="actions">
         <label class="folder-pick" title="Move to a folder">📁<select data-act="folder" aria-label="Folder">
           <option value="">No folder</option>${names.map((n) => `<option${n === s.folder ? ' selected' : ''}>${escape(n)}</option>`).join('')}<option value="__new__">New folder…</option></select></label>
+        <button class="small ghost" data-act="menu" aria-label="More options for ${escape(s.title)}" aria-haspopup="menu">⋮</button>
         <button class="small ghost" data-act="rename">${s.kind === 'text' ? 'Edit' : 'Rename'}</button>
         <button class="small ghost danger" data-act="delete">Delete</button>
       </div>
@@ -131,7 +140,16 @@ async function onLibraryClick(e) {
     return;
   }
 
+  if (act === 'menu') { openCardMenu(card, null); return; }
+  return cardAct(act, id);
+}
+
+async function cardAct(act, id) {
   const song = await getSong(id);
+  if (!song) return;
+  if (act === 'edit') { location.hash = `edit/${id}`; return; }
+  if (act === 'practice') { location.hash = `song/${id}`; return; }
+  if (act === 'version') { await askVersion(song); renderLibrary(); return; }
   if (act === 'delete') {
     const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
     if (!ok) return;
@@ -173,6 +191,62 @@ function ask({ title, text = '', ok = 'OK', fields = null, single = false }) {
       else resolve(fields ? { title: $('ask-name').value, artist: $('ask-artist').value } : true);
     }, { once: true });
   });
+}
+
+// ⋮ button, right-click and long-press on a song: edit mode, version, rename, delete.
+let menuEl = null;
+function closeCardMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+function openCardMenu(card, at) {
+  closeCardMenu();
+  const id = Number(card.dataset.id);
+  const editable = card.dataset.type !== 'chords' && card.dataset.type !== 'exercise';
+  menuEl = document.createElement('div');
+  menuEl.className = 'card-menu';
+  menuEl.setAttribute('role', 'menu');
+  menuEl.innerHTML = [
+    editable ? ['edit', '✎ Edit mode', 'Arrange bars, fix notes, match a recording'] : null,
+    ['practice', '▶ Open in Practice'],
+    ['version', '🎧 Version…', 'Studio, live or cover'],
+    ['rename', 'Rename'],
+    ['delete', 'Delete'],
+  ].filter(Boolean).map(([k, label, hint]) => `<button role="menuitem" data-m="${k}" class="${k === 'delete' ? 'danger' : ''}">${label}${hint ? `<small>${hint}</small>` : ''}</button>`).join('');
+  document.body.append(menuEl);
+  const r = card.getBoundingClientRect();
+  const x = at ? at.x : r.right - 220;
+  const y = at ? at.y : r.bottom;
+  Object.assign(menuEl.style, { left: Math.max(8, Math.min(x, innerWidth - 240)) + 'px', top: Math.max(8, Math.min(y, innerHeight - menuEl.offsetHeight - 8)) + 'px' });
+  menuEl.addEventListener('click', (e) => {
+    const k = e.target.closest('[data-m]')?.dataset.m;
+    if (!k) return;
+    closeCardMenu();
+    cardAct(k, id);
+  });
+  menuEl.querySelector('button')?.focus();
+}
+function initCardMenu() {
+  const list = $('library-list');
+  list.addEventListener('contextmenu', (e) => {
+    const card = e.target.closest('.card');
+    if (!card) return;
+    e.preventDefault();
+    openCardMenu(card, { x: e.clientX, y: e.clientY });
+  });
+  let timer = 0;
+  let from = null;
+  list.addEventListener('pointerdown', (e) => {
+    const card = e.target.closest('.card');
+    if (!card || e.pointerType === 'mouse' || e.target.closest('button, select, label')) return;
+    from = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => { list.dataset.held = '1'; openCardMenu(card, { x: from.x, y: from.y }); }, 550);
+  });
+  const stop = () => clearTimeout(timer);
+  list.addEventListener('pointermove', (e) => { if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10) stop(); });
+  list.addEventListener('pointerup', stop);
+  list.addEventListener('pointercancel', stop);
+  list.addEventListener('click', (e) => { if (list.dataset.held) { delete list.dataset.held; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  document.addEventListener('pointerdown', (e) => { if (menuEl && !e.target.closest('.card-menu, [data-act=menu]')) closeCardMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCardMenu(); });
+  window.addEventListener('hashchange', closeCardMenu);
 }
 
 /* ---------- import ---------- */
@@ -337,6 +411,7 @@ async function main() {
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);
+  initCardMenu();
   $('library-list').addEventListener('change', async (e) => {
     if (e.target.dataset.act !== 'folder') return;
     let name = e.target.value;

@@ -27,3 +27,10 @@ assert.equal(syncState({ recording: { kind: 'youtube' } }).state, 'progress');
 assert.deepEqual(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1]], videoBpm: 90 }).steps, [true, true, true, false]);
 assert.equal(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1], [4, 9]], syncDone: true }).state, 'synced');
 assert.equal(syncState({ recording: {}, syncDone: true }).state, 'progress'); // can't be done before it is lined up
+
+import { versionLabel } from '../js/songmeta.js';
+assert.equal(versionLabel({}), '');
+assert.equal(versionLabel({ version: { type: 'official' } }), 'Studio original');
+assert.equal(versionLabel({ version: { type: 'live' } }), 'Live');
+assert.equal(versionLabel({ version: { type: 'cover', artist: 'Jane' } }), 'Cover · Jane');
+assert.equal(versionLabel({ version: { type: 'cover', artist: 'Jane', live: true } }), 'Live cover · Jane');

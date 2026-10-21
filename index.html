@@ -128,6 +128,7 @@
         <h1 id="pl-title">—</h1>
         <span id="pl-artist" class="muted"></span>
         <a id="pl-source" class="pill src" hidden target="_blank" rel="noopener noreferrer" title="Where this tab came from (Tab info)"></a>
+        <button id="pl-version" class="pill ver-pill" type="button" title="Which recording this tab follows" hidden></button>
         <button id="pl-sync" class="pill sync-pill" type="button" title="Video sync status (tap for the checklist)" hidden></button>
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
@@ -186,8 +187,18 @@
     <div class="playdock">
       <div id="pl-sheets" class="sheets">
         <section id="ed-sheet" class="sheet" data-sheet="edit" hidden>
-          <div class="sheet-head"><h2>Edit tab</h2>
-            <span class="row"><button id="ed-undo" class="ghost small" disabled>↶ Undo</button><button id="ed-redo" class="ghost small" disabled>↷ Redo</button><button class="ghost small" data-close>Close</button></span></div>
+          <div class="sheet-head"><h2><a id="ed-back" class="ed-back" href="#library">‹ Done</a> Edit tab</h2>
+            <span class="row"><button id="ed-version-chip" class="ghost small" type="button" title="Which recording this tab follows">Set version…</button><button id="ed-undo" class="ghost small" disabled>↶ Undo</button><button id="ed-redo" class="ghost small" disabled>↷ Redo</button><button class="ghost small ed-close" data-close>Close</button></span></div>
+          <div id="ed-bar" class="ed-bar" role="toolbar" aria-label="Bar tools">
+            <button id="ed-extend" class="small ghost" type="button" aria-pressed="false" title="Tap this, then tap another bar to select everything between">↔ Extend</button>
+            <button id="ed-copy" class="small ghost" type="button" title="Ctrl+C">Copy</button>
+            <button id="ed-cut" class="small ghost" type="button" title="Ctrl+X">Cut</button>
+            <button id="ed-paste" class="small ghost" type="button" title="Ctrl+V: after the selected bar">Paste</button>
+            <button id="ed-dup" class="small ghost" type="button" title="Ctrl+D">Repeat</button>
+            <button id="ed-rest" class="small ghost" type="button" title="Empty the selected bars (rests)">Rest</button>
+            <button id="ed-del" class="small ghost danger" type="button" title="Delete">Delete</button>
+            <button id="ed-addbar" class="small ghost" type="button">+ Bar</button>
+          </div>
           <p class="muted small-text">Arrange the song by moving, copying or removing sections. <span id="ed-count"></span></p>
           <p id="ed-note" class="muted small-text" hidden>Editing turns this typed tab into a Guitar Pro file. The text is kept as the original.</p>
           <ul id="ed-body" class="ed-list"></ul>
@@ -909,6 +920,22 @@
   </dialog>
 
   <!-- Confirm / rename (in-page, since some browsers block confirm() and prompt()) -->
+  <dialog id="ver-dialog" class="ver-dialog">
+    <form method="dialog">
+      <h2>Which version is this tab based on?</h2>
+      <p class="muted small-text">So you always know which arrangement you are playing.</p>
+      <div class="ver-types" role="radiogroup" aria-label="Version">
+        <label><input type="radio" name="ver-type" value="official"><span>Studio original</span></label>
+        <label><input type="radio" name="ver-type" value="live"><span>Live (by the artist)</span></label>
+        <label><input type="radio" name="ver-type" value="cover"><span>Cover</span></label>
+      </div>
+      <label id="ver-who">Who plays the cover? <input id="ver-artist" maxlength="80" placeholder="Artist or band" autocomplete="off"></label>
+      <label id="ver-live-row" class="row"><input id="ver-live" type="checkbox"> The cover is a live recording</label>
+      <label>Note <input id="ver-note" maxlength="120" placeholder="e.g. acoustic, half step down, 2019 tour" autocomplete="off"></label>
+      <div class="row"><button value="cancel" class="ghost">Cancel</button><button value="ok" class="primary">Save</button></div>
+    </form>
+  </dialog>
+
   <dialog id="ask-dialog">
     <form method="dialog">
       <h2 id="ask-title"></h2>
