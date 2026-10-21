@@ -27,6 +27,7 @@ import { initFretView, setNeck, showNotes } from './fretview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
+import { humanize } from './humanize.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -113,8 +114,8 @@ function ensureApi() {
   api.soundFontLoad.on((e) => {
     if (!readyForPlayback) $('pl-play').title = `Loading sounds ${Math.round((e.loaded / e.total) * 100)}%`;
   });
-  // The click is written into the song's MIDI on a channel of its own.
-  api.midiLoad.on(addClickTrack);
+  // Guitar chords are strummed, and the click is written into the song's MIDI on a channel of its own.
+  api.midiLoad.on((midiFile) => { strumGuitars(midiFile); addClickTrack(midiFile); });
   // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
   // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
   try {
@@ -350,6 +351,21 @@ function showCount(n) {
     el.classList.remove('pop');
     void el.offsetWidth;
     if (n) el.classList.add('pop');
+  }
+}
+
+/* ---------- natural strums ---------- */
+
+const strumOn = () => { try { return localStorage.getItem('fretboard.strum') !== 'off'; } catch { return true; } };
+
+function strumGuitars(midiFile) {
+  if (!strumOn()) return;
+  try {
+    const barStarts = api.tickCache ? api.tickCache.masterBars.map((b) => b.start) : [];
+    humanize(midiFile.tracks.flatMap((t) => t.events), { barStarts });
+    for (const t of midiFile.tracks) t.events.sort((a, b) => a.tick - b.tick); // stable
+  } catch (e) {
+    console.warn('Strums skipped', e); // playback still works, just with straight chords
   }
 }
 
@@ -1678,6 +1694,12 @@ function initSound() {
   Object.entries(TONES).forEach(([key, t]) => tone.add(new Option(t.label, key)));
   tone.value = getTone();
   tone.addEventListener('change', () => setTone(tone.value));
+  const strum = $('pl-strum');
+  strum.checked = strumOn();
+  strum.addEventListener('change', () => {
+    try { localStorage.setItem('fretboard.strum', strum.checked ? 'on' : 'off'); } catch {}
+    rebuildClick(); // regenerates the MIDI, keeping the position
+  });
   customSoundFontReady.then(showSoundFontName);
   $('pl-sf-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -1830,8 +1852,8 @@ function initDock() {
   // The score fills the space between the top bar and the play bar.
   const root = document.documentElement.style;
   const measure = () => {
-    root.setProperty('--dock-h', document.querySelector('.playbar').offsetHeight + 'px');
-    root.setProperty('--top-h', document.querySelector('.topbar').offsetHeight + 'px');
+    root.setProperty('--dock-h', (document.querySelector('.playbar')?.offsetHeight ?? 0) + 'px');
+    root.setProperty('--top-h', (document.querySelector('.topbar')?.offsetHeight ?? 0) + 'px');
   };
   new ResizeObserver(measure).observe(document.querySelector('.playbar'));
   new ResizeObserver(measure).observe(document.querySelector('.topbar'));
