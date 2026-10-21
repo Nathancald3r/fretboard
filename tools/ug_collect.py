@@ -29,9 +29,40 @@ def print_open():
     return any(t["url"].startswith("chrome://print") for t in targets())
 
 
+def close_old_prints():
+    """A Print window left open freezes its tab, so shut any before starting."""
+    ts = targets()
+    stale = [t for t in ts if t["url"].startswith("chrome://print") and t["type"] == "page"]
+    if stale:  # the tab that opened it can stay frozen, so close the UG tabs too; a fresh one opens
+        stale += [t for t in ts if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"]]
+    for t in stale:
+        urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
+    time.sleep(1)
+
+
+def set_a4(pr):
+    """Paper size A4 (Letter cuts words off the page edge). It sits under 'More settings'."""
+    try:
+        more = pr.get_by_text("More settings", exact=True)
+        if more.count() and more.first.is_visible():
+            more.first.click(timeout=3000)
+            pr.wait_for_timeout(600)
+    except Exception:
+        pass
+    sels = pr.locator("select")
+    for i in range(sels.count()):
+        s = sels.nth(i)
+        if s.evaluate("e=>[...e.options].some(o=>o.text.trim()=='A4')"):
+            s.select_option(label=next(t for t in s.evaluate("e=>[...e.options].map(o=>o.text)") if t.strip() == "A4"))
+            pr.wait_for_timeout(2000)  # preview re-renders
+            return True
+    print("  (couldn't find the A4 paper option; saved with Chrome's default size)")
+    return False
+
+
 def song_page(ctx, url):
-    for pg in ctx.pages:
-        if pg.url.split("?")[0] == url.split("?")[0]:
+    for pg in reversed(ctx.pages):
+        if pg.url.split("?")[0] == url.split("?")[0] and not pg.is_closed():
             return pg
     pg = ctx.new_page()
     pg.set_viewport_size({"width": 1500, "height": 1000})
@@ -41,12 +72,17 @@ def song_page(ctx, url):
 
 
 def open_instruments(pg):
-    if pg.get_by_role("heading", name="Instruments").count() == 0:
-        pg.get_by_role("button", name="Collapse").first.click()
-        pg.wait_for_timeout(300)
-    # the player's expand control sits at the edge of the score
-    if pg.get_by_role("heading", name="Instruments").count() == 0 or not pg.get_by_role("heading", name="Instruments").first.is_visible():
-        pg.evaluate("""()=>{const b=document.querySelector('[class*=_0kBTe]');if(b)b.click()}""")
+    """Show the player's Instruments panel (track list) if it's folded away."""
+    for _ in range(3):
+        shown = pg.evaluate("""()=>{const h=[...document.querySelectorAll('h2')].find(e=>e.innerText.trim()=='Instruments');
+          if(h&&h.getBoundingClientRect().width>0&&h.closest('[aria-hidden=true]')==null)return true;
+          return false}""")
+        if shown:
+            return
+        try:
+            pg.locator('[class*=_0kBTe]').first.click(timeout=3000)  # the |<- tab at the score's right edge
+        except Exception:
+            pass
         pg.wait_for_timeout(1200)
 
 
@@ -72,6 +108,7 @@ def main():
     a = ap.parse_args()
     PORT = a.port
     only = [s.strip().lower() for s in a.only.split(",") if s.strip()]
+    close_old_prints()
 
     with sync_playwright() as p:
         ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
@@ -85,7 +122,7 @@ def main():
             sys.exit("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, rerun.")
     if only:
         names = [n for n in names if n.lower() in only]
-    out = Path(a.out) if a.out else Path.home() / "Downloads" / f"UG {song}"
+    out = (Path(a.out) if a.out else Path.home() / "Downloads" / f"UG {song}").resolve()
     print(f"{song}: {len(names)} tracks -> {', '.join(names)}\n"
           f"Saving each one into {out} by itself; keep hands off keyboard and mouse until it says Done.\n")
 
@@ -108,6 +145,7 @@ def main():
             pr = [x for x in ctx.pages if x.url.startswith("chrome://print")][-1]
             pr.locator("select").first.select_option("Save as PDF/local/")
             pr.wait_for_timeout(2500)
+            set_a4(pr)
             pr.locator("cr-button.action-button").first.click(no_wait_after=True, timeout=5000)
         r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(DIALOG), str(dest)],
                            capture_output=True, text=True)
