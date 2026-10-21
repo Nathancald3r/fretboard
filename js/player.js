@@ -1188,6 +1188,7 @@ function loopSection(sec) {
     api.applyPlaybackRangeFromHighlight?.();
   }
   api.playbackRange = { startTick: range.first.start, endTick: range.last.end };
+    document.body.classList.add('has-range');
   sections.forEach((x) => x.el.classList.toggle('looped', x === sec));
   setLoop(true);
   moveTo(range.first.start);
@@ -1481,6 +1482,7 @@ function initTouchSelect() {
 function clearSelection() {
   if (!api) return;
   api.playbackRange = null;
+  document.body.classList.remove('has-range');
   api.clearPlaybackRangeHighlight?.();
   sections.forEach((sec) => sec.el.classList.remove('looped'));
 }

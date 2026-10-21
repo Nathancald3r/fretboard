@@ -149,7 +149,7 @@ export function openDrawer(show = true) {
   $('drawer').setAttribute('aria-hidden', String(!show));
   if (show) {
     Promise.all([loadSongs(), loadSetlists()]).then(renderDrawer);
-    setTimeout(() => $('dr-search').focus(), 50);
+    if (matchMedia('(pointer: fine)').matches) setTimeout(() => $('dr-search').focus(), 50); // on a phone the keyboard would cover the list
   }
 }
 

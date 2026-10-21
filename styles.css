@@ -1110,3 +1110,25 @@ html, body { overscroll-behavior: none; }
 #score-scroll, .drawer-body, .sheet { overscroll-behavior: contain; }
 button, a, input, select, label, .jog-pad, .jog-time { touch-action: manipulation; }
 @media (max-width: 640px) { .playbar-row > #pa-video, .playbar-row > #pa-video.mini, .playbar-row > #pa-video.collapsed { box-shadow: none; border-top: 1px solid var(--line); } }
+
+/* ---------- Navigation and tap-target pass ---------- */
+.back-songs { display: none; }
+.back-practice { margin: 0 0 .5rem; }
+kbd { }
+@media (pointer: coarse) { kbd, .kbd-hint { display: none; } }
+@media (max-width: 640px) {
+  /* In the player the top bar's brand note becomes a clear way back */
+  .in-player .brand { display: none; }
+  .in-player .back-songs { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .5rem 0 .2rem; font-weight: 700; color: var(--accent); text-decoration: none; white-space: nowrap; flex: none; }
+  /* A selected loop can be cleared */
+  body.has-range #pl-clear-sel { display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center; }
+  /* Tap targets: 44 px */
+  .toggles .tog { min-height: 44px; font-size: .85rem; padding: .3rem .8rem; }
+  #pl-mute, #pl-solo, .ms { min-width: 40px; min-height: 40px; }
+  .seg button { min-height: 40px; }
+  .mode-seg button { min-height: 36px; }
+  .rate .star { min-width: 36px; min-height: 40px; }
+  #pa-video .pa-video-bar button { min-height: 44px; min-width: 44px; }
+  .sheet input[type=range] { height: 44px; }
+  .sheet-head .ghost { min-height: 44px; min-width: 64px; }
+}

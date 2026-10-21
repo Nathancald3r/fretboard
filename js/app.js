@@ -2,7 +2,8 @@
 import { listSongs, getSong, putSong, deleteSong, updateSong } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { initText, openText, closeText, cleanTabText } from './texttab.js';
-import { initMetronome } from './metronome.js';
+import { initMetronome, stopMetronome } from './metronome.js';
+import { initLayers, resetLayers } from './layers.js';
 import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
@@ -46,9 +47,10 @@ async function route() {
     view = !song ? 'library' : asText ? 'text' : 'player';
   }
 
+  resetLayers(); // sheets, menus, pop-ups and full screen never carry over to another page or song
   if (currentView === 'player') closePlayer(); // also when switching songs
   if (currentView === 'text') closeText();
-  if (currentView === 'tools' && view !== 'tools') stopTuner();
+  if (currentView === 'tools' && view !== 'tools') { stopTuner(); stopMetronome(); }
   if (currentView === 'vocal' && view !== 'vocal') stopVocal();
   trackDrill(view);
   currentView = view;
@@ -313,6 +315,7 @@ async function main() {
   initFind();
   initScales();
   initKeys();
+  initLayers();
   initVocal();
   initDrawer();
   initQuickImport({ importFiles, openEditor, toast, openSong: (id, { playAlong = false } = {}) => {

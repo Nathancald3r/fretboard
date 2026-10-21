@@ -16,6 +16,7 @@
     <button id="menu-btn" class="icon-btn" aria-label="Library and setlists" title="Library and setlists">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
+    <a id="back-songs" class="back-songs" href="#library" aria-label="Back to your songs">‹ Songs</a>
     <a class="brand" href="#library">Fretboard</a>
     <div class="search">
       <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -162,7 +163,7 @@
         <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
         <span id="pa-video-title" class="small-text">Linked video</span>
         <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
-        <button id="pa-video-sync" class="ghost small" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">Sync</button>
+        <button id="pa-video-sync" class="ghost small" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙ Settings</button>
         <button id="pa-video-close" class="ghost small phone-only" title="Minimize the video (it keeps playing)" aria-label="Minimize the video"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button id="pa-video-size" class="ghost small" title="Smaller / bigger" aria-label="Smaller or bigger">⤡</button>
         <button id="pa-video-hide" class="ghost small" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video">–</button>
@@ -173,7 +174,7 @@
           <span class="jog-arrow">◀</span><span id="pa-vid-time" class="mono">0:00.0</span><span class="jog-arrow">▶</span>
         </div>
         <button id="pa-hear" class="ghost small hear" aria-pressed="true" title="Listen to 3 seconds from here (you stay in the same place)" aria-label="Listen to 3 seconds">🔊 3 s</button>
-        <button id="pa-link-here" class="small primary" title="The music starts here in the video: link this moment to the bar you selected in the tab (or the bar the cursor is on)">Start here</button>
+        <button id="pa-link-here" class="small primary" title="The music starts here in the video: link this moment to the bar you selected in the tab (or the bar the cursor is on)">Music starts here</button>
         <span id="pa-link-note" class="muted small-text"></span>
       </div>
     </div>
@@ -629,6 +630,7 @@
 
   <!-- SCALES -->
   <main id="view-scales" class="view" hidden>
+    <a class="button small ghost back-practice" href="#practice">‹ Practice</a>
     <section class="panel">
       <h2>Scale practice</h2>
       <div class="row">
@@ -671,6 +673,7 @@
 
   <!-- CHORDS & KEYS -->
   <main id="view-keys" class="view" hidden>
+    <a class="button small ghost back-practice" href="#practice">‹ Practice</a>
     <section class="panel">
       <h2>Circle of fifths</h2>
       <p class="muted small-text">Click a key. Going clockwise adds a sharp; counter-clockwise adds a flat. A key's six main chords are in the three wedges around it (outer: major, inner: minor).</p>
@@ -772,6 +775,7 @@
 
   <!-- TOOLS -->
   <main id="view-tools" class="view" hidden>
+    <a class="button small ghost back-practice" href="#practice">‹ Practice</a>
     <section class="panel">
       <h2>Metronome</h2>
       <div class="metro">
