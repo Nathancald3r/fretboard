@@ -110,6 +110,7 @@ async function restore(snap) {
   FIELDS.forEach((k) => { changes[k] = snap[k]; });
   Object.assign(song, changes);
   await updateSong(song.id, changes);
+  hooks.clearSelection(); // a range left over from before can point at bars that no longer exist
   hooks.reload();
   paint();
 }
@@ -146,6 +147,7 @@ async function apply(label, make, merge = '', keep = undefined) {
   redo = [];
   Object.assign(song, changes);
   await updateSong(song.id, changes);
+  hooks.clearSelection(); // a range left over from before can point at bars that no longer exist
   hooks.reload();
   paint();
   if (merge) return;
@@ -179,6 +181,7 @@ async function goBackToOriginal() {
   const changes = { kind: o.kind, data: o.data, syncPoints: [], syncDone: false, loops: [], skips: [] };
   Object.assign(song, changes);
   await updateSong(song.id, changes);
+  hooks.clearSelection(); // a range left over from before can point at bars that no longer exist
   hooks.reload();
   paint();
 }
@@ -665,6 +668,9 @@ function initContextMenu() {
           { label: r ? `Loop ${bars}` : 'Loop (select bars first)', off: !r, run: () => hooks.loopSelection() },
           { label: 'Save this loop', off: !r, run: () => document.querySelector('#pl-loops [data-save]')?.click() },
           { label: 'Clear selection', key: 'Esc', off: !r, run: deselect },
+          '-',
+          { label: hooks.holdScroll() ? '📌 Let the tab follow the playhead' : '📌 Keep the tab still while playing', run: () => hooks.toggleHold() },
+          { label: '🎧 Music starts here (video at this moment)', off: !document.getElementById('pa-link-here') || document.getElementById('pa-link-here').disabled, run: () => document.getElementById('pa-link-here').click() },
           '-',
           { label: '✎ Edit this tab', run: () => { location.hash = `edit/${song.id}`; } },
         ];

@@ -183,12 +183,14 @@ let shownClock = '';
 let shownSeek = -1;
 let lastInfoAt = 0;
 
+let seekHold = null; // after a jump, the bar stays where you put it until the song gets there
 function onPosition(e) {
   endTime = e.endTime;
   const clock = `${formatClock(e.currentTime)} / ${formatClock(e.endTime)}`;
   if (clock !== shownClock) { shownClock = clock; $('pl-time').textContent = clock; }
   const seek = e.endTime ? Math.round((e.currentTime / e.endTime) * 1000) : 0;
-  if (!seeking && seek !== shownSeek) { shownSeek = seek; $('pl-seek').value = seek; }
+  if (seekHold && (performance.now() > seekHold.until || Math.abs(seek - seekHold.value) < 15)) seekHold = null;
+  if (!seeking && !seekHold && seek !== shownSeek) { shownSeek = seek; $('pl-seek').value = seek; }
   const now = performance.now();
   if (e.isSeek || now - lastInfoAt >= 40) {
     lastInfoAt = now;
@@ -261,7 +263,8 @@ function scrollToPlayhead() {
 // video plays (the cursor still moves), so the bar you are matching stays where you can see it.
 let frozenTop = null;
 let userScrolled = 0;
-const frozen = () => document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
+let holdScroll = false;
+const frozen = () => holdScroll || document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
 function initScrollHold() {
   const box = $('score-scroll');
   const touch = () => { userScrolled = Date.now(); };
@@ -1005,6 +1008,8 @@ function nextInSetlistHint() {
 
 export async function openPlayer(s) {
   song = s;
+  holdScroll = false;
+  frozenTop = null;
   score = null;
   mix = [];
   cancelCountIn();
@@ -1770,6 +1775,7 @@ function initDock() {
   });
   seek.addEventListener('change', () => {
     seeking = false;
+    seekHold = { value: Number(seek.value), until: performance.now() + 1500 };
     seek.blur();
     if (!api || !readyForPlayback || !endTime) return;
     // Time → the bar it falls in, so a jump while playing counts in from a bar start.
@@ -1914,6 +1920,8 @@ export function initPlayer() {
       const idx = bars.slice(sel.a, sel.b + 1).map((b) => b.masterBar.index);
       return { first: Math.min(...idx), last: Math.max(...idx) };
     },
+    holdScroll: () => holdScroll,
+    toggleHold: () => { holdScroll = !holdScroll; frozenTop = holdScroll ? $('score-scroll').scrollTop : null; window.dispatchEvent(new CustomEvent('fbtoast', { detail: holdScroll ? 'The tab stays put while it plays. Right-click to let it follow again.' : 'The tab follows the playhead again.' })); },
     clearSelection: () => { clearSelection(); setLoop(false); },
     loopSelection: () => setLoop(true),
     selectBars: (first, last) => {

@@ -334,7 +334,14 @@ function showScrub(real) {
 }
 
 // Both position sliders (the sheet's and the pop-up's) show the same video time.
+// After you let go of a scrubber the video needs a moment (buffering) to arrive; until it is close to where you
+// put it, the sliders stay where you put them instead of jumping back to the old position.
+let settle = null;
 function paintScrub(real) {
+  if (settle) {
+    if (performance.now() > settle.until || Math.abs(real / 1000 - settle.sec) < 0.7) settle = null;
+    else real = settle.sec * 1000;
+  }
   const sec = Math.max(0, real / 1000);
   const max = Math.max(1, (media?.rawDuration || 0) / 1000 || 600);
   for (const [slider, time] of [['pa-scrub', 'pa-scrub-time']]) {
@@ -953,6 +960,7 @@ export function initPlayAlong(h) {
   const endScrub = () => { scrubbing = false; };
   const finishScrub = (sec, moved = true) => {
     seekTo(sec);
+    settle = { sec, until: performance.now() + 4000 };
     if (moved && hasStart()) applyStartAt(sec * 1000); // a plain tap or a cancelled touch must not move the start
     endScrub();
     setTimeout(() => media && paintScrub(media.nowReal()), 300);
