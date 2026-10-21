@@ -21,6 +21,22 @@ export function songQuery(song) {
   return { artist, title, text: [artist, title].filter(Boolean).join(' ') };
 }
 
+// What the tab's version note says about the recording ("Passion Live version, no acapella
+// bridge" -> words passion, acapella, bridge; live). Used to search for and prefer that version.
+const STOP = new Set(('the and for with without left out version versions this that from was were are has have had obvious reasons reason info '
+  + 'helpful yes tab tabs guitar pro chords chord official lyrics song cover tabbed by of in on at to is it its my your our').split(' '));
+export function versionHints(song, base = '') {
+  const note = norm(song?.versionNote || '');
+  if (!note) return { words: [], flags: {} };
+  const known = new Set(norm(`${song?.artist || ''} ${song?.title || ''} ${base}`).split(' '));
+  const words = [...new Set(note.split(' '))].filter((w) => w.length > 2 && !STOP.has(w) && !known.has(w) && !/^\d+$/.test(w)).slice(0, 6);
+  const has = (re) => re.test(note);
+  return {
+    words,
+    flags: { live: has(/\blive\b/), acoustic: has(/\b(acoustic|unplugged|stripped)\b/), piano: has(/\bpiano\b/), studio: has(/\b(studio|album|original)\b/) },
+  };
+}
+
 const BAD = [
   [/\bkaraoke\b/, 10], [/\b(lesson|tutorial|how to play|play along|playalong|backing track)\b/, 10],
   [/\b(cover|covered by)\b/, 7], [/\binstrumental\b/, 6], [/\b(chords?|tabs?)\b/, 6],
@@ -29,7 +45,7 @@ const BAD = [
 ];
 
 // Higher is a better match for the artist's own recording of the song.
-export function scoreResult(r, { artist, title, seconds }) {
+export function scoreResult(r, { artist, title, seconds, hints }) {
   const t = norm(r.title);
   const a = norm(r.author);
   const songTitle = norm(title);
@@ -51,7 +67,20 @@ export function scoreResult(r, { artist, title, seconds }) {
   if (/vevo/.test(a)) score += 2;
   if (/\bofficial\b/.test(t)) score += 2;
   if (r.verified) score += 1;
-  for (const [re, cost] of BAD) if (re.test(t) && !re.test(songTitle)) score -= cost;
+  const flags = hints?.flags || {};
+  for (const [re, cost] of BAD) {
+    if (!re.test(t) || re.test(songTitle)) continue;
+    // A version the note asks for is not a mark against a result.
+    if ((flags.live && /live/.test(re.source)) || (flags.acoustic && /acoustic/.test(re.source)) || (flags.piano && /piano/.test(re.source))) continue;
+    score -= cost;
+  }
+  if (hints?.words?.length) {
+    const hit = hints.words.filter((w) => t.includes(w) || a.includes(w)).length;
+    score += Math.min(6, hit * 2);
+  }
+  if (flags.live && /\blive\b/.test(t)) score += 3;
+  if (flags.acoustic && /\b(acoustic|unplugged)\b/.test(t)) score += 3;
+  if (flags.piano && /\bpiano\b/.test(t)) score += 3;
   if (seconds && r.seconds) {
     const off = Math.abs(r.seconds - seconds);
     if (off <= 15) score += 2;
@@ -116,12 +145,19 @@ export async function searchYouTube(q) {
 
 // The song's recording, best match first.
 export async function findRecording(song, seconds) {
-  const want = { ...songQuery(song), seconds };
+  const q = songQuery(song);
+  const want = { ...q, seconds, hints: versionHints(song, q.text) };
   if (!want.text) return [];
-  // Two searches: plain finds the artist's channel and album track, "official" the video.
-  const [plain, official] = await Promise.allSettled([searchYouTube(want.text), searchYouTube(`${want.text} official`)]);
-  if (plain.status === 'rejected' && official.status === 'rejected') throw plain.reason;
-  return rankResults([...(official.value || []), ...(plain.value || [])], want);
+  // Searches: plain finds the artist's channel and album track, "official" the video, and, when
+  // the tab's version note says which version it is, one with those words in.
+  const extra = want.hints.words.length ? searchYouTube(`${want.text} ${want.hints.words.join(' ')}`) : Promise.resolve([]);
+  const [plain, official, versioned] = await Promise.allSettled([searchYouTube(want.text), searchYouTube(`${want.text} official`), extra]);
+  if (plain.status === 'rejected' && official.status === 'rejected' && versioned.status === 'rejected') throw plain.reason;
+  return rankResults([...(versioned.value || []), ...(official.value || []), ...(plain.value || [])], want);
 }
 
-export const youTubeSearchUrl = (song) => `https://www.youtube.com/results?search_query=${encodeURIComponent(songQuery(song).text + ' official')}`;
+export const youTubeSearchUrl = (song) => {
+  const q = songQuery(song).text;
+  const hint = versionHints(song, q).words.join(' ');
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} ${hint || 'official'}`.trim())}`;
+};

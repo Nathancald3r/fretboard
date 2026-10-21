@@ -1,6 +1,6 @@
 // Run: node tests/ytsearch.test.mjs
 import assert from 'node:assert/strict';
-import { songQuery, rankResults } from '../js/ytsearch.js';
+import { songQuery, rankResults, versionHints } from '../js/ytsearch.js';
 
 assert.deepEqual(songQuery({ title: 'Chris Tomlin - Here I Am To Worship' }), { artist: 'Chris Tomlin', title: 'Here I Am To Worship', text: 'Chris Tomlin Here I Am To Worship' });
 assert.equal(songQuery({ artist: 'Oasis', title: 'Wonderwall' }).text, 'Oasis Wonderwall');
@@ -28,5 +28,24 @@ assert.equal(pick([
   r('studio', 'Metallica - Nothing Else Matters (Remastered)', 'Metallica'),
 ]), 'studio', 'studio over live');
 assert.equal(rankResults([r('a', 'x', 'y'), r('a', 'x', 'y')], want).length, 1, 'duplicates dropped');
+
+
+// The version note steers the pick: "Passion Live version" prefers the Passion live recording.
+const song = { title: 'Chris Tomlin - Here I Am To Worship', versionNote: 'Passion Live version, left out acapella bridge for obvious reasons.' };
+const h = versionHints(song);
+assert.ok(h.flags.live && h.words.includes('passion') && h.words.includes('acapella'), JSON.stringify(h));
+assert.ok(!h.words.includes('version') && !h.words.includes('worship'));
+const tom = { artist: 'Chris Tomlin', title: 'Here I Am To Worship', seconds: 276 };
+const withNote = rankResults([
+  r('studio', 'Chris Tomlin - Here I Am To Worship (Official Audio)', 'Chris Tomlin', 270, true),
+  r('passion', 'Here I Am To Worship (Live) - Passion 2005', 'Chris Tomlin', 280),
+], { ...tom, hints: h });
+assert.equal(withNote[0].id, 'passion', 'the live version the note names');
+const noNote = rankResults([
+  r('studio', 'Chris Tomlin - Here I Am To Worship (Official Audio)', 'Chris Tomlin', 270, true),
+  r('passion', 'Here I Am To Worship (Live) - Passion 2005', 'Chris Tomlin', 280),
+], tom);
+assert.equal(noNote[0].id, 'studio', 'without a note the studio recording still wins');
+assert.deepEqual(versionHints({ title: 'x' }), { words: [], flags: {} });
 
 console.log('ytsearch: all tests passed');
