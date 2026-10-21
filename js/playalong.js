@@ -154,7 +154,8 @@ async function youTubeHandler(rec) {
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
     seekTo(ms) { if (!dead) { seekIdle(); player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
-    seekReal(ms) { if (!dead) { seekIdle(); player.seekTo(ms / 1000, true); setTimeout(poll, 50); } },
+    // ahead=false (while scrubbing) only moves within what YouTube has already loaded, so it never stalls on buffering; the final seek on release loads the exact spot.
+    seekReal(ms, ahead = true) { if (!dead) { seekIdle(); player.seekTo(ms / 1000, ahead); setTimeout(poll, 50); } },
     nowReal: () => player.getCurrentTime() * 1000,
     play() { if (!dead) { wantPlay = true; seekedAt = 0; player.playVideo(); } },
     pause() { wantPlay = false; player.pauseVideo(); },
@@ -890,9 +891,9 @@ export function initPlayAlong(h) {
     hooks.seekToBar(startIdx());
   });
   let seekAt = 0;
-  const seekTo = (sec) => {
+  const seekTo = (sec, ahead = true) => {
     if (!media) return;
-    media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)));
+    media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)), ahead);
   };
   // The position sliders: the number shown is the video's own time, to a tenth of a second.
   let hear = true;
@@ -928,7 +929,7 @@ export function initPlayAlong(h) {
       const sec = Number(slider.value);
       $(time).textContent = fmtT(sec * 1000);
       const now = performance.now();
-      if (now - last > 90) { last = now; seekTo(sec); }
+      if (now - last > 250) { last = now; seekTo(sec, false); }
     });
     slider.addEventListener('change', () => media && finishScrub(Number(slider.value)));
     slider.addEventListener('pointerup', () => { if (!media) endScrub(); });
@@ -950,7 +951,7 @@ export function initPlayAlong(h) {
       el.textContent = fmtT(from.target * 1000);
       slider.value = from.target;
       const now = performance.now();
-      if (now - last > 70) { last = now; seekTo(from.target); }
+      if (now - last > 250) { last = now; seekTo(from.target, false); }
     });
     const end = () => {
       if (!from) return;
@@ -975,7 +976,7 @@ export function initPlayAlong(h) {
     hold.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, hold.target + speed(hold.dx) * ((now - hold.t) / 1000)));
     hold.t = now;
     $('pa-vid-time').textContent = fmtT(hold.target * 1000);
-    if (now - hold.seek > 80 && speed(hold.dx)) { hold.seek = now; seekTo(hold.target); }
+    if (now - hold.seek > 300 && speed(hold.dx)) { hold.seek = now; seekTo(hold.target, false); }
     requestAnimationFrame(step);
   };
   pad.addEventListener('pointerdown', (e) => {
