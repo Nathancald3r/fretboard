@@ -23,6 +23,7 @@ import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
+import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 
 const $ = (id) => document.getElementById(id);
@@ -89,6 +90,7 @@ function ensureApi() {
     $('pl-loading').textContent = 'Could not load this file: ' + (e?.message || e);
   });
   api.playerReady.on(() => {
+    delayPositionEvents(api, recordingOn); // Bluetooth headphones: hold the cursor back by their lag
     readyForPlayback = true;
     api.masterVolume = playAlongState().songVolume;
     setPlayButton();
@@ -1711,6 +1713,7 @@ export function initPlayer() {
   document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
+  bindBtControls({ button: $('sb-bt'), input: $('sb-bt-ms'), nudges: document.querySelectorAll('#sb-bt-row [data-bt]') });
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
   $('pl-metro').addEventListener('click', toggleClick);
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));

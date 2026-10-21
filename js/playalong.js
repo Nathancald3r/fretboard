@@ -5,6 +5,7 @@
 import { updateSong } from './db.js';
 import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence, groupResults } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
+import { btDelay, onBtDelay, bindBtControls } from './btdelay.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
@@ -616,11 +617,7 @@ let matches = []; // the last search's results, to step through from the video
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 // Headphone delay: Bluetooth audio arrives a moment after the video clock, so the tab cursor
 // is held back by the same amount. A device setting, not part of the song.
-const BT_KEY = 'fretboard.audioDelayMs';
-const BT_DEFAULT = 200;
-let btDelay = 0;
-try { btDelay = Math.max(0, Math.min(1000, Number(localStorage.getItem(BT_KEY)) || 0)); } catch { /* no storage */ }
-const totalOffset = () => (song?.syncOffset || 0) + btDelay;
+const totalOffset = () => (song?.syncOffset || 0) + btDelay();
 
 let finding = 0;
 let findRound = 0; // presses of Find for this song; each one looks for other videos
@@ -850,21 +847,8 @@ export function initPlayAlong(h) {
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
-  const showBt = () => {
-    $('pa-bt-ms').value = btDelay;
-    $('pa-bt').classList.toggle('on', btDelay > 0);
-    $('pa-bt').textContent = btDelay > 0 ? 'Bluetooth: on' : 'Bluetooth headphones';
-  };
-  const setBt = (ms) => {
-    btDelay = Math.max(0, Math.min(1000, Math.round(Number(ms) || 0)));
-    try { localStorage.setItem(BT_KEY, String(btDelay)); } catch { /* no storage */ }
-    showBt();
-    if (song && on) applySync();
-  };
-  $('pa-bt').addEventListener('click', () => setBt(btDelay > 0 ? 0 : BT_DEFAULT));
-  $('pa-bt-ms').addEventListener('change', (e) => setBt(e.target.value));
-  document.querySelectorAll('[data-bt]').forEach((b) => b.addEventListener('click', () => setBt(btDelay + Number(b.dataset.bt))));
-  showBt();
+  bindBtControls({ button: $('pa-bt'), input: $('pa-bt-ms'), nudges: document.querySelectorAll('#pa-bt-row [data-bt]') });
+  onBtDelay(() => { if (song && on) applySync(); });
   document.querySelectorAll('[data-nudge]').forEach((b) => b.addEventListener('click', () => {
     if (!song) return;
     song.syncOffset = (song.syncOffset || 0) + Number(b.dataset.nudge);

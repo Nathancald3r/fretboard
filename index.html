@@ -329,7 +329,7 @@
                 <button id="pa-clear" class="ghost small">Reset sync</button>
               </div>
               <span id="pa-sync-state" class="muted small-text"></span>
-              <div class="row" title="Bluetooth headphones play the sound a little late, so the tab runs ahead of what you hear. This holds the tab back by the same amount. Turn it on, then adjust until the cursor lands on the beat you hear.">
+              <div id="pa-bt-row" class="row" title="Bluetooth headphones play the sound a little late, so the tab runs ahead of what you hear. This holds the tab back by the same amount. Turn it on, then adjust until the cursor lands on the beat you hear.">
                 <button id="pa-bt" class="ghost small">Bluetooth headphones</button>
                 <button class="ghost small" data-bt="-10">−10</button>
                 <label><input id="pa-bt-ms" type="number" min="0" max="1000" step="10" style="width:4.5rem"> ms</label>
@@ -354,6 +354,12 @@
           <div class="sheet-head"><h2>Sound</h2><button class="ghost small" data-close>Close</button></div>
           <div class="row">
             <label title="How bright or warm playback sounds">Tone <select id="pl-tone"></select></label>
+          </div>
+          <div id="sb-bt-row" class="row" title="Bluetooth headphones play the sound a little late, so the tab cursor runs ahead of what you hear. This holds the cursor back by the same amount. Turn it on, then adjust until the cursor lands on the beat you hear.">
+            <button id="sb-bt" class="ghost small">Bluetooth headphones</button>
+            <button class="ghost small" data-bt="-10">−10</button>
+            <label><input id="sb-bt-ms" type="number" min="0" max="1000" step="10" style="width:4.5rem"> ms</label>
+            <button class="ghost small" data-bt="10">+10</button>
           </div>
           <p id="pl-sf-name" class="muted"></p>
           <p class="muted small-text">For more realistic instruments, load a free General MIDI soundfont (.sf2 or .sf3), for example <i>GeneralUser GS</i> or <i>MuseScore General</i>. It is stored in this browser and used for every song.</p>
