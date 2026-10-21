@@ -1,8 +1,9 @@
 # Fills Chrome's "Save As" dialog with a full path and presses Save. Usage: ug_save_dialog.ps1 <full path>
+# With -CancelAll it presses Cancel on every open "Save As" dialog instead (used when a run is cancelled).
 # Sets the file name box directly with window messages (no typing or clipboard), so using the
 # computer meanwhile can't mix keys in. Chrome opens each dialog in a new helper process: the
 # newest dialog is this save, and any older leftover one is cancelled so it's never filled by mistake.
-param([string]$Path, [int]$TimeoutSec = 25, [int]$MaxAgeSec = 30)
+param([string]$Path, [int]$TimeoutSec = 25, [int]$MaxAgeSec = 30, [switch]$CancelAll)
 Add-Type @'
 using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
 public class SaveDlg {
@@ -12,7 +13,6 @@ public class SaveDlg {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
-  [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr h, int id);
   [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr h);
@@ -36,6 +36,11 @@ public class SaveDlg {
   public static bool Click(IntPtr dlg, int id) { var b = GetDlgItem(dlg, id); return b != IntPtr.Zero && PostMessage(b, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
 }
 '@
+if ($CancelAll) {
+  $n = 0
+  foreach ($d in [SaveDlg]::Dialogs()) { if ([SaveDlg]::Click($d, 2)) { $n++ } }
+  Write-Output "cancelled $n"; exit 0
+}
 function Started($h) { $p = 0; [SaveDlg]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null; try { (Get-Process -Id $p).StartTime } catch { Get-Date 0 } }
 $since = (Get-Date).AddSeconds(-$MaxAgeSec)  # a dialog opened before this is a leftover
 $end = (Get-Date).AddSeconds($TimeoutSec)
