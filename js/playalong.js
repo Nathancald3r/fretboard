@@ -123,8 +123,12 @@ async function youTubeHandler(rec) {
   let timer = 0;
   let rate = 1;
   let dead = false; // a switched-off handler must not move or play anything
+  let wantPlay = false; // YouTube starts playing by itself when you seek an idle video; only the play button may start it
+  let seekedAt = 0;
+  const seekIdle = () => { seekedAt = wantPlay ? 0 : Date.now(); };
   const poll = () => sendPosition(player.getCurrentTime() * 1000);
   const stateChange = (e) => {
+    if (e.data === window.YT.PlayerState.PLAYING && !wantPlay && seekedAt && Date.now() - seekedAt < 2000) { player.pauseVideo(); return; }
     clearInterval(timer);
     if (e.data === window.YT.PlayerState.PLAYING) timer = setInterval(poll, 30);
     poll();
@@ -149,11 +153,11 @@ async function youTubeHandler(rec) {
     },
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
-    seekTo(ms) { if (!dead) { player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
-    seekReal(ms) { if (!dead) { player.seekTo(ms / 1000, true); setTimeout(poll, 50); } },
+    seekTo(ms) { if (!dead) { seekIdle(); player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
+    seekReal(ms) { if (!dead) { seekIdle(); player.seekTo(ms / 1000, true); setTimeout(poll, 50); } },
     nowReal: () => player.getCurrentTime() * 1000,
-    play() { if (!dead) player.playVideo(); },
-    pause() { player.pauseVideo(); },
+    play() { if (!dead) { wantPlay = true; seekedAt = 0; player.playVideo(); } },
+    pause() { wantPlay = false; player.pauseVideo(); },
     now: () => toPlayed(player.getCurrentTime() * 1000),
     // Another video in the same player (tearing YouTube's player down and making a new one
     // right away can leave the new one stuck). Resolves once it's ready to play.
