@@ -1060,3 +1060,16 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
   .toggles .tog-group.vid-group #pa-toggle.on ~ #pa-gear { display: inline-flex; }
   .vid-group #pa-toggle.on { border-radius: 999px 0 0 999px; }
 }
+
+@media (max-width: 640px) {
+  /* Minimized: just the title bar sits above the play bar; the picture keeps playing off-screen. */
+  #pa-peek { display: none !important; }
+  .playbar-row > #pa-video, .playbar-row > #pa-video.mini, .playbar-row > #pa-video.collapsed {
+    transform: none; pointer-events: auto;
+  }
+  body:not(.video-open) #pa-video .pa-video-frame, body:not(.video-open) #pa-video.mini .pa-video-frame, body:not(.video-open) #pa-video.collapsed .pa-video-frame {
+    position: absolute; left: -9999px; top: 0; width: 320px; max-height: none;
+  }
+  body:not(.video-open) .playbar-row > #pa-video { box-shadow: 0 -4px 14px #0008; }
+  #pa-video .pa-video-bar button { min-width: 40px; font-size: 1.1rem; }
+}

@@ -1619,16 +1619,17 @@ function initCompact() {
     const chip = document.querySelector('.track-chip'); // the instrument stays in the bar, not in the menu
     $('pl-tempo-open').after(chip);
     chip.after($('pa-video'));
-    // The video is a pop-up from the bottom, opened with a button on the play row.
-    const peek = document.createElement('button');
-    peek.id = 'pa-peek';
-    peek.className = 'pill-btn';
-    peek.textContent = '▶ Video';
-    peek.title = 'Show the linked video';
-    $('pa-video').after(peek);
-    const pop = (on) => { document.body.classList.toggle('video-open', on); if (on) setTimeout(keepPlayheadInView, 300); };
-    peek.addEventListener('click', () => pop(!document.body.classList.contains('video-open')));
-    $('pa-video-close').addEventListener('click', () => pop(false));
+    // The video is a pop-up from the bottom; its minimize button folds it down to just its title bar.
+    const pop = (on) => {
+      document.body.classList.toggle('video-open', on);
+      $('pa-video-close').textContent = on ? '⌄' : '⌃';
+      $('pa-video-close').title = on ? 'Minimize the video (it keeps playing)' : 'Show the video';
+      $('pa-video-close').setAttribute('aria-label', $('pa-video-close').title);
+      if (on) setTimeout(keepPlayheadInView, 300);
+    };
+    pop(false);
+    $('pa-video-close').addEventListener('click', () => pop(!document.body.classList.contains('video-open')));
+    $('pa-video-title').addEventListener('click', () => { if (!document.body.classList.contains('video-open')) pop(true); });
     $('pa-video-sync').addEventListener('click', () => pop(false));
     $('pa-toggle').addEventListener('click', () => setTimeout(() => pop(!$('pa-video').hidden), 400));
   }
