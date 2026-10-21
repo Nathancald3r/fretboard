@@ -5,6 +5,7 @@
 import { updateSong } from './db.js';
 import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
+import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -314,19 +315,23 @@ function setLabel() {}
 // Tempo match: the video's tempo (tapped or typed) gives every bar's time, so the tab keeps
 // pace with a video that is faster or slower than the written tempo.
 const tempoTaps = [];
-function tapVideoBeat() {
+/** Keyboard V (or the button): tap the video's beat. At 8 taps the tab follows it live. */
+export function tapVideoBeat() {
   const now = performance.now();
   if (tempoTaps.length && now - tempoTaps.at(-1) > 2500) tempoTaps.length = 0;
   tempoTaps.push(now);
   if (tempoTaps.length > 17) tempoTaps.shift();
-  if (tempoTaps.length < 3) { $('pa-tempo-state').textContent = 'Keep tapping the beat…'; return; }
-  const gaps = tempoTaps.slice(1).map((t, i) => t - tempoTaps[i]).sort((a, b) => a - b);
-  const bpm = 60000 / gaps[Math.floor(gaps.length / 2)];
+  const raw = bpmFromTaps(tempoTaps);
+  if (raw === null) { $('pa-tempo-state').textContent = 'Keep tapping the beat (V on the keyboard)…'; return; }
+  const bpm = foldBpm(raw, hooks.tempo());
   $('pa-vbpm').value = bpm.toFixed(1);
-  $('pa-tempo-state').textContent = `${tempoTaps.length} taps: ${bpm.toFixed(1)} BPM (the tab says ${Math.round(hooks.tempo())}). ${tempoTaps.length < 6 ? 'A few more…' : 'Press Match when it settles.'}`;
+  const cmp = tempoCompare(bpm, hooks.tempo());
+  const folded = Math.abs(bpm - raw) > 0.5 ? ` (you tapped ${raw.toFixed(0)}; counted as ${bpm.toFixed(0)})` : '';
+  $('pa-tempo-state').textContent = `${tempoTaps.length} taps: ${bpm.toFixed(1)} BPM${folded}, ${cmp.text}. ${tempoTaps.length < 8 ? 'A few more…' : 'Following it; keep tapping to refine.'}`;
+  if (tempoTaps.length >= 8 && media && hasStart()) matchTempo(bpm, true);
 }
 
-function matchTempo(bpm) {
+function matchTempo(bpm, quiet = false) {
   if (!song || !(bpm >= 30 && bpm <= 300)) { $('pa-tempo-state').textContent = 'Tap along with the video, or type its BPM.'; return; }
   const bars = hooks.playedBars();
   const at = startIdx();
@@ -336,7 +341,7 @@ function matchTempo(bpm) {
   song.syncPoints = bars.map((b, p) => [p, Math.round(anchor + (b.start - base) * perTick)]).filter(([p]) => p >= at);
   song.videoBpm = bpm;
   updateSong(song.id, { syncPoints: song.syncPoints, videoBpm: bpm });
-  $('pa-tempo-state').textContent = `Matched: the tab now follows ${bpm.toFixed(1)} BPM from ${fmtT(anchor)} in the video. Check the beat; tap again to adjust.`;
+  if (!quiet) $('pa-tempo-state').textContent = `Matched: ${tempoCompare(bpm, hooks.tempo()).text}, from ${fmtT(anchor)} in the video. Check the beat; tap again to adjust.`;
   if (on) applySync(); else showSync();
 }
 
@@ -346,6 +351,28 @@ function applyStartAt(realMs) {
   if (!media || !song) return;
   setStart(Math.max(0, (toPlayed(realMs) - (song.syncOffset || 0)) / 1000));
   fillStartBars();
+}
+
+/** Keyboard H: the music starts here, at the chosen part of the tab. */
+export function setStartHere() {
+  if (!media) return false;
+  setStartBar(pendingMaster);
+  applyStartAt(media.nowReal());
+  hooks.seekToBar(startIdx());
+  return true;
+}
+
+// A first guess at the tempo from the two lengths, shown until you tap or type one.
+function tempoHint() {
+  if (!song || !media || song.videoBpm) return '';
+  const pt = song.syncPoints?.find(([p]) => p === startIdx());
+  const g = guessTempoFromDurations({ tabSeconds: hooks.songSeconds?.() || 0, videoSeconds: (media.rawDuration || 0) / 1000, startSeconds: (pt ? pt[1] : 0) / 1000, tabBpm: hooks.tempo() });
+  if (!g) return '';
+  if (g.bpm === null) return `The video is ${g.ratio < 1 ? 'much longer' : 'much shorter'} than the tab; if it is a live version, tap its beat.`;
+  if (g.sure) return 'The video and tab are about the same length, so the tempo is probably the same.';
+  if (!$('pa-vbpm').value) $('pa-vbpm').value = g.bpm.toFixed(1);
+  const c = tempoCompare(g.bpm, hooks.tempo());
+  return `By length the video looks ${c.pct}% of the tab's speed (about ${g.bpm.toFixed(0)} BPM, filled in); tap the beat (V) to confirm.`;
 }
 
 function refreshScrub() {
@@ -385,7 +412,7 @@ function fillStartBars() {
   const pt = song?.syncPoints?.find(([p]) => p === startIdx());
   $('pa-start-state').textContent = pt
     ? `Now: the video's ${fmtT(pt[1])} is the start of ${list.find((s) => s.master === want)?.name || 'the tab'}.`
-    : media ? 'Not set yet: the video starts with the tab.' : 'Turn on “Play with the linked video” above, then scrub to find where the music starts.';
+    : media ? 'Not set yet: the video starts with the tab. Scrub to the music, pick the part, or press H.' : 'Turn on “Play with the linked video” above, then scrub to find where the music starts.';
 }
 
 function setStartBar(master) {
@@ -409,6 +436,11 @@ function showSync() {
     ? `Synced at ${pts.length} bar${pts.length > 1 ? 's' : ''}${off ? `, nudged ${off > 0 ? '+' : ''}${off} ms` : ''}.`
     : `Not synced yet: bar 1 starts at the very beginning${off ? ` (nudged ${off > 0 ? '+' : ''}${off} ms)` : ''}.`;
   $('pa-clear').disabled = !pts.length && !off;
+  if (pts.length || off || song?.videoBpm) {
+    const pt = pts.find(([p]) => p === startIdx());
+    $('pa-sync-state').textContent = syncSummary({ startText: pt ? fmtT(pt[1]) : '', bpm: song.videoBpm, tabBpm: hooks.tempo?.(), points: pts.length, offsetMs: off, skips: skipList().length });
+  }
+  if (!tempoTaps.length) { const h = tempoHint(); if (h) $('pa-tempo-state').textContent = h; }
 }
 
 /** T while the recording plays: the bar after the last tapped one starts now. */
@@ -538,16 +570,26 @@ const remember = (want) => {
   updateSong(song.id, { videoOff: !want, videoOn: !!want });
 };
 
+// Each video keeps its own sync (start, tempo, nudge, skips): going back to one is instant.
+function swapSync(rec) {
+  const oldId = song.recording?.kind === 'youtube' ? song.recording.id : null;
+  const newId = rec?.kind === 'youtube' ? rec.id : null;
+  const syncByVideo = stashSync(song, oldId);
+  const fresh = restoreSync({ syncByVideo }, newId);
+  tempoTaps.length = 0;
+  return { syncByVideo, ...fresh };
+}
+
 async function setRecording(rec) {
   // YouTube to YouTube while playing along: same player, new video.
   if (on && media?.kind === 'youtube' && rec?.kind === 'youtube') {
     hooks.api()?.stop();
+    const swap = swapSync(rec);
     song.recording = rec;
-    song.syncPoints = [];
-    song.syncOffset = 0;
+    Object.assign(song, swap);
     song.videoOff = false;
     song.videoOn = true;
-    await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false, videoOn: true });
+    await updateSong(song.id, { recording: rec, ...swap, videoOff: false, videoOn: true });
     await media.cue(rec.id);
     applySync();
     showState();
@@ -555,12 +597,12 @@ async function setRecording(rec) {
   }
   const wasOn = on;
   if (on) await setOn(false);
+  const swap = swapSync(rec);
   song.recording = rec;
-  song.syncPoints = [];
-  song.syncOffset = 0;
+  Object.assign(song, swap);
   song.videoOff = false;
   song.videoOn = true;
-  await updateSong(song.id, { recording: rec, syncPoints: [], syncOffset: 0, videoOff: false, videoOn: true });
+  await updateSong(song.id, { recording: rec, ...swap, videoOff: false, videoOn: true });
   showState();
   if (rec) await setOn(true);
   else if (wasOn) showState();
@@ -821,6 +863,7 @@ export function initPlayAlong(h) {
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
   });
   $('pa-tempo-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapVideoBeat(); });
+  $('pa-vbpm').addEventListener('change', () => { if (media && hasStart() && Number($('pa-vbpm').value) >= 30) matchTempo(Number($('pa-vbpm').value)); });
   $('pa-tempo-match').addEventListener('click', () => matchTempo(Number($('pa-vbpm').value)));
   $('pa-start-test').addEventListener('click', () => {
     if (!on) { $('pa-start-state').textContent = 'Turn on “Play with the linked video” above first.'; return; }
