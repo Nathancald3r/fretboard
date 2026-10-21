@@ -3,7 +3,8 @@
 // Sync: tap T on beat 1 of each bar as you hear it; every tap becomes a sync point, so the
 // tab follows the band's real tempo (including drift) between tapped bars.
 import { updateSong } from './db.js';
-import { findRecording, youTubeSearchUrl } from './ytsearch.js';
+import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence } from './ytsearch.js';
+import { parseSource } from './tabinfo.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -592,10 +593,18 @@ async function findOnYouTube() {
   state.textContent = 'Searching YouTube…';
   $('pa-find').disabled = true;
   let results = [];
+  let want = null;
+  let confident = null;
+  let whyPicked = '';
+  usingBox(null);
   try {
     const linked = linkInScore();
-    results = await findRecording(song, hooks.songSeconds?.() || 0).catch((e) => { if (!linked) throw e; return []; });
-    if (linked) results.unshift(linked);
+    const secs = hooks.songSeconds?.() || 0;
+    const ev = tabEvidence(song.sourceUrl ? parseSource(song.sourceUrl) : null, (hooks.score?.()?.tracks || []).map((t) => t.name));
+    results = await findRecording(song, secs, ev).catch((e) => { if (!linked) throw e; return []; });
+    want = results.want || null;
+    if (linked) { results.unshift(linked); confident = linked; whyPicked = 'the file links to it'; }
+    else { confident = pickConfident(results, secs); whyPicked = confident && want ? explainPick(confident, want) : ''; }
   } catch (e) {
     if (mine === finding) {
       state.textContent = '';
@@ -609,7 +618,7 @@ async function findOnYouTube() {
   results = results.slice(0, 6);
   matches = results;
   if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
-  state.textContent = 'Best matches first. Click one to play it with the tab:';
+  state.textContent = confident ? '' : 'Best matches first. Click one to play it with the tab:';
   list.innerHTML = '';
   for (const r of results) {
     const li = document.createElement('li');
@@ -631,8 +640,22 @@ async function findOnYouTube() {
     li.append(b);
     list.append(li);
   }
-  list.hidden = false;
-  showState(); // nothing plays until you pick one
+  list.hidden = !!confident; // a confident pick keeps the others one click away
+  showState();
+  if (confident) {
+    if (!song.recording) { usingBox(confident, whyPicked); await useVideo(confident); } // attach only; never replaces a video already chosen
+    else list.hidden = false;
+  }
+}
+
+// "Using: <title> (change)" with the reason; (change) shows the runner-ups.
+function usingBox(r, why = '') {
+  const box = $('pa-using');
+  if (!box) return;
+  box.hidden = !r;
+  if (!r) return;
+  $('pa-using-text').textContent = `Using: ${r.title}${r.author ? ` — ${r.author}` : ''}`;
+  $('pa-using-why').textContent = why ? `Picked because: ${why}.` : '';
 }
 
 const useVideo = (r) => setRecording({ kind: 'youtube', id: r.id, title: r.title, author: r.author });
@@ -662,6 +685,7 @@ export async function playAlongSongOpened(s) {
   finding++;
   $('pa-yt-results').hidden = true;
   $('pa-yt-results').innerHTML = '';
+  usingBox(null);
   matches = [];
   $('pa-find-state').textContent = '';
   $('pa-find').disabled = false;
@@ -701,6 +725,7 @@ export function initPlayAlong(h) {
   });
   $('pa-remove').addEventListener('click', () => setRecording(null));
   $('pa-find').addEventListener('click', () => findOnYouTube());
+  $('pa-using-change').addEventListener('click', () => { $('pa-yt-results').hidden = false; $('pa-find-state').textContent = 'Other matches. Click one to play it with the tab:'; });
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
