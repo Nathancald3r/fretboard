@@ -689,6 +689,10 @@ function initContextMenu() {
           { label: 'Undo' + (undo.length ? `: ${undo[undo.length - 1].label}` : ''), key: 'Ctrl+Z', off: !undo.length, run: undoEdit },
           { label: 'Redo', key: 'Ctrl+Y', off: !redo.length, run: redoEdit },
           { label: 'Deselect', key: 'Esc', off: !r, run: deselect },
+          '-',
+          hooks.pinned() !== null
+            ? { label: `📍 Unpin bar ${hooks.pinned() + 1}`, run: () => hooks.pin(null) }
+            : { label: '📍 Pin this bar (for video sync)', off: barUnder === null, run: () => hooks.pin(barUnder) },
         ];
       } else {
         items = [
