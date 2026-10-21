@@ -8,7 +8,7 @@ const dayKey = (t) => new Date(t).toDateString();
 const startOfDay = (t) => new Date(new Date(t).toDateString()).getTime();
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-function streak(sessions) {
+export function streak(sessions) {
   const days = new Set(sessions.map((s) => startOfDay(s.start)));
   let day = startOfDay(Date.now());
   if (!days.has(day)) day -= DAY; // today not practiced yet doesn't break the streak
@@ -32,11 +32,11 @@ export async function renderLog() {
 
   const bySong = new Map();
   for (const s of sessions) {
-    const entry = bySong.get(s.songId) ?? { title: s.title, artist: s.artist, seconds: 0, best: 0, count: 0 };
+    const entry = bySong.get(s.songId ?? s.title) ?? { title: s.title, artist: s.artist, seconds: 0, best: 0, count: 0 };
     entry.seconds += s.seconds;
     entry.best = Math.max(entry.best, s.maxSpeed || 0);
     entry.count++;
-    bySong.set(s.songId, entry);
+    bySong.set(s.songId ?? s.title, entry);
   }
   $('log-songs').innerHTML = [...bySong.values()].sort((a, b) => b.seconds - a.seconds).map((e) => `
     <div class="log-row"><span>${escape(e.title)} <span class="muted">${escape(e.artist)}</span></span>

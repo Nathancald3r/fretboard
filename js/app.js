@@ -5,6 +5,10 @@ import { initText, openText, closeText, cleanTabText } from './texttab.js';
 import { initMetronome } from './metronome.js';
 import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
+import { renderPractice, trackDrill } from './practicehub.js';
+import { initVocal, stopVocal } from './vocal.js';
+import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
+import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
@@ -17,7 +21,8 @@ import { parseFilename } from './tabinfo.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const VIEWS = ['library', 'player', 'text', 'scales', 'keys', 'tools', 'log'];
+const VIEWS = ['library', 'player', 'text', 'practice', 'scales', 'keys', 'tools', 'vocal', 'log'];
+const PRACTICE_VIEWS = ['practice', 'scales', 'keys', 'tools', 'vocal']; // all highlight the Practice tab
 let currentView = null;
 let editingId = null;
 
@@ -44,14 +49,17 @@ async function route() {
   if (currentView === 'player') closePlayer(); // also when switching songs
   if (currentView === 'text') closeText();
   if (currentView === 'tools' && view !== 'tools') stopTuner();
+  if (currentView === 'vocal' && view !== 'vocal') stopVocal();
+  trackDrill(view);
   currentView = view;
 
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== view; });
   document.body.classList.toggle('in-player', view === 'player');
-  document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view));
+  document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view || (a.dataset.nav === 'practice' && PRACTICE_VIEWS.includes(view))));
 
   if (view === 'library') renderLibrary();
   if (view === 'log') renderLog();
+  if (view === 'practice') renderPractice();
   if (view === 'scales') renderScales();
   if (view === 'keys') renderKeys();
   if (view === 'player') openPlayer(song);
@@ -61,29 +69,50 @@ async function route() {
 
 /* ---------- library ---------- */
 
-const KIND_LABEL = { gp: 'Guitar Pro', xml: 'MusicXML', tex: 'Exercise', text: 'Text tab' };
+let chartFilter = 'all';
+let folderList = [];
 
 async function renderLibrary() {
-  const filter = $('lib-filter').value.trim().toLowerCase();
-  const songs = (await listSongs())
-    .filter((s) => !filter || `${s.title} ${s.artist}`.toLowerCase().includes(filter))
-    .sort((a, b) => (b.lastOpened || b.added) - (a.lastOpened || a.added));
+  const all = await listSongs();
+  folderList = await loadFolders();
+  const names = folderNames(all.filter((s) => chartType(s) !== 'exercise'), folderList);
+  const folderSel = $('lib-folder');
+  const wanted = folderSel.value || 'all';
+  folderSel.innerHTML = `<option value="all">All songs</option><option value="">No folder</option>${names.map((n) => `<option>${escape(n)}</option>`).join('')}`;
+  folderSel.value = [...folderSel.options].some((o) => o.value === wanted) ? wanted : 'all';
 
-  $('library-list').innerHTML = songs.map((s) => `
-    <article class="card" data-id="${escape(s.id)}">
+  const songs = filterSongs(all, { text: $('lib-filter').value, chart: chartFilter, folder: folderSel.value })
+    .sort(SORTS[$('lib-sort').value] || SORTS.recent);
+  const total = all.filter((s) => chartType(s) !== 'exercise').length;
+  document.querySelectorAll('#lib-chart [data-chart]').forEach((b) => b.classList.toggle('on', b.dataset.chart === chartFilter));
+  $('lib-controls').hidden = !total;
+
+  $('library-list').innerHTML = songs.map((s) => {
+    const type = chartType(s);
+    return `<article class="card" data-id="${escape(s.id)}">
       <div class="title">${escape(s.title)}</div>
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
-        <span class="badge">${escape(KIND_LABEL[s.kind] || s.kind)}</span>
+        <span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>
+        ${s.folder ? `<span class="badge folder">📁 ${escape(s.folder)}</span>` : ''}
         ${s.practiceSeconds ? `<span>${formatDuration(s.practiceSeconds)} practiced</span>` : ''}
         ${s.bestSpeed ? `<span>top ${escape(s.bestSpeed)}%</span>` : ''}
       </div>
+      <div class="rate" role="group" aria-label="Your ranking">${[1, 2, 3, 4, 5].map((n) => `<button class="star${n <= (s.rating || 0) ? ' on' : ''}" data-act="rate" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}" aria-label="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</div>
       <div class="actions">
+        <label class="folder-pick" title="Move to a folder">📁<select data-act="folder" aria-label="Folder">
+          <option value="">No folder</option>${names.map((n) => `<option${n === s.folder ? ' selected' : ''}>${escape(n)}</option>`).join('')}<option value="__new__">New folder…</option></select></label>
         <button class="small ghost" data-act="rename">${s.kind === 'text' ? 'Edit' : 'Rename'}</button>
         <button class="small ghost danger" data-act="delete">Delete</button>
       </div>
-    </article>`).join('')
-    || `<div class="empty">${filter ? 'No matches.' : 'Nothing here yet — import a Guitar Pro file or paste a text tab.'}</div>`;
+    </article>`;
+  }).join('') || (total ? '<div class="empty">No songs match these filters.</div>' : `<div class="empty-start">
+      <p>No songs yet.</p>
+      <div class="row">
+        <button class="primary big" data-start="add">+ Song</button>
+        <a class="button big ghost" href="#practice">Go to Practice</a>
+      </div>
+      <p class="muted small-text">Add a song by searching for it above, importing a Guitar Pro file, or pasting a tab. Scales, chord changes, rhythm and vocal training are on the Practice page.</p></div>`);
 }
 
 async function onLibraryClick(e) {
@@ -91,7 +120,13 @@ async function onLibraryClick(e) {
   if (!card) return;
   const id = Number(card.dataset.id);
   const act = e.target.closest('button')?.dataset.act;
+  if (e.target.closest('select, .folder-pick')) return; // handled on change
   if (!act) { location.hash = `song/${id}`; return; }
+  if (act === 'rate') {
+    const n = Number(e.target.closest('button').dataset.n);
+    await rateSong(id, (await getSong(id)).rating === n ? 0 : n); // pressing the same star again clears it
+    return;
+  }
 
   const song = await getSong(id);
   if (act === 'delete') {
@@ -111,7 +146,7 @@ async function onLibraryClick(e) {
 
 // In-page replacement for confirm()/prompt(). Resolves false/null on cancel,
 // true for a plain confirmation, or the edited { title, artist }.
-function ask({ title, text = '', ok = 'OK', fields = null }) {
+function ask({ title, text = '', ok = 'OK', fields = null, single = false }) {
   const dialog = $('ask-dialog');
   $('ask-title').textContent = title;
   $('ask-text').textContent = text;
@@ -119,6 +154,8 @@ function ask({ title, text = '', ok = 'OK', fields = null }) {
   $('ask-ok').textContent = ok;
   $('ask-ok').classList.toggle('danger', ok === 'Delete');
   $('ask-fields').hidden = !fields;
+  $('ask-artist').hidden = single;
+  $('ask-name').placeholder = single ? 'Name' : 'Title';
   if (fields) { $('ask-name').value = fields.title; $('ask-artist').value = fields.artist; }
   dialog.returnValue = '';
   dialog.showModal();
@@ -276,6 +313,7 @@ async function main() {
   initFind();
   initScales();
   initKeys();
+  initVocal();
   initDrawer();
   initQuickImport({ importFiles, openEditor, toast, openSong: (id, { playAlong = false } = {}) => {
     location.hash = `song/${id}`;
@@ -291,7 +329,34 @@ async function main() {
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);
+  $('library-list').addEventListener('change', async (e) => {
+    if (e.target.dataset.act !== 'folder') return;
+    let name = e.target.value;
+    if (name === '__new__') {
+      const f = await ask({ title: 'New folder', ok: 'Create', fields: { title: '', artist: '' }, single: true });
+      name = f?.title.trim() || '';
+      if (name) await addFolder(name);
+    }
+    await moveSong(Number(e.target.closest('.card').dataset.id), name);
+  });
   $('lib-filter').addEventListener('input', renderLibrary);
+  $('lib-sort').addEventListener('change', renderLibrary);
+  $('lib-folder').addEventListener('change', renderLibrary);
+  $('lib-chart').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-chart]');
+    if (b) { chartFilter = b.dataset.chart; renderLibrary(); }
+  });
+  window.addEventListener('songschange', () => { if (!$('view-library').hidden) renderLibrary(); });
+  window.addEventListener('fbtoast', (e) => toast(e.detail));
+  window.addEventListener('findonline', (e) => { // "Find … online" from the top-bar search
+    location.hash = 'library';
+    $('find-query').value = e.detail || '';
+    setTimeout(() => { $('find-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('find-query').focus(); }, 50);
+  });
+  // "+ Song": jump to the prominent Find panel (the quickest way to add one)
+  const addSong = () => $('find-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }) || $('find-query').focus();
+  $('btn-add-song').addEventListener('click', addSong);
+  $('library-list').addEventListener('click', (e) => { if (e.target.closest('[data-start="add"]')) addSong(); });
   window.addEventListener('hashchange', route);
   await recoverPendingSessions();
   await seedDemos();

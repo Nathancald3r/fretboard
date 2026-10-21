@@ -23,11 +23,9 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
     <nav class="nav">
-      <a href="#library" data-nav="library">Library</a>
-      <a href="#scales" data-nav="scales">Scales</a>
-      <a href="#keys" data-nav="keys">Chords &amp; keys</a>
-      <a href="#tools" data-nav="tools">Metronome &amp; Tuner</a>
-      <a href="#log" data-nav="log">Practice log</a>
+      <a href="#library" data-nav="library">Songs</a>
+      <a href="#practice" data-nav="practice">Practice</a>
+      <a href="#log" data-nav="log">Log</a>
     </nav>
     <button id="amp-top" class="small ghost amp-top" hidden title="The amp keeps running in other views">Amp on · turn off</button>
   </header>
@@ -48,9 +46,9 @@
 
   <!-- LIBRARY -->
   <main id="view-library" class="view">
-    <section class="panel find">
-      <h2>Find tabs online</h2>
-      <p class="muted">Type the song, press a site's button, and download the Guitar Pro file there (the one step a site makes you do yourself). With auto-import on, the tab then opens here by itself, ready for play-along; otherwise press <b>Import new downloads</b> below. For text tabs, copy the tab on the page and press <b>Paste from clipboard</b>.</p>
+    <section class="panel find hero" id="find-panel">
+      <h2><span class="hero-icon" aria-hidden="true">🔎</span> Find tabs online</h2>
+      <p class="muted">The quickest way to add a song: type it, press a site's button, and download the Guitar Pro file there (the one step a site makes you do yourself). With auto-import on, the tab then opens here by itself, ready for play-along; otherwise press <b>Import new downloads</b> below. For text tabs and chord charts, copy the page's text and press <b>Paste from clipboard</b>.</p>
       <form id="find-form">
         <div class="row">
           <input id="find-query" type="search" placeholder="Song, or Artist - Song" autocomplete="off">
@@ -62,9 +60,10 @@
 
     <section class="panel">
       <div class="row spread">
-        <h2>Your library</h2>
+        <h2>Your songs</h2>
         <div class="row">
-          <input id="lib-filter" type="search" placeholder="Filter library">
+          <button id="btn-add-song" class="primary" title="Find a song online, import a file, or paste a tab">+ Song</button>
+          <input id="lib-filter" type="search" placeholder="Filter songs">
           <button id="btn-downloads" class="primary" title="Import tab files you downloaded recently (asks for the folder once)" hidden>Import new downloads</button>
           <button id="btn-folder" class="ghost small" title="Choose a different folder to check" hidden>Folder…</button>
           <button id="btn-clip" class="ghost" title="Paste a text tab you copied (e.g. from Ultimate Guitar)" hidden>Paste from clipboard</button>
@@ -72,6 +71,18 @@
           <label class="button">Import files<input id="file-input" type="file" multiple hidden
             accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.gp8,.xml,.musicxml,.mxl,.cap,.capx,.txt"></label>
         </div>
+      </div>
+      <div id="lib-controls" class="row lib-controls">
+        <span class="seg" id="lib-chart" role="group" aria-label="Type of chart">
+          <button data-chart="all" class="on">All</button>
+          <button data-chart="pro" title="Guitar Pro / MusicXML: notation and tab you can play back">Pro tabs</button>
+          <button data-chart="tab" title="Tab typed as text">Text tabs</button>
+          <button data-chart="chords" title="Chords over lyrics">Chord charts</button>
+        </span>
+        <label>Folder <select id="lib-folder"><option value="all">All songs</option></select></label>
+        <label>Sort <select id="lib-sort">
+          <option value="recent">Recent</option><option value="rating">My ranking</option>
+          <option value="title">Title</option><option value="practiced">Most practiced</option></select></label>
       </div>
       <div id="drop-zone" class="drop-zone">Drop Guitar Pro, MusicXML or .txt tab files here</div>
       <div id="library-list" class="cards"></div>
@@ -707,6 +718,47 @@
       <div id="fn-board" class="fretboard"></div>
       <div id="fn-answers" class="note-buttons"></div>
       <p id="fn-score" class="small-text"></p>
+    </section>
+  </main>
+
+  <!-- PRACTICE -->
+  <main id="view-practice" class="view" hidden>
+    <section class="panel">
+      <div class="row spread"><h2>Practice</h2><a class="button small ghost" href="#log">Full practice log</a></div>
+      <div id="pr-stats" class="stats"></div>
+      <h3 class="dr-title">Days you practised</h3>
+      <div id="pr-calendar" class="calendar" role="img" aria-label="Calendar of practice days, darker is more time"></div>
+      <p class="muted small-text cal-key">Less <i class="cal-day l0"></i><i class="cal-day l1"></i><i class="cal-day l2"></i><i class="cal-day l3"></i><i class="cal-day l4"></i> More · time in songs and in the drills below counts</p>
+    </section>
+    <section class="panel">
+      <h2>Drills</h2>
+      <div id="pr-drills" class="cards"></div>
+    </section>
+    <section class="panel">
+      <h2>Exercises</h2>
+      <p class="muted small-text">Warm-ups and technique patterns you can play along with, kept apart from your songs.</p>
+      <div id="pr-exercises" class="cards"></div>
+    </section>
+  </main>
+
+  <!-- VOCAL -->
+  <main id="view-vocal" class="view" hidden>
+    <section class="panel">
+      <div class="row spread"><h2>Vocal training</h2><a class="button small ghost" href="#practice">‹ Practice</a></div>
+      <p class="muted">Wear headphones so the microphone doesn't hear the reference note. Choose a key and scale, press Start, listen to the note, and sing it. Hold it in tune (within 50 cents) for a moment to score; the next note follows.</p>
+      <div class="row">
+        <label>Key <select id="vt-root"></select></label>
+        <label>Scale <select id="vt-scale"></select></label>
+        <button id="vt-go" class="primary">Start (uses mic)</button>
+        <button id="vt-hear" class="ghost">Hear the note</button>
+        <button id="vt-skip" class="ghost">Skip</button>
+      </div>
+      <div class="vocal-board">
+        <div class="vocal-target"><span class="muted small-text">Sing</span><b id="vt-target">–</b></div>
+        <div class="vocal-meter" id="vt-meter" data-status="in" style="--c:0"><i></i></div>
+        <div id="vt-sung" class="muted">–</div>
+        <div id="vt-score" class="muted small-text"></div>
+      </div>
     </section>
   </main>
 

@@ -1,0 +1,35 @@
+// How a song is classified and ordered in the library: pro tab vs chord chart, ratings, folders.
+
+/** 'pro' (Guitar Pro / MusicXML), 'tab' (typed tab lines), 'chords' (chords over lyrics), 'exercise'. */
+export function chartType(song) {
+  if (song.kind === 'tex') return 'exercise';
+  if (song.kind !== 'text') return 'pro';
+  return /^\s*[eEbBgGdDaA]?\|?[-0-9hpbrx/\~()]{0,3}\|?[-0-9hpbrx/\~()|]{8,}/m.test(String(song.data || '')) && /-{3,}/.test(String(song.data || '')) ? 'tab' : 'chords';
+}
+
+export const CHART_LABEL = { pro: 'Pro tab', tab: 'Text tab', chords: 'Chord chart', exercise: 'Exercise' };
+
+export const SORTS = {
+  recent: (a, b) => (b.lastOpened || b.added || 0) - (a.lastOpened || a.added || 0),
+  rating: (a, b) => (b.rating || 0) - (a.rating || 0) || SORTS.recent(a, b),
+  title: (a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }),
+  practiced: (a, b) => (b.practiceSeconds || 0) - (a.practiceSeconds || 0) || SORTS.recent(a, b),
+};
+
+/** Songs for the library page (exercises live on the Practice page). chart: 'all' | 'pro' | 'tab' | 'chords'. */
+export function filterSongs(songs, { text = '', chart = 'all', folder = 'all' } = {}) {
+  const q = text.trim().toLowerCase();
+  return songs.filter((s) => {
+    const type = chartType(s);
+    if (type === 'exercise') return false;
+    if (chart !== 'all' && type !== chart) return false;
+    if (folder === '') return !s.folder; // unfiled
+    if (folder !== 'all' && s.folder !== folder) return false;
+    return !q || `${s.title} ${s.artist}`.toLowerCase().includes(q);
+  });
+}
+
+export const folderNames = (songs, saved = []) =>
+  [...new Set([...saved, ...songs.map((s) => s.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+
+export const stars = (n) => '★'.repeat(n || 0) + '☆'.repeat(5 - (n || 0));
