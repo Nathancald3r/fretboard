@@ -1,7 +1,7 @@
 // One-click imports: paste a text tab straight from the clipboard, and pick up new
 // tab files from the Downloads folder (Chrome / Edge on desktop).
 import { getValue, setValue } from './db.js';
-import { bestMatch } from './tabsources.js';
+import { bestMatch, matchScore } from './tabsources.js';
 
 const $ = (id) => document.getElementById(id);
 const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|txt|pdf)$/i;
@@ -52,6 +52,28 @@ async function checkDownloads(importFiles, toast) {
   // Remember failures too, so a broken file isn't retried every time.
   fresh.forEach((f) => seen.add(fileKey(f)));
   await setValue('importedFiles', [...seen].slice(-500));
+}
+
+// Every PDF in the folder for the song typed in the search box (all its words are in the file name):
+// one click for each instrument's tab. Files already imported are skipped.
+async function importSongPdfs(importFiles, toast) {
+  const query = $('find-query').value.trim();
+  if (!query) { toast('Type the song in the box at the top first, then press this.', 5000); $('find-query').focus(); return; }
+  let dir;
+  try { dir = await folderHandle(); } catch { return; }
+  const seen = new Set((await getValue('importedFiles')) || []);
+  const found = [];
+  for await (const entry of dir.values()) {
+    if (entry.kind !== 'file' || !/\.pdf$/i.test(entry.name) || matchScore(entry.name, query) < 0.99) continue;
+    const file = await entry.getFile();
+    if (!seen.has(fileKey(file))) found.push(file);
+  }
+  if (!found.length) { toast(`No new PDFs for “${query}” in “${dir.name}”.`, 5000); return; }
+  found.sort((a, b) => a.name.localeCompare(b.name));
+  await importFiles(found, { quietIfEmpty: true });
+  found.forEach((f) => seen.add(fileKey(f)));
+  await setValue('importedFiles', [...seen].slice(-500));
+  toast(`Added ${found.length} PDF${found.length > 1 ? 's' : ''} for “${query}”.`, 6000);
 }
 
 async function changeFolder(toast) {
@@ -167,6 +189,8 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   const folderSupported = canWatch;
   $('btn-downloads').hidden = !folderSupported;
   $('btn-folder').hidden = !folderSupported;
+  $('btn-song-pdfs').hidden = !folderSupported;
+  $('btn-song-pdfs').addEventListener('click', () => importSongPdfs(importFiles, toast));
   $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast).then(showAuto));
   $('btn-folder').addEventListener('click', () => changeFolder(toast));
 }

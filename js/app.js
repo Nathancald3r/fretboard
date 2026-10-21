@@ -264,9 +264,12 @@ function readScoreInfo(bytes) {
 function namesFromPdf(base) {
   const pretty = (s) => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : s).trim();
   const m = base.replace(/\s*@.*$/, '').match(/^(?:official\s+)?(.*?)\s+(?:chords?|tabs?)(?:\s*&\s*(?:chords?|tabs?))?\s+by\s+(.+)$/i);
-  if (m) return { title: pretty(m[1]), artist: pretty(m[2]) };
+  // another instrument's part gets its name in the title, so the parts sit side by side in the library
+  const part = (base.match(/\b(bass|drums?|ukulele|piano|keys|keyboard|vocals?|acoustic|banjo|mandolin)\b/i) || [])[1];
+  const tag = (t) => (part && !new RegExp(part, 'i').test(t) ? `${t} (${pretty(part)})` : t);
+  if (m) return { title: tag(pretty(m[1])), artist: pretty(m[2]) };
   const title = base.replace(/\b(tab|chords?)\b|@.*$|[(\[]\d+[)\]]/gi, '').replace(/\s+/g, ' ').trim() || base;
-  return { title: pretty(title), artist: '' };
+  return { title: tag(pretty(title)), artist: '' };
 }
 
 async function importFiles(files, { quietIfEmpty = false } = {}) {
