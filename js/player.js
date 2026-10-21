@@ -31,6 +31,8 @@ import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
 const VENDOR = new URL('../vendor/alphatab/', import.meta.url).href;
+// Realistic built-in sounds: MuseScore General (MIT, FluidR3-based, 38 MB, cached after the first load).
+const DEFAULT_SF = new URL('../vendor/soundfont/MuseScore_General.sf3', import.meta.url).href;
 const PLAYING = 1;
 const MIN_SPEED = 10;
 const MAX_SPEED = 200;
@@ -46,6 +48,9 @@ const trainer = { on: false, loops: 0, start: 60, target: 100, step: 5, every: 2
 
 // A soundfont the user loaded (better instrument samples) replaces the small built-in one.
 let customSoundFont = null; // { name, data: ArrayBuffer }
+// MuseScore General is mixed much quieter than other soundfonts; lift it to a normal level.
+const DEFAULT_SF_GAIN = 2;
+const synthVolume = (v) => (recordingOn() || customSoundFont ? v : v * DEFAULT_SF_GAIN);
 const customSoundFontReady = getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
 
 const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING });
@@ -60,7 +65,7 @@ function ensureApi() {
     display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, resources: { barNumberColor: '#222222' } },
     player: {
       playerMode: AT.PlayerMode.EnabledSynthesizer,
-      soundFont: customSoundFont ? undefined : VENDOR + 'soundfont/sonivox.sf2',
+      soundFont: customSoundFont ? undefined : DEFAULT_SF,
       scrollElement: $('score-scroll'),
       enableCursor: true,
       enableUserInteraction: true,
@@ -102,7 +107,7 @@ function ensureApi() {
   api.playerReady.on(() => {
     delayPositionEvents(api, recordingOn); // Bluetooth headphones: hold the cursor back by their lag
     readyForPlayback = true;
-    api.masterVolume = playAlongState().songVolume;
+    api.masterVolume = synthVolume(playAlongState().songVolume);
     setPlayButton();
   });
   api.soundFontLoad.on((e) => {
@@ -1641,7 +1646,7 @@ function rerender() {
 function showSoundFontName() {
   $('pl-sf-name').textContent = customSoundFont
     ? `Using “${customSoundFont.name}” (${Math.round(customSoundFont.data.byteLength / 1048576)} MB)`
-    : 'Using the small built-in sound set (Sonivox, 1 MB)';
+    : 'Using the built-in realistic sound set (MuseScore General)';
   $('pl-sf-reset').hidden = !customSoundFont;
 }
 
@@ -1654,7 +1659,8 @@ async function useSoundFont(sf) {
   setPlayButton();
   api.resetSoundFonts();
   if (sf) api.loadSoundFont(sf.data, false);
-  else api.loadSoundFont(VENDOR + 'soundfont/sonivox.sf2', false);
+  else api.loadSoundFont(DEFAULT_SF, false);
+  api.masterVolume = synthVolume(playAlongState().songVolume);
 }
 
 function initSound() {
@@ -1680,7 +1686,7 @@ function playModeChanged(recording) {
   readyForPlayback = recording;
   setPlayButton();
   if (!recording && customSoundFont) api.loadSoundFont(customSoundFont.data, false);
-  if (!recording) api.masterVolume = playAlongState().songVolume;
+  if (!recording) api.masterVolume = synthVolume(playAlongState().songVolume);
   api.playbackSpeed = speedPct / 100;
   $('pl-recording-badge').hidden = !recording;
   $('pl-metro').disabled = recording;
@@ -1866,7 +1872,7 @@ export function initPlayer() {
   initClickSheet();
   initAmp({
     setGuitarMuted: applyGuitarMute,
-    setSongVolume: (v) => { if (api) api.masterVolume = v; },
+    setSongVolume: (v) => { if (api) api.masterVolume = synthVolume(v); },
   });
   initSing({
     isPlaying: () => api?.playerState === PLAYING,
