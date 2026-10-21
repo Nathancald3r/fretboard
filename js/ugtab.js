@@ -381,7 +381,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     `\\tempo ${Math.round(firstTempo || tempo)}`,
     '.',
     `\\track ${JSON.stringify(title || 'Guitar')}`,
-    '\\staff {tabs}',
+    '\\staff {score tabs}',
     '\\tuning E4 B3 G3 D3 A2 E2',
     '\\instrument 27',
   ].filter(Boolean).join('\n');

@@ -180,7 +180,7 @@ export function scaleTex({ root, scale, position, pattern = 'straight', noteValu
     `\\tempo ${tempo}`,
     '.',
     '\\track "Guitar"',
-    '\\staff {tabs}',
+    '\\staff {score tabs}',
     bars.join(' |\n'),
   ].join('\n');
 }

@@ -959,6 +959,7 @@ function readScore(s) {
       if (!converted) throw new Error('No tab lines found in this text (chord sheets can’t be played).');
       tex = converted.tex;
     }
+    tex = tex.replace(/\\staff \{tabs\}/g, '\\staff {score tabs}'); // so Notation / Both work on songs saved before
     const importer = new AT.importer.AlphaTexImporter();
     importer.initFromString(tex, api.settings);
     return importer.readScore();
@@ -1099,6 +1100,9 @@ function showShift() {
   $('tp-val').textContent = semis > 0 ? '+' + semis : semis < 0 ? '−' + -semis : '0';
   $('capo-val').textContent = canCapo() ? String(capo) : '–';
   for (const id of ['capo-down', 'capo-up']) $(id).disabled = !canCapo();
+  $('qk-val').textContent = $('tp-val').textContent;
+  $('qk-down').disabled = semis <= -11;
+  $('qk-up').disabled = semis >= 11;
   $('tp-down').disabled = semis <= -11;
   $('tp-up').disabled = semis >= 11;
   $('capo-down').disabled ||= capo <= 0;
@@ -1995,6 +1999,17 @@ export function initPlayer() {
   bindBtControls({ button: $('sb-bt'), input: $('sb-bt-ms'), nudges: document.querySelectorAll('#sb-bt-row [data-bt]') });
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
   $('pl-metro').addEventListener('click', toggleClick);
+  // Quick switches on the play bar: notation (tab / both / notes) and transpose
+  const showStave = () => document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.classList.toggle('on', b.dataset.stave === $('pl-stave').value));
+  document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.addEventListener('click', () => {
+    $('pl-stave').value = b.dataset.stave;
+    $('pl-stave').dispatchEvent(new Event('change'));
+  }));
+  try { const keep = localStorage.getItem('fb-stave'); if (keep) $('pl-stave').value = keep; } catch { /* no storage */ }
+  $('pl-stave').addEventListener('change', () => { showStave(); try { localStorage.setItem('fb-stave', $('pl-stave').value); } catch { /* no storage */ } });
+  showStave();
+  $('qk-down').addEventListener('click', () => $('tp-down').click());
+  $('qk-up').addEventListener('click', () => $('tp-up').click());
   ['pl-layout', 'pl-stave', 'pl-zoom'].forEach((id) => $(id).addEventListener('change', () => api && rerender()));
 
   // Sections: click jumps there, double-click loops the section.

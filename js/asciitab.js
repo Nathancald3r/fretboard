@@ -214,7 +214,7 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = 100 
     `\\tempo ${Math.round(tempo)}`,
     '.',
     `\\track ${quote(title || 'Guitar')}`,
-    `\\staff {tabs}`,
+    `\\staff {score tabs}`,
     `\\tuning ${tuning.map(midiName).join(' ')}`,
     strings <= 5 ? '\\instrument 33' : '\\instrument 27',
   ].filter(Boolean).join('\n');
