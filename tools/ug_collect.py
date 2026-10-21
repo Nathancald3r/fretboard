@@ -68,6 +68,7 @@ def main():
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--only", default="")
     ap.add_argument("--out", default="")
+    ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     a = ap.parse_args()
     PORT = a.port
     only = [s.strip().lower() for s in a.only.split(",") if s.strip()]
@@ -115,6 +116,7 @@ def main():
             if not print_open():
                 break
             time.sleep(1)
+        time.sleep(a.gap)  # unhurried pace, about what printing by hand takes
     print("Done. Now use 'PDFs for this song' in Fretboard.")
 
 
