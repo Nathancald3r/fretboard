@@ -235,7 +235,7 @@ async function loadPdfjs() {
   return pdfjs;
 }
 
-async function renderInk(page, scale) {
+export async function renderInk(page, scale) {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(viewport.width);

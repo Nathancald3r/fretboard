@@ -9,11 +9,11 @@ const bar = (x0, x1, cols) => ({ x0, x1, cols });
 const eighths = (x0) => [0, 1, 2, 3, 4, 5].map((i) => col(x0 + 30 + i * 32, 2, [2, String(7 + i)]));
 
 const strips = [
-  { heading: true, bars: [bar(0, 220, eighths(0)), bar(220, 440, eighths(220)), bar(440, 660, eighths(440))] },
+  { heading: true, bars: [{ ...bar(0, 220, eighths(0)), heading: true }, bar(220, 440, eighths(220)), bar(440, 660, eighths(440))] },
   {
     heading: true,
     bars: [
-      bar(0, 220, [col(30, 6, [2, '10'], [1, '11']), col(130, 3, [0, 'X'])]), // dotted quarter, then a dotted eighth: the last note rings on
+      { ...bar(0, 220, [col(30, 6, [2, '10'], [1, '11']), col(130, 3, [0, 'X'])]), heading: true }, // dotted quarter, then a dotted eighth: the last note rings on
       bar(220, 440, []), // nothing played
       bar(440, 660, eighths(440)),
     ],

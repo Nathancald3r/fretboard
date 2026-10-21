@@ -103,7 +103,7 @@ const group = (items, key, gap) => {
 };
 
 /**
- * @returns {{ name: string, tempo: number|null, found: boolean, numbered: boolean }}
+ * @returns {{ sections: {name: string, x: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
  */
 export function readHeading(ink, w, st, { debug = null } = {}) {
   const u = st.u;
@@ -119,7 +119,7 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
     if (line) { line.items.push(c); line.cy = (line.cy * (line.items.length - 1) + cy) / line.items.length; }
     else lines.push({ cy, items: [c] });
   }
-  let name = '', tempo = null, found = false, numbered = false;
+  const sections = [], tempos = [];
   for (const line of lines) {
     const items = line.items.sort((a, b) => a.x0 - b.x0);
     if (debug && lines.length) debug.push({ line: items.map((c) => [c.x0, c.w, c.h]) });
@@ -151,7 +151,7 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
         txt += ch;
       }
       const v = Number(txt);
-      if (txt && v >= 30 && v <= 300) tempo = v;
+      if (txt && v >= 30 && v <= 300) tempos.push({ v, x: items[eq].x0 });
       continue;
     }
     // section name: first recognised word, plus a number after it
@@ -160,13 +160,12 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
       if (bx.h < 0.45 * u) continue;
       const [d, wd] = best(grid(bx.px, bx.a, bx.t, bx.w, bx.h), WORDS);
       if (debug) debug.push({ word: wd, d, w: bx.w });
-      if (d < 0.225 && !found) {
-        name = wd;
-        found = true;
+      if (d < 0.225) {
         const next = boxes[i + 1];
-        if (next && next.n === 1 && next.w < 0.9 * u && next.h > 0.55 * u) numbered = true; // "Verse 1": the number is counted by the caller
+        // "Verse 1": the number is counted by the caller
+        sections.push({ name: wd, x: bx.a, numbered: !!(next && next.n === 1 && next.w < 0.9 * u && next.h > 0.55 * u) });
       }
     }
   }
-  return { name, tempo, found, numbered };
+  return { sections, tempos };
 }

@@ -76,7 +76,7 @@ function glyphAt(comp) {
   return best <= MAX_MISS ? ch : null;
 }
 
-function components(ink, w, st, bars) {
+export function components(ink, w, st, bars) {
   const u = st.u;
   const t = Math.max(0, Math.round(st.ys[0] - 0.8 * u)), b = Math.round(st.ys[5] + 0.8 * u);
   const seen = new Uint8Array(w * (b + 1));
@@ -112,8 +112,11 @@ function components(ink, w, st, bars) {
 function readNotes(ink, w, st, bars) {
   const u = st.u;
   const glyphs = [];
+  const parens = [];
   for (const c of components(ink, w, st, bars)) {
     const cy = (c.y0 + c.y1) / 2;
+    // "(8)": a note held over from before is written in brackets, which stand taller than the numbers
+    if (c.h > 0.6 * u && c.h < 1.6 * u && c.w <= 4 && c.area >= 10 && cy > st.ys[0] - 0.6 * u && cy < st.ys[5] + 0.6 * u) { parens.push({ x0: c.x0, x1: c.x1, cy }); continue; }
     if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u) continue;
     if (cy < st.ys[0] - 0.45 * u || cy > st.ys[5] + 0.45 * u) continue;
     const ch = glyphAt(c);
@@ -129,7 +132,10 @@ function readNotes(ink, w, st, bars) {
     if (last && last.s === g.s && g.x0 - last.x1 < 0.45 * u && last.t !== 'X' && g.ch !== 'X') { last.t += g.ch; last.x1 = g.x1; }
     else notes.push({ s: g.s, x0: g.x0, x1: g.x1, t: g.ch });
   }
-  notes.forEach((n) => { n.cx = (n.x0 + n.x1) / 2; });
+  notes.forEach((n) => {
+    n.cx = (n.x0 + n.x1) / 2;
+    n.tied = parens.some((q) => Math.abs(q.cy - st.ys[n.s]) < 0.8 * u && (Math.abs(q.x1 - n.x0) < 0.5 * u || Math.abs(q.x0 - n.x1) < 0.5 * u));
+  });
   return notes.sort((a, b) => a.cx - b.cx);
 }
 
@@ -221,7 +227,15 @@ export function readStrip(ink, light, w, h, st) {
   // The text above the staff: a section name starts a new section, a tempo mark changes the tempo.
   const dbg = [];
   const hd = readHeading(ink, w, st, { debug: dbg });
-  return { bars, heading: hd.found, name: hd.name, tempo: hd.tempo, numbered: hd.numbered, dbg };
+  // Each mark belongs to the bar it stands above (a section can start mid-line).
+  const barAt = (x) => {
+    let k = 0;
+    bars.forEach((b, i) => { if (b.x0 <= x + 0.6 * st.u) k = i; });
+    return bars[k];
+  };
+  for (const sec of hd.sections) Object.assign(barAt(sec.x), { heading: true, name: sec.name, numbered: sec.numbered });
+  for (const t of hd.tempos) barAt(t.x).tempo = t.v;
+  return { bars, dbg };
 }
 
 /* ---------- alphaTex ---------- */
@@ -248,15 +262,16 @@ const snap = (len) => {
   return allowed.reduce((b, a) => (Math.abs(a - len) < Math.abs(b - len) ? a : b), 4);
 };
 
+const fretOf = (n) => (n.tie ? '-' : n.t === 'X' ? 'x' : n.t);
 const beatTex = (notes, len) => {
   const d = dur(len);
-  const one = notes.map((n) => `${n.t === 'X' ? 'x' : n.t}.${n.s + 1}`);
+  const one = notes.map((n) => `${fretOf(n)}.${n.s + 1}`);
   return notes.length === 1 ? `${one[0]}.${d}` : `(${one.join(' ')}).${d}`;
 };
 // A length with no single note value (e.g. 10 sixteenths) is written as tied notes.
 const tiedTex = (notes, len) => {
   const [first, ...rest] = pieces(len);
-  const n = notes.map((x) => `${x.t === 'X' ? 'x' : x.t}.${x.s + 1}`);
+  const n = notes.map((x) => `${fretOf(x)}.${x.s + 1}`);
   const head = n.length === 1 ? `${n[0]}.${dur(first)}` : `(${n.join(' ')}).${dur(first)}`;
   const tail = rest.map((p) => (n.length === 1 ? `-.${notes[0].s + 1}.${dur(p)}` : `(${notes.map((x) => `-.${x.s + 1}`).join(' ')}).${dur(p)}`));
   return [head, ...tail].join(' ');
@@ -268,7 +283,7 @@ const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
  * @returns {{ tex: string, bars: number, exact: number } | null}
  */
 export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = {}) {
-  const bars = strips.flatMap((s) => s.bars.map((b, i) => ({ ...b, heading: s.heading && i === 0, name: i === 0 ? s.name : '', numbered: i === 0 && s.numbered, tempo: i === 0 ? s.tempo : null })));
+  const bars = strips.flatMap((s) => s.bars);
   const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
@@ -279,6 +294,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
   const num = T % 4 === 0 && !grouped3 ? T / 4 : T / 2;
   const den = T % 4 === 0 && !grouped3 ? 4 : 8;
   let exact = 0, sectionNo = 0;
+  let prevStrings = new Set();
   const seen = {};
   const sectionName = (b) => {
     if (!b.name) return `Part ${++sectionNo}`;
@@ -302,6 +318,11 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     while (total > T) { const k = lens.indexOf(Math.max(...lens)); lens[k] = snap(lens[k] - (total - T)); total = lens.reduce((a, c) => a + c, 0); }
     // when the row says less than a full bar, the last note rings on to the end of the bar
     if (b.cols.length && total < T) { lens[lens.length - 1] += T - total; total = T; }
+    for (const c of b.cols) {
+      for (const n of c.notes) n.tie = n.tied && prevStrings.has(n.s); // only a note on a string that was just played can be a tie
+      prevStrings = new Set(c.notes.map((n) => n.s));
+    }
+    if (!b.cols.length) prevStrings = new Set();
     const beats = b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
     if (!b.cols.length) beats.splice(0, beats.length, restTex(T));
     const head = [];
