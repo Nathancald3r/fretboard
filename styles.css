@@ -20,6 +20,7 @@ body {
   color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 h1, h2 { margin: 0 0 .4rem; line-height: 1.2; }
 h1 { font-size: 1.5rem; }
@@ -1103,3 +1104,9 @@ body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
 .jog-pad .jog-arrow { color: var(--muted); font-size: 1.2rem; }
 .jog-pad.on { border-color: var(--accent); background: var(--panel-2); }
 .jog-pad[aria-disabled=true] { opacity: .45; }
+
+/* Phone feel: no overscroll glow chaining, no 300 ms tap delay, no shadow repainting under the video */
+html, body { overscroll-behavior: none; }
+#score-scroll, .drawer-body, .sheet { overscroll-behavior: contain; }
+button, a, input, select, label, .jog-pad, .jog-time { touch-action: manipulation; }
+@media (max-width: 640px) { .playbar-row > #pa-video, .playbar-row > #pa-video.mini, .playbar-row > #pa-video.collapsed { box-shadow: none; border-top: 1px solid var(--line); } }

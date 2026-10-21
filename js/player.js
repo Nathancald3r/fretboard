@@ -25,6 +25,7 @@ import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
+import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -121,6 +122,7 @@ function ensureApi() {
     setPlayButton();
     if (e?.stopped) { singStopped(); judgeStopped(); }
     playAlongState2(e.state === PLAYING);
+    keepScreenOn(e.state === PLAYING || !!counting);
     if (e.state === PLAYING) measureLag.start();
   });
   api.playerPositionChanged.on(onPosition);
@@ -984,6 +986,7 @@ export async function openPlayer(s) {
   cancelCountIn();
   readyForPlayback = readyForPlayback && !!api;
   $('pl-title').textContent = s.title;
+  describeSong(s.title, s.artist);
   $('pl-artist').textContent = s.artist || '';
   $('pl-loading').textContent = 'Loading score…';
   $('pl-loading').hidden = false;
@@ -1279,6 +1282,7 @@ export function closePlayer() {
   if (!api) return;
   cancelCountIn();
   api.pause();
+  keepScreenOn(false);
   stopTrainer();
   timer.end();
 }
@@ -1767,6 +1771,11 @@ export function initPlayer() {
     toggleButton(id, on);
   }
   $('pl-play').addEventListener('click', togglePlay);
+  initMediaSession({
+    play: () => { if (api?.playerState !== PLAYING) togglePlay(); },
+    pause: () => { if (api?.playerState === PLAYING || counting) togglePlay(); },
+    back: () => backToStart(),
+  });
   $('pl-stop').addEventListener('click', () => {
     cancelCountIn();
     api?.stop();
