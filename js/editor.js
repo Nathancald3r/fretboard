@@ -656,7 +656,7 @@ export function initEditor(h) {
     if (document.getElementById('view-player')?.hidden || typing(e) || !hooks.song()) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    if (k === 'escape' && selectionRange() && editMode()) { deselect(); return; }
+    if (k === 'escape' && selectionRange()) { deselect(); return; } // also in Practice: Esc clears a selected range / loop
     if (mod && k === 'z') { e.preventDefault(); (e.shiftKey ? redoEdit : undoEdit)(); }
     else if (mod && k === 'y') { e.preventDefault(); redoEdit(); }
     else if (mod && editMode() && k === 'c' && selectionRange()) { e.preventDefault(); copyBars(false); }
