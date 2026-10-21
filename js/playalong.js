@@ -976,7 +976,9 @@ export function initPlayAlong(h) {
     hold.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, hold.target + speed(hold.dx) * ((now - hold.t) / 1000)));
     hold.t = now;
     $('pa-vid-time').textContent = fmtT(hold.target * 1000);
-    if (now - hold.seek > 300 && speed(hold.dx)) { hold.seek = now; seekTo(hold.target, false); }
+    // With sound on, the video plays and is pulled back to the target every half second, like a tape scrub:
+    // you hear a short snippet of the spot you are on, moving as you push. With sound off it only moves on release.
+    if (hear && now - hold.seek > 500) { hold.seek = now; seekTo(hold.target, false); }
     requestAnimationFrame(step);
   };
   pad.addEventListener('pointerdown', (e) => {
