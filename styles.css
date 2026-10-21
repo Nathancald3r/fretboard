@@ -1213,3 +1213,15 @@ body.edit-mode .ed-close { display: none; }
 .ed-bar button { min-height: 44px; min-width: 44px; flex: 1 1 auto; }
 .ed-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 .ed-bar button:disabled { opacity: .4; }
+
+/* Edit mode on a wide screen: the editor is a side panel, so it never covers the tab */
+@media (min-width: 900px) {
+  body.edit-mode #ed-sheet {
+    position: fixed; right: .75rem; top: calc(var(--top-h, 52px) + .6rem); bottom: calc(var(--dock-h, 110px) + .75rem);
+    width: 360px; max-height: none !important; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 10px 30px #0008;
+  }
+  body.edit-mode #score-scroll { margin-right: 372px; padding-bottom: 0; }
+  body.edit-mode .pa-video { right: auto; left: 1rem; width: 320px; }
+  body.edit-mode .ed-bar { top: 3rem; }
+  body.edit-mode #ed-version-chip { max-width: 9rem; }
+}
