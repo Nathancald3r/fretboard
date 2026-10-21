@@ -230,10 +230,26 @@ function currentBarLookup() {
   return bars[currentBarIndex()] || bars[0];
 }
 
+// Scrolls the tab to the line the playhead is on. The cursor itself isn't placed until playback
+// starts (so scrollToCursor does nothing during a count-in); the line's bounds are known earlier.
+function scrollToPlayhead() {
+  const bars = playedBars();
+  const box = $('score-scroll');
+  const systems = api.renderer?.boundsLookup?.staffSystems;
+  const mb = bars[currentBarIndex()]?.masterBar.index;
+  const line = mb === undefined ? null : systems?.find((sys) => sys.bars.some((b) => b.index === mb));
+  if (line && box) {
+    const top = line.visualBounds.y + $('alphatab').getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTo({ top: Math.max(0, top - 40), behavior: 'instant' });
+    return;
+  }
+  api.scrollToCursor?.();
+}
+
 // Starts playback from the current position, with the count-in if it's on.
 function startPlayback() {
   if (!api || !readyForPlayback || counting) return;
-  api.scrollToCursor?.(); // show the playhead right away, so the count-in happens where the song will start
+  scrollToPlayhead(); // show the playhead right away, so the count-in happens where the song will start
   if (!countInOn() || usesClassicCountIn(click)) {
     api.countInVolume = countInOn() && !recordingOn() ? click.countVolume : 0;
     api.play();
