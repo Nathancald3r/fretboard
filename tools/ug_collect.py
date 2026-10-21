@@ -35,6 +35,8 @@ def close_old_prints():
     stale = [t for t in ts if t["url"].startswith("chrome://print") and t["type"] == "page"]
     if stale:  # the tab that opened it can stay frozen, so close the UG tabs too; a fresh one opens
         stale += [t for t in ts if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"]]
+        # keep a blank tab so closing those never closes the whole Chrome window
+        urllib.request.urlopen(urllib.request.Request(f"http://localhost:{PORT}/json/new?about:blank", method="PUT"), timeout=5).read()
     for t in stale:
         urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
     time.sleep(1)
