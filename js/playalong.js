@@ -198,7 +198,14 @@ function flatSyncPoints(points) {
     return n;
   });
   const offset = totalOffset();
-  const sorted = points.filter(([p]) => p < bars.length).sort((a, b) => a[0] - b[0]);
+  // Mistapped points (two bars a few ms apart) make the cursor fly through the song: a bar can't
+  // last under 0.35 s, so a point that squeezes the bars before it that tight is ignored.
+  const sorted = [];
+  for (const pt of points.filter(([p]) => p < bars.length).sort((a, b) => a[0] - b[0])) {
+    const last = sorted[sorted.length - 1];
+    if (last && (pt[1] - last[1]) / Math.max(1, pt[0] - last[0]) < 350) continue;
+    sorted.push(pt);
+  }
   const ahead = lead();
   // The bars before a video's first part keep their written tempo: a point at 0 ms.
   if (sorted.length && sorted[0][0] > 0) sorted.unshift([0, -ahead]);
