@@ -769,15 +769,12 @@ function usingBox(r, why = '') {
 
 const useVideo = (r) => setRecording({ kind: 'youtube', id: r.id, title: r.title, author: r.author });
 
-// Picked by hand: play it with the tab from the start, panel closed, so you can hear and
+// Picked by hand: link it with the panel closed; press play to hear and
 // see whether it matches the chords (‹ › on the video try the other matches).
 async function tryVideo(r) {
   if (!r) return;
   hooks.closeSheets();
-  const reload = !(on && media?.kind === 'youtube'); // switching videos keeps the loaded MIDI
-  if (reload) hooks.playWhenLoaded(); // before the MIDI loads: that's what starts it
-  await useVideo(r);
-  if (on && !reload) setTimeout(() => hooks.play(), 150);
+  await useVideo(r); // nothing starts by itself: press play (or G) when you want to hear it
 }
 
 function stepMatch(step) {
