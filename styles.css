@@ -848,3 +848,4 @@ label.block input, label.block textarea { background: var(--bg); color: var(--te
   .pa-sheet .jog { height: 44px; }
   .pa-sheet .jog .mono { font-size: 1.3rem; }
 }
+#pa-bt.on { border-color: var(--accent); color: var(--accent); }

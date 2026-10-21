@@ -328,6 +328,12 @@
                 <button id="pa-clear" class="ghost small">Reset sync</button>
               </div>
               <span id="pa-sync-state" class="muted small-text"></span>
+              <div class="row" title="Bluetooth headphones play the sound a little late, so the tab runs ahead of what you hear. This holds the tab back by the same amount. Turn it on, then adjust until the cursor lands on the beat you hear.">
+                <button id="pa-bt" class="ghost small">Bluetooth headphones</button>
+                <button class="ghost small" data-bt="-10">−10</button>
+                <label><input id="pa-bt-ms" type="number" min="0" max="1000" step="10" style="width:4.5rem"> ms</label>
+                <button class="ghost small" data-bt="10">+10</button>
+              </div>
               <h3>Skip a part</h3>
               <div class="row" title="An interlude, applause or talking the tab does not have: scrub to where it begins, press now, scrub to where it ends, press now, then Skip it">
                 <label>From <input id="pa-skip-from" type="number" min="0" step="0.1" placeholder="s" style="width:4.2rem"></label>

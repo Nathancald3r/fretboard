@@ -196,7 +196,7 @@ function flatSyncPoints(points) {
     seen.set(i, n + 1);
     return n;
   });
-  const offset = song?.syncOffset || 0;
+  const offset = totalOffset();
   const sorted = points.filter(([p]) => p < bars.length).sort((a, b) => a[0] - b[0]);
   const ahead = lead();
   // The bars before a video's first part keep their written tempo: a point at 0 ms.
@@ -349,7 +349,7 @@ function matchTempo(bpm, quiet = false) {
 const hasStart = () => !!song?.syncPoints?.some(([p]) => p === startIdx()) && !!song?.videoMaster;
 function applyStartAt(realMs) {
   if (!media || !song) return;
-  setStart(Math.max(0, (toPlayed(realMs) - (song.syncOffset || 0)) / 1000));
+  setStart(Math.max(0, (toPlayed(realMs) - totalOffset()) / 1000));
   fillStartBars();
 }
 
@@ -449,7 +449,7 @@ export function tapSync() {
   const api = hooks.api();
   if (api.playerState !== 1) return false;
   const bars = hooks.playedBars();
-  const ms = media.now() - (song.syncOffset || 0);
+  const ms = media.now() - totalOffset();
   if (!taps) {
     // First tap: the bar whose (current) start is closest to now.
     const tick = api.tickPosition;
@@ -614,6 +614,14 @@ let autoTried = false; // the linked video is switched on once per opened song
 let matches = []; // the last search's results, to step through from the video
 
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+// Headphone delay: Bluetooth audio arrives a moment after the video clock, so the tab cursor
+// is held back by the same amount. A device setting, not part of the song.
+const BT_KEY = 'fretboard.audioDelayMs';
+const BT_DEFAULT = 200;
+let btDelay = 0;
+try { btDelay = Math.max(0, Math.min(1000, Number(localStorage.getItem(BT_KEY)) || 0)); } catch { /* no storage */ }
+const totalOffset = () => (song?.syncOffset || 0) + btDelay;
+
 let finding = 0;
 let findRound = 0; // presses of Find for this song; each one looks for other videos
 let shownIds = new Set();
@@ -778,6 +786,21 @@ export function initPlayAlong(h) {
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
+  const showBt = () => {
+    $('pa-bt-ms').value = btDelay;
+    $('pa-bt').classList.toggle('on', btDelay > 0);
+    $('pa-bt').textContent = btDelay > 0 ? 'Bluetooth: on' : 'Bluetooth headphones';
+  };
+  const setBt = (ms) => {
+    btDelay = Math.max(0, Math.min(1000, Math.round(Number(ms) || 0)));
+    try { localStorage.setItem(BT_KEY, String(btDelay)); } catch { /* no storage */ }
+    showBt();
+    if (song && on) applySync();
+  };
+  $('pa-bt').addEventListener('click', () => setBt(btDelay > 0 ? 0 : BT_DEFAULT));
+  $('pa-bt-ms').addEventListener('change', (e) => setBt(e.target.value));
+  document.querySelectorAll('[data-bt]').forEach((b) => b.addEventListener('click', () => setBt(btDelay + Number(b.dataset.bt))));
+  showBt();
   document.querySelectorAll('[data-nudge]').forEach((b) => b.addEventListener('click', () => {
     if (!song) return;
     song.syncOffset = (song.syncOffset || 0) + Number(b.dataset.nudge);
