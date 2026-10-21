@@ -278,7 +278,9 @@ function doBars(act, label = '') {
 // The beat you tapped in the tab. string: the internal number, higher = higher on the page.
 let sel = null;
 
+let lastBeat = null; // the beat under the last click, right-click included
 export function pickBeat(beat) {
+  lastBeat = beat || lastBeat;
   if (!beat || !$('ed-sheet') || $('ed-sheet').hidden) return;
   const bar = beat.voice.bar;
   if (beat.voice.index !== 0) { toast('Edit the first voice only.'); return; }
@@ -615,6 +617,13 @@ function initEditMode() {
 
 /* ---------- right-click menu on the tab ---------- */
 
+function pinHere() {
+  const link = $('pa-link-here');
+  if (!link || link.disabled) { toast('Open the linked video first (Video button), then play it to the right moment.'); return; }
+  if (lastBeat) hooks.selectBars(lastBeat.voice.bar.index, lastBeat.voice.bar.index); // the bar you right-clicked
+  setTimeout(() => link.click(), 80);
+}
+
 let ctxEl = null;
 let ctxPending = false;
 const closeCtx = () => { ctxEl?.remove(); ctxEl = null; };
@@ -670,7 +679,7 @@ function initContextMenu() {
           { label: 'Clear selection', key: 'Esc', off: !r, run: deselect },
           '-',
           { label: hooks.holdScroll() ? '📌 Let the tab follow the playhead' : '📌 Keep the tab still while playing', run: () => hooks.toggleHold() },
-          { label: '🎧 Music starts here (video at this moment)', off: !document.getElementById('pa-link-here') || document.getElementById('pa-link-here').disabled, run: () => document.getElementById('pa-link-here').click() },
+          { label: '📍 Pin the video here: music starts at this bar', run: pinHere },
           '-',
           { label: '✎ Edit this tab', run: () => { location.hash = `edit/${song.id}`; } },
         ];

@@ -1201,7 +1201,7 @@ body.edit-mode .ver-pill { cursor: pointer; }
 .card-menu button small { color: var(--muted); font-size: .72rem; }
 .card-menu button:hover, .card-menu button:focus-visible { background: var(--panel-2); }
 .card-menu button.danger { color: #ff7b7b; }
-@media (max-width: 640px) { .card-menu { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; } }
+@media (max-width: 640px) and (pointer: coarse) { .card-menu:not(.ctx-menu) { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; } }
 
 /* Edit mode: the editor, without the practice tools */
 body.edit-mode .mode-seg, body.edit-mode .sheet-btns, body.edit-mode #pl-more, body.edit-mode .live-only,
@@ -1229,4 +1229,4 @@ body.edit-mode .ed-close { display: none; }
 .ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: .2rem 0; }
 .ctx-menu button:disabled { opacity: .4; }
 .ctx-menu { z-index: 120; }
-@media (max-width: 640px) { .ctx-menu { left: 8px !important; right: 8px; } }
+@media (pointer: coarse) { .ctx-menu { min-width: 15rem; } }
