@@ -3,6 +3,7 @@
 // stems, beams, flags and dots, and builds alphaTex. Image sizes are normalised to a staff
 // spacing of UG_UNIT pixels by the caller (see pdftab.js).
 import { UG_ATLAS, UG_W, UG_H } from './ugatlas.js';
+import { readHeading } from './ugtext.js';
 
 export const UG_UNIT = 18;
 const TEMPLATES = UG_ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -176,19 +177,22 @@ function stemLength(ink, w, s, u) {
   const x = s.x;
   const bottom = [s.bot - Math.round(0.6 * u), s.bot + 2];
   const far = Math.max(bandCount(ink, w, x + 1.0 * u, x + 1.2 * u, bottom[0], bottom[1]), bandCount(ink, w, x - 1.2 * u, x - 1.0 * u, bottom[0], bottom[1]));
-  const near = bandCount(ink, w, x + 0.45 * u, x + 0.7 * u, bottom[0], bottom[1]);
-  const flags = far || near;
-  let dot = false;
-  if (!far) {
-    const my = Math.round((s.top + s.bot) / 2);
-    let n = 0;
-    for (let y = my - Math.round(0.5 * u); y <= my + Math.round(0.5 * u); y++) {
-      for (let xx = Math.round(x + 0.5 * u); xx <= Math.round(x + 1.1 * u); xx++) n += ink[y * w + xx];
-    }
-    dot = n >= 6 && n <= 70;
+  if (far) return { len: far >= 2 ? 1 : 2, beamed: true }; // beamed eighths / sixteenths
+  // To the right of a lone stem: a dot is a small blob, a flag a tall curl at the bottom.
+  const xa = Math.round(x + 0.3 * u), xb = Math.round(x + 1.0 * u);
+  const runs = [];
+  let start = -1;
+  for (let y = s.top - 2; y <= s.bot + 4; y++) {
+    let any = false;
+    for (let xx = xa; xx <= xb && !any; xx++) any = ink[y * w + xx] === 1;
+    if (any && start < 0) start = y;
+    if (!any && start >= 0) { runs.push(y - start); start = -1; }
   }
-  const base = flags ? (flags >= 2 ? 1 : 2) : 4;
-  return { len: dot ? base * 1.5 : base, beamed: !!far };
+  if (start >= 0) runs.push(s.bot + 5 - start);
+  const flagRun = runs.length && runs[runs.length - 1] >= 9 ? runs[runs.length - 1] : 0;
+  const dot = runs.some((r, i) => r <= 8 && r >= 3 && (i < runs.length - 1 || !flagRun));
+  const base = flagRun ? (flagRun >= 18 ? 1 : 2) : 4;
+  return { len: dot ? base * 1.5 : base, beamed: false };
 }
 
 /* ---------- strips -> bars ---------- */
@@ -214,18 +218,10 @@ export function readStrip(ink, light, w, h, st) {
     }
     bars.push({ x0: bl[i], x1: bl[i + 1], cols });
   }
-  // A heading above the staff (section name) starts a new section.
-  const u = st.u;
-  let heading = false;
-  const hy0 = Math.max(0, Math.round(st.ys[0] - 2.3 * u)), hy1 = Math.round(st.ys[0] - 0.9 * u);
-  for (let y = hy0; y <= hy1 && !heading; y++) {
-    let run = 0;
-    for (let x = st.x0; x <= st.x1; x++) {
-      run = ink[y * w + x] ? run + 1 : 0;
-      if (run >= 0.8 * u) { heading = true; break; }
-    }
-  }
-  return { bars, heading };
+  // The text above the staff: a section name starts a new section, a tempo mark changes the tempo.
+  const dbg = [];
+  const hd = readHeading(ink, w, st, { debug: dbg });
+  return { bars, heading: hd.found, name: hd.name, tempo: hd.tempo, numbered: hd.numbered, dbg };
 }
 
 /* ---------- alphaTex ---------- */
@@ -272,7 +268,7 @@ const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
  * @returns {{ tex: string, bars: number, exact: number } | null}
  */
 export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = {}) {
-  const bars = strips.flatMap((s) => s.bars.map((b, i) => ({ ...b, heading: s.heading && i === 0 })));
+  const bars = strips.flatMap((s) => s.bars.map((b, i) => ({ ...b, heading: s.heading && i === 0, name: i === 0 ? s.name : '', numbered: i === 0 && s.numbered, tempo: i === 0 ? s.tempo : null })));
   const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
@@ -283,13 +279,21 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
   const num = T % 4 === 0 && !grouped3 ? T / 4 : T / 2;
   const den = T % 4 === 0 && !grouped3 ? 4 : 8;
   let exact = 0, sectionNo = 0;
+  const seen = {};
+  const sectionName = (b) => {
+    if (!b.name) return `Part ${++sectionNo}`;
+    seen[b.name] = (seen[b.name] || 0) + 1;
+    return b.numbered ? `${b.name} ${seen[b.name]}` : b.name;
+  };
+  const firstTempo = bars.find((b) => b.tempo)?.tempo;
+  let lastTempo = firstTempo || tempo;
   const out = bars.map((b, i) => {
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
     if (Math.round(sum) === T) exact++;
-    else if (b.cols.length && sum > T) {
+    else if (b.cols.length > 1) {
       // the rhythm row didn't add up: spread the bar by how far apart the notes sit
-      const ends = [...b.cols.map((c) => c.cx), b.x1 - 12];
+      const ends = [...b.cols.map((c) => c.cx), b.x1];
       const span = ends[ends.length - 1] - ends[0];
       lens = b.cols.map((_, k) => snap(((ends[k + 1] - ends[k]) / span) * T));
     }
@@ -301,14 +305,15 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     const beats = b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
     if (!b.cols.length) beats.splice(0, beats.length, restTex(T));
     const head = [];
-    if (b.heading || i === 0) head.push(`\\section "Part ${++sectionNo}"`);
+    if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
+    if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
     if (i === 0) head.push(`\\ts ${num} ${den}`);
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
   });
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
-    `\\tempo ${Math.round(tempo)}`,
+    `\\tempo ${Math.round(firstTempo || tempo)}`,
     '.',
     `\\track ${JSON.stringify(title || 'Guitar')}`,
     '\\staff {tabs}',

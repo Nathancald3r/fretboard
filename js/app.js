@@ -291,7 +291,7 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
           ? { kind: 'tex', title, artist, data: r.tex, fileName: file.name, added: Date.now() }
           : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));
         added++;
-        if (r.tex) toast(`Read ${r.bars} bars from the PDF. Set the tempo and check the rhythm in Edit.`, 7000);
+        if (r.tex) toast(`Read ${r.bars} bars from the PDF, with its tempo and section names. Check the rhythm in Edit.`, 7000);
         else if (r.unknown) toast(`PDF read, but ${r.unknown} mark${r.unknown > 1 ? 's' : ''} couldn’t be read. Check the tab.`, 6000);
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;

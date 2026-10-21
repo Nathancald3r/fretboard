@@ -329,7 +329,7 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
   }
   if (strips.length) {
     const made = ugToAlphaTex(strips, { tempo, title, artist });
-    return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
+    return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, strips, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
   }
   return { text: pages.filter(Boolean).join('\n\n'), how, systems, unknown };
 }
