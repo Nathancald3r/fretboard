@@ -137,6 +137,8 @@ function ensureApi() {
     else if (!recordingOn()) nextInSetlistHint();
   });
   api.playbackRangeChanged?.on(() => {
+    document.body.classList.toggle('has-range', !!api.playbackRange);
+    showLoops();
     // A new selection restarts the trainer's loop count.
     trainer.loops = 0;
     updateTrainerStatus();
@@ -1108,6 +1110,7 @@ function drawSectionLabels() {
 
 function buildSections() {
   const nav = $('pl-sections');
+  showLoops(); // the song's saved loops come with its sections
   nav.textContent = '';
   sections = [];
   shownSection = null;
@@ -1177,9 +1180,14 @@ function scrollBarToTop(masterIndex) {
 }
 
 function loopSection(sec) {
-  if (!readyForPlayback) return;
   const range = sectionBars(sec);
   if (!range) return;
+  loopRange(range, sec);
+}
+
+// range: { first, last } played bars. sec: the section chip to mark as looped (if any).
+function loopRange(range, sec = null) {
+  if (!readyForPlayback) return;
   const staff = score.tracks[trackIndex].staves[0];
   const startBeat = staff.bars[range.first.masterBar.index]?.voices[0]?.beats[0];
   const endBeat = staff.bars[range.last.masterBar.index]?.voices[0]?.beats.at(-1);
@@ -1188,11 +1196,64 @@ function loopSection(sec) {
     api.applyPlaybackRangeFromHighlight?.();
   }
   api.playbackRange = { startTick: range.first.start, endTick: range.last.end };
-    document.body.classList.add('has-range');
+  document.body.classList.add('has-range');
+  showLoops();
   sections.forEach((x) => x.el.classList.toggle('looped', x === sec));
   setLoop(true);
   moveTo(range.first.start);
   scrollBarToTop(range.first.masterBar.index);
+}
+
+/* ---------- saved loops ---------- */
+
+// Your trouble spots, kept with the song: a chip per saved bar range (tap to loop it), and a chip to
+// save the range you have selected. Stored as played-bar numbers, { name, a, b }.
+function selectedBars() {
+  const r = api?.playbackRange;
+  const bars = playedBars();
+  if (!r || !bars.length) return null;
+  const a = bars.findIndex((b) => b.end > r.startTick);
+  let z = a;
+  bars.forEach((b, i) => { if (i >= a && b.start < r.endTick) z = i; });
+  return a < 0 ? null : { a, b: z };
+}
+
+function showLoops() {
+  const nav = $('pl-loops');
+  if (!nav) return;
+  const saved = song?.loops || [];
+  const sel = selectedBars();
+  const dup = sel && saved.some((l) => l.a === sel.a && l.b === sel.b);
+  nav.hidden = !saved.length && !(sel && !dup);
+  nav.innerHTML = (sel && !dup ? '<button class="loop-chip save" data-save>＋ Save loop</button>' : '')
+    + saved.map((l, i) => `<span class="loop-chip"><button data-loop="${i}">${l.name.replace(/[&<>"]/g, '')}</button><button class="x" data-del="${i}" aria-label="Delete ${l.name.replace(/[&<>"]/g, '')}">✕</button></span>`).join('');
+}
+
+function saveLoop() {
+  const sel = selectedBars();
+  const bars = playedBars();
+  if (!sel || !song) return;
+  const name = sel.a === sel.b ? `Bar ${bars[sel.a].masterBar.index + 1}` : `Bars ${bars[sel.a].masterBar.index + 1}–${bars[sel.b].masterBar.index + 1}`;
+  song.loops = [...(song.loops || []), { name, a: sel.a, b: sel.b }].sort((x, y) => x.a - y.a);
+  updateSong(song.id, { loops: song.loops });
+  showLoops();
+}
+
+function initLoops() {
+  $('pl-loops').addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t || !song) return;
+    if (t.hasAttribute('data-save')) { saveLoop(); return; }
+    if (t.dataset.del !== undefined) {
+      song.loops.splice(Number(t.dataset.del), 1);
+      updateSong(song.id, { loops: song.loops });
+      showLoops();
+      return;
+    }
+    const l = song.loops?.[Number(t.dataset.loop)];
+    const bars = playedBars();
+    if (l && bars[l.a] && bars[l.b]) loopRange({ first: bars[l.a], last: bars[l.b] });
+  });
 }
 
 /* ---------- fretboard ---------- */
@@ -1484,6 +1545,7 @@ function clearSelection() {
   api.playbackRange = null;
   document.body.classList.remove('has-range');
   api.clearPlaybackRangeHighlight?.();
+  showLoops();
   sections.forEach((sec) => sec.el.classList.remove('looped'));
 }
 
@@ -1814,6 +1876,7 @@ export function initPlayer() {
   document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
+  initLoops();
   bindBtControls({ button: $('pl-bt'), labelMs: true, title: 'Bluetooth' });
   bindBtControls({ button: $('sb-bt'), input: $('sb-bt-ms'), nudges: document.querySelectorAll('#sb-bt-row [data-bt]') });
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));

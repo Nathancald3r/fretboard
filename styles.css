@@ -1134,3 +1134,20 @@ kbd { }
 }
 
 .jog-pad, .jog-time { touch-action: none; }
+
+/* Saved loops */
+.loops { display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; padding: .1rem 0; }
+.loop-chip { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); flex: none; overflow: hidden; }
+.loop-chip button { background: transparent; border: 0; color: var(--text); padding: .3rem .8rem; min-height: 40px; }
+.loop-chip .x { color: var(--muted); padding: .3rem .6rem .3rem .2rem; }
+.loop-chip.save { border-color: var(--accent); }
+.loop-chip.save button { color: var(--accent); font-weight: 600; }
+
+.goal { margin: 0 0 1rem; }
+.goal-bar { height: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: .4rem; }
+.goal-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+.goal.done .goal-bar i { background: var(--good); }
+@media (max-width: 640px) {
+  .find.hero p.muted { display: none; }
+  #drop-zone { display: none; }
+}

@@ -72,7 +72,16 @@ function weekBars(sessions, id) {
   return `<span class="mini-bars" aria-hidden="true">${mins.map((m) => `<i style="height:${Math.max(m ? 12 : 4, (m / top) * 100)}%" class="${m ? 'on' : ''}"></i>`).join('')}</span>`;
 }
 
+const goalMin = () => { try { return Math.max(5, Math.min(240, Number(localStorage.getItem('fretboard-goal-min')) || 15)); } catch { return 15; } };
+function setGoal(m) { try { localStorage.setItem('fretboard-goal-min', String(m)); } catch { /* ignore */ } renderPractice(); }
+let goalWired = false;
+
 export async function renderPractice() {
+  if (!goalWired) {
+    goalWired = true;
+    $('pr-goal-minus').addEventListener('click', () => setGoal(goalMin() - 5));
+    $('pr-goal-plus').addEventListener('click', () => setGoal(goalMin() + 5));
+  }
   const sessions = await listSessions();
   const today = startOfDay(Date.now());
   const sum = (list) => list.reduce((n, s) => n + s.seconds, 0);
@@ -82,6 +91,13 @@ export async function renderPractice() {
     ['Last 7 days', formatDuration(week)],
     ['Day streak', streak(sessions)],
   ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+  const todaySec = sum(sessions.filter((s) => s.start >= today));
+  const goal = goalMin();
+  const pct = Math.min(100, Math.round((todaySec / 60 / goal) * 100));
+  $('pr-goal-text').textContent = pct >= 100 ? 'Goal reached today ✓' : `Today: ${formatDuration(todaySec)} of ${goal} min`;
+  $('pr-goal-min').textContent = `${goal} min goal`;
+  $('pr-goal-fill').style.width = pct + '%';
+  $('pr-goal').classList.toggle('done', pct >= 100);
   $('pr-calendar').innerHTML = calendarHtml(sessions);
 
   $('pr-drills').innerHTML = Object.entries(DRILLS).map(([key, d]) => {

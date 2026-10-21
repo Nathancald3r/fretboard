@@ -148,6 +148,7 @@
         Played from a text tab — rhythm is guessed from the spacing. <a id="pl-text-link" href="#">Back to text view</a>
       </div>
       <div id="pl-notab" class="muted small-text" hidden>This track has no tab (vocals, drums or keys), so it is shown as notation. Pick a guitar track in Tracks.</div>
+      <nav id="pl-loops" class="sections loops" hidden aria-label="Saved loops"></nav>
       <nav id="pl-sections" class="sections" hidden aria-label="Song sections" title="Click to jump there, double-click to loop the section"></nav>
     </div>
 
@@ -736,6 +737,11 @@
   <main id="view-practice" class="view" hidden>
     <section class="panel">
       <div class="row spread"><h2>Practice</h2><a class="button small ghost" href="#log">Full practice log</a></div>
+      <div class="goal" id="pr-goal">
+        <div class="row spread"><b id="pr-goal-text">Today</b>
+          <span class="row"><button id="pr-goal-minus" class="small ghost" aria-label="Lower the daily goal">−</button><span id="pr-goal-min" class="muted"></span><button id="pr-goal-plus" class="small ghost" aria-label="Raise the daily goal">+</button></span></div>
+        <div class="goal-bar" role="progressbar" aria-label="Today's practice goal"><i id="pr-goal-fill"></i></div>
+      </div>
       <div id="pr-stats" class="stats"></div>
       <h3 class="dr-title">Days you practised</h3>
       <div id="pr-calendar" class="calendar" role="img" aria-label="Calendar of practice days, darker is more time"></div>
