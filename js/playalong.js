@@ -2,7 +2,8 @@
 // instead of the synth (alphaTab's "external media" mode), and the tab cursor follows it.
 // Sync: tap T on beat 1 of each bar as you hear it; every tap becomes a sync point, so the
 // tab follows the band's real tempo (including drift) between tapped bars.
-import { updateSong } from './db.js';
+import { updateSong as saveSong } from './db.js';
+import { syncState } from './songmeta.js';
 import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence, groupResults } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
 import { btDelay, onBtChange, bindBtControls } from './btdelay.js';
@@ -571,7 +572,27 @@ async function setOn(want) {
   showState();
 }
 
+// Every save here also refreshes the sync badge and checklist.
+const updateSong = (id, changes) => saveSong(id, changes).then((r) => { if (song?.id === id) paintSyncStatus(); return r; });
+
+const SYNC_STEPS = ['Video linked', 'Music start found', 'Tempo matched', 'Marked as synced'];
+
+function paintSyncStatus() {
+  const pill = $('pl-sync');
+  if (!song) { pill.hidden = true; return; }
+  const { state, steps, label } = syncState(song);
+  pill.hidden = false;
+  pill.className = `pill sync-pill ${state}`;
+  pill.textContent = state === 'synced' ? '✓ Synced' : state === 'none' ? '○ No video' : `◐ ${label}`;
+  const box = $('pa-sync-status');
+  box.className = `sync-status ${state}`;
+  box.innerHTML = `<b>${state === 'synced' ? 'Synced with the video' : state === 'none' ? 'No video yet' : 'Sync in progress'}</b>
+    <ol>${SYNC_STEPS.map((t, i) => `<li class="${steps[i] ? 'ok' : ''}">${t}</li>`).join('')}</ol>
+    ${steps[2] ? `<button id="pa-sync-done" class="small ${song.syncDone ? 'ghost' : 'primary'}" type="button">${song.syncDone ? 'Mark as still in progress' : 'Mark as synced ✓'}</button>` : ''}`;
+}
+
 function showState() {
+  paintSyncStatus();
   $('pa-on').checked = on;
   $('pa-on').disabled = !song?.recording;
   const rec = song?.recording;
@@ -1038,6 +1059,12 @@ export function initPlayAlong(h) {
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
   });
   $('pa-tempo-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapVideoBeat(); });
+  $('pl-sync').addEventListener('click', () => document.querySelector('[data-sheet-btn=playalong]')?.click());
+  $('pa-sync-status').addEventListener('click', (e) => {
+    if (!e.target.closest('#pa-sync-done') || !song) return;
+    song.syncDone = !song.syncDone;
+    updateSong(song.id, { syncDone: song.syncDone });
+  });
   $('pa-vbpm').addEventListener('change', () => { if (media && hasStart() && Number($('pa-vbpm').value) >= 30) matchTempo(Number($('pa-vbpm').value)); });
   $('pa-tempo-match').addEventListener('click', () => matchTempo(Number($('pa-vbpm').value)));
   $('pa-start-test').addEventListener('click', () => {
@@ -1049,7 +1076,7 @@ export function initPlayAlong(h) {
     if (!song) return;
     song.syncPoints = [];
     song.syncOffset = 0;
-    updateSong(song.id, { syncPoints: [], syncOffset: 0 });
+    updateSong(song.id, { syncPoints: [], syncOffset: 0, syncDone: false });
     if (on) applySync(); else showSync();
   });
   // The picture: bigger / smaller, or hidden away (the sound keeps playing); remembered.

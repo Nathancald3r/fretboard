@@ -1,6 +1,7 @@
 // Guitar Pro / MusicXML / alphaTex player built on alphaTab:
 // playback, tempo, A–B looping (drag-select bars), count-in, click track, a track mixer
 // (show / mute / solo / volume), play-along with the recording and a speed trainer.
+import { initEditor } from './editor.js';
 import { updateSong, getValue, setValue } from './db.js';
 import { TONES, installTone, getTone, setTone } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
@@ -82,6 +83,7 @@ function ensureApi() {
     buildSections();
     showNeck();
     resetLyrics();
+    window.dispatchEvent(new Event('fbscore'));
   });
   api.renderStarted.on(() => { $('pl-loading').hidden = false; });
   api.renderFinished.on(() => { $('pl-loading').hidden = true; });
@@ -139,6 +141,7 @@ function ensureApi() {
   api.playbackRangeChanged?.on(() => {
     document.body.classList.toggle('has-range', !!api.playbackRange);
     showLoops();
+    window.dispatchEvent(new Event('fbselection'));
     // A new selection restarts the trainer's loop count.
     trainer.loops = 0;
     updateTrainerStatus();
@@ -1877,6 +1880,21 @@ export function initPlayer() {
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
   initLoops();
+  initEditor({
+    AT,
+    song: () => song,
+    score: () => score,
+    readScore: () => readScore(song),
+    reload: reloadScore,
+    selection: () => {
+      const sel = selectedBars();
+      const bars = playedBars();
+      if (!sel || !bars[sel.a]) return null;
+      const idx = bars.slice(sel.a, sel.b + 1).map((b) => b.masterBar.index);
+      return { first: Math.min(...idx), last: Math.max(...idx) };
+    },
+    cursorBar: () => playedBars()[currentBarIndex()]?.masterBar.index ?? 0,
+  });
   bindBtControls({ button: $('pl-bt'), labelMs: true, title: 'Bluetooth' });
   bindBtControls({ button: $('sb-bt'), input: $('sb-bt-ms'), nudges: document.querySelectorAll('#sb-bt-row [data-bt]') });
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));

@@ -20,3 +20,10 @@ assert.deepEqual(filterSongs(songs, { text: 'y' }).map((s) => s.id), [2]);
 assert.deepEqual([...songs].sort(SORTS.rating).map((s) => s.id), [2, 1, 3]);
 assert.deepEqual(folderNames(songs, ['Empty']), ['Empty', 'Worship']);
 console.log('songmeta ok');
+
+import { syncState } from '../js/songmeta.js';
+assert.equal(syncState({}).state, 'none');
+assert.equal(syncState({ recording: { kind: 'youtube' } }).state, 'progress');
+assert.deepEqual(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1]], videoBpm: 90 }).steps, [true, true, true, false]);
+assert.equal(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1], [4, 9]], syncDone: true }).state, 'synced');
+assert.equal(syncState({ recording: {}, syncDone: true }).state, 'progress'); // can't be done before it is lined up

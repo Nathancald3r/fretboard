@@ -33,3 +33,19 @@ export const folderNames = (songs, saved = []) =>
   [...new Set([...saved, ...songs.map((s) => s.folder).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 
 export const stars = (n) => '★'.repeat(n || 0) + '☆'.repeat(5 - (n || 0));
+
+/**
+ * Where a song stands with its play-along video: 'none' (no video), 'progress' (linked, still being lined up)
+ * or 'synced' (you marked it done). steps: linked, start found, tempo matched, confirmed.
+ */
+export function syncState(song) {
+  const linked = !!song.recording;
+  const start = linked && !!song.videoMaster && !!song.syncPoints?.length;
+  const tempo = start && (song.syncPoints.length > 1 || !!song.videoBpm);
+  const done = tempo && !!song.syncDone;
+  const steps = [linked, start, tempo, done];
+  const count = steps.filter(Boolean).length;
+  const state = !linked ? 'none' : done ? 'synced' : 'progress';
+  const label = { none: 'No video', progress: `Syncing ${count - 1}/3`, synced: 'Synced' }[state];
+  return { state, steps, label };
+}

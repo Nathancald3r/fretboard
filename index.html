@@ -128,6 +128,7 @@
         <h1 id="pl-title">—</h1>
         <span id="pl-artist" class="muted"></span>
         <a id="pl-source" class="pill src" hidden target="_blank" rel="noopener noreferrer" title="Where this tab came from (Tab info)"></a>
+        <button id="pl-sync" class="pill sync-pill" type="button" title="Video sync status (tap for the checklist)" hidden></button>
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
       <span class="head-tools">
@@ -184,6 +185,21 @@
          open these sheets above it. -->
     <div class="playdock">
       <div id="pl-sheets" class="sheets">
+        <section id="ed-sheet" class="sheet" data-sheet="edit" hidden>
+          <div class="sheet-head"><h2>Edit tab</h2>
+            <span class="row"><button id="ed-undo" class="ghost small" disabled>↶ Undo</button><button id="ed-redo" class="ghost small" disabled>↷ Redo</button><button class="ghost small" data-close>Close</button></span></div>
+          <p class="muted small-text">Arrange the song by moving, copying or removing sections. <span id="ed-count"></span></p>
+          <p id="ed-note" class="muted small-text" hidden>Editing turns this typed tab into a Guitar Pro file. The text is kept as the original.</p>
+          <ul id="ed-body" class="ed-list"></ul>
+          <h3>Bars</h3>
+          <div class="row"><span id="ed-sel" class="muted small-text"></span>
+            <button id="ed-bar-dup" class="small ghost" disabled title="Ctrl+D">⧉ Copy selected bars</button>
+            <button id="ed-bar-del" class="small ghost danger" disabled title="Delete">✕ Remove selected bars</button></div>
+          <h3>Original file</h3>
+          <p id="ed-original" class="small-text"></p>
+          <div class="row"><button id="ed-export" class="small ghost">Download edited .gp</button></div>
+          <p class="muted small-text">Keys: <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> copy selected bars · <kbd>Del</kbd> remove them · <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> move the section you are in · <kbd>Ctrl</kbd>+<kbd>E</kbd> this sheet. Changing the bar order restarts the video sync for this song; Undo brings it back.</p>
+        </section>
         <section class="sheet" data-sheet="info" hidden>
           <div class="sheet-head"><h2>Tab info</h2><button class="ghost small" data-close>Close</button></div>
           <p class="muted small-text">The file holds little beyond the notes, so say which version this is. Paste the tab's page link (from Ultimate Guitar, for example) and the app reads the site, type and version number from the address.</p>
@@ -302,6 +318,7 @@
               <p class="muted small-text">While a video is linked, the song plays with the video's sound instead of the built-in guitar and the tab follows it, at any speed without changing pitch. Pick a video (or your own audio file), find where the music starts, match the tempo, and skip any interlude. Everything is remembered for this song and video. Keys: <kbd>V</kbd> tap the beat, <kbd>H</kbd> music starts now, <kbd>T</kbd> tap beat 1 of a bar, <kbd>R</kbd> video on/off, <kbd>G</kbd> start the video from the part you are on.</p>
             </details>
             <button class="ghost small" data-close>Close</button></div>
+          <div id="pa-sync-status" class="sync-status" aria-live="polite"></div>
           <div class="pa-grid">
             <div class="pa-col">
               <h3>1 · Pick the video</h3>
@@ -585,6 +602,7 @@
             </div>
             <div class="sheet-btns">
               <button class="ghost small" data-sheet-btn="playalong" title="Pick or change this song's linked YouTube video">Linked video</button>
+              <button class="ghost small" data-sheet-btn="edit" title="Arrange sections, copy or remove bars, undo (Ctrl+E)">Edit tab</button>
               <button class="ghost small" data-sheet-btn="info" title="Where this tab is from and which version it is">Tab info</button>
               <button class="ghost small" data-sheet-btn="view">View</button>
               <button class="ghost small" data-sheet-btn="sound">Sound</button>

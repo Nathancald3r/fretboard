@@ -8,7 +8,7 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
-import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
+import { syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars } from './songmeta.js';
 import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
@@ -96,6 +96,7 @@ async function renderLibrary() {
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
         <span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>
+        ${type === 'pro' || type === 'tab' ? (() => { const y = syncState(s); return `<span class="badge sync-${y.state}" title="Play-along video">${y.state === 'synced' ? '✓ Synced' : y.state === 'none' ? '○ No video' : '◐ ' + escape(y.label)}</span>`; })() : ''}
         ${s.folder ? `<span class="badge folder">📁 ${escape(s.folder)}</span>` : ''}
         ${s.practiceSeconds ? `<span>${formatDuration(s.practiceSeconds)} practiced</span>` : ''}
         ${s.bestSpeed ? `<span>top ${escape(s.bestSpeed)}%</span>` : ''}
