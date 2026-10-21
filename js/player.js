@@ -1745,6 +1745,12 @@ export function initPlayer() {
     playedBars,
     tempo: () => baseTempo,
     seekToBar: (i) => seekToBar(i),
+    cursorMaster: () => { // the bar at the start of the selection, else the cursor's bar
+      const bars = playedBars();
+      const tick = api.playbackRange ? api.playbackRange.startTick : currentTick();
+      const i = bars.findIndex((b) => tick >= b.start && tick < b.end);
+      return (bars[i < 0 ? currentBarIndex() : i] || bars[0]).masterBar.index;
+    },
     sectionChoices: () => sections.map((sec) => ({ master: sec.index, name: sec.el.textContent.trim() })),
     songSeconds: () => endTime / 1000,
     modeChanged: playModeChanged,

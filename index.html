@@ -168,6 +168,13 @@
         <button id="pa-video-hide" class="ghost small" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video">–</button>
       </div>
       <div class="pa-video-frame"></div>
+      <div class="pa-video-ctl">
+        <button id="pa-vid-play" class="ghost small" aria-label="Play or pause the video">▶</button>
+        <span id="pa-vid-time" class="mono">0:00.0</span>
+        <input id="pa-vid-scrub" class="scrub-range" type="range" min="0" max="600" step="0.1" value="0" aria-label="Video position">
+        <button id="pa-link-here" class="small primary" title="The music starts here in the video: link this moment to the bar you selected in the tab (or the bar the cursor is on)">Start here</button>
+        <span id="pa-link-note" class="muted small-text"></span>
+      </div>
     </div>
 
     <!-- Everything about playback lives in the bar at the bottom; the buttons on its right
@@ -316,9 +323,8 @@
               <h3>2 · Where the music starts</h3>
               <div class="row scrub-row">
                 <button id="pa-scrub-play" class="ghost small" aria-label="Play or pause the video">▶</button>
-                <div id="pa-scrub" class="jog" role="slider" title="Hold and drag left or right to move the video: a slow drag is fine, a long drag is fast" aria-label="Video position: hold and drag left or right" aria-disabled="true" tabindex="0">
-                  <span class="jog-arrow">◀</span><span id="pa-scrub-time" class="mono">0:00.0</span><span class="jog-arrow">▶</span>
-                </div>
+                <span id="pa-scrub-time" class="mono scrub-time">0:00.0</span>
+                <input id="pa-scrub" class="scrub-range" type="range" min="0" max="600" step="0.1" value="0" aria-label="Video position" disabled>
               </div>
               <div class="row scrub-nudges">
                 <button class="ghost small" data-scrub="-5">−5 s</button><button class="ghost small" data-scrub="-1">−1</button><button class="ghost small" data-scrub="-0.1">−0.1</button>

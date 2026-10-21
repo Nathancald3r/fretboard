@@ -1077,3 +1077,17 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
 #pa-video-close svg { display: block; transition: transform .2s; }
 body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
 @media (max-width: 640px) { #pa-video #pa-video-close { display: inline-flex; align-items: center; justify-content: center; } }
+
+/* Video position sliders */
+.scrub-row { align-items: center; gap: .5rem; flex-wrap: nowrap; }
+.scrub-range { flex: 1 1 auto; min-width: 0; height: 32px; accent-color: var(--accent); }
+.scrub-time { font-size: 1.15rem; font-weight: 700; min-width: 4.6rem; }
+.pa-video-ctl { display: flex; align-items: center; gap: .4rem; padding: .3rem .5rem; background: var(--panel); flex-wrap: wrap; }
+.pa-video-ctl .scrub-range { flex: 1 1 8rem; }
+.pa-video-ctl .mono { min-width: 3.6rem; font-weight: 600; }
+#pa-link-note { flex: 1 1 100%; min-height: 1em; }
+#pa-link-note:empty { display: none; }
+@media (max-width: 640px) {
+  body:not(.video-open) #pa-video .pa-video-ctl { display: none; }
+  .pa-video-ctl .small { min-height: 40px; }
+}

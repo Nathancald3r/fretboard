@@ -317,9 +317,19 @@ function showScrub(real) {
   const t = performance.now();
   if (t - lastScrubShown < 90) return;
   lastScrubShown = t;
-  $('pa-scrub-time').textContent = fmtT(real);
-  $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶';
-  setLabel();
+  paintScrub(real);
+}
+
+// Both position sliders (the sheet's and the pop-up's) show the same video time.
+function paintScrub(real) {
+  const sec = Math.max(0, real / 1000);
+  const max = Math.max(1, (media?.rawDuration || 0) / 1000 || 600);
+  for (const [slider, time] of [['pa-scrub', 'pa-scrub-time'], ['pa-vid-scrub', 'pa-vid-time']]) {
+    $(slider).max = max;
+    $(slider).value = sec;
+    $(time).textContent = fmtT(real);
+  }
+  for (const id of ['pa-scrub-play', 'pa-vid-play']) $(id).textContent = media?.isPlaying ? '⏸' : '▶';
 }
 
 function setLabel() {}
@@ -388,13 +398,8 @@ function tempoHint() {
 }
 
 function refreshScrub() {
-  $('pa-scrub').setAttribute('aria-disabled', String(!media));
-  $('pa-scrub-play').disabled = !media;
-  if (media) {
-    $('pa-scrub-time').textContent = fmtT(media.nowReal());
-    $('pa-scrub-play').textContent = media.isPlaying ? '⏸' : '▶';
-  }
-  setLabel();
+  for (const id of ['pa-scrub', 'pa-vid-scrub', 'pa-scrub-play', 'pa-vid-play', 'pa-link-here']) $(id).disabled = !media;
+  if (media) paintScrub(media.nowReal());
 }
 
 function fillStartBars() {
@@ -423,7 +428,7 @@ function fillStartBars() {
   refreshScrub();
   const pt = song?.syncPoints?.find(([p]) => p === startIdx());
   $('pa-start-state').textContent = pt
-    ? `Now: the video's ${fmtT(pt[1])} is the start of ${list.find((s) => s.master === want)?.name || 'the tab'}.`
+    ? `Now: the video's ${fmtT(pt[1])} is the start of ${list.find((s) => s.master === want)?.name || (want ? `bar ${want + 1}` : 'the tab')}.`
     : media ? 'Not set yet: the video starts with the tab. Scrub to the music, pick the part, or press H.' : 'Turn on “Play with the linked video” above, then scrub to find where the music starts.';
 }
 
@@ -886,55 +891,40 @@ export function initPlayAlong(h) {
     if (!media) return;
     media.seekReal(Math.max(0, Math.min(media.rawDuration || 1e9, sec * 1000)));
   };
-  // Hold the time and drag: right goes forward in the video, left back. Small drags move in
-  // fractions of a second; past 60 px it speeds up, so a long drag crosses minutes.
-  const jog = $('pa-scrub');
-  let from = null;
-  const jogTo = (x) => {
-    const dx = x - from.x;
-    const sec = dx * 0.02 + Math.sign(dx) * Math.max(0, Math.abs(dx) - 60) * 0.06;
-    from.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, from.sec + sec));
-    $('pa-scrub-time').textContent = fmtT(from.target * 1000);
-    const now = performance.now();
-    if (now - seekAt > 110) { seekAt = now; seekTo(from.target); }
+  // The position sliders: the number shown is the video's own time, to a tenth of a second.
+  const bindScrub = (slider, time) => {
+    let last = 0;
+    slider.addEventListener('pointerdown', () => { scrubbing = true; });
+    slider.addEventListener('input', () => {
+      if (!media) return;
+      const sec = Number(slider.value);
+      scrubbing = true;
+      $(time).textContent = fmtT(sec * 1000);
+      const now = performance.now();
+      if (now - last > 150) { last = now; seekTo(sec); }
+    });
+    slider.addEventListener('change', () => {
+      scrubbing = false;
+      if (!media) return;
+      const sec = Number(slider.value);
+      seekTo(sec);
+      if (hasStart()) applyStartAt(sec * 1000);
+      setTimeout(() => paintScrub(media.nowReal()), 300);
+    });
+    slider.addEventListener('pointerup', () => { scrubbing = false; });
   };
-  jog.addEventListener('pointerdown', (e) => {
+  bindScrub($('pa-scrub'), 'pa-scrub-time');
+  bindScrub($('pa-vid-scrub'), 'pa-vid-time');
+  $('pa-vid-play').addEventListener('click', () => $('pa-scrub-play').click());
+  // From the song screen: the video is at the moment the music starts; the selected bar (or the
+  // one the cursor is on) is what starts there.
+  $('pa-link-here').addEventListener('click', () => {
     if (!media) return;
-    jog.setPointerCapture(e.pointerId);
-    from = { x: e.clientX, sec: media.nowReal() / 1000, target: media.nowReal() / 1000, moved: false };
-    scrubbing = true;
-    jog.classList.add('on');
-  });
-  jog.addEventListener('pointermove', (e) => {
-    if (!from) return;
-    if (Math.abs(e.clientX - from.x) > 6) from.moved = true;
-    if (from.moved) jogTo(e.clientX);
-  });
-  const jogEnd = () => {
-    if (!from) return;
-    const j = from;
-    from = null;
-    scrubbing = false;
-    jog.classList.remove('on');
-    if (!j.moved) {
-      // A tap on the time: play or pause the video there.
-      if (media.isPlaying) media.pause(); else media.play();
-      setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
-      return;
-    }
-    seekTo(j.target);
-    if (hasStart()) applyStartAt(j.target * 1000);
-  };
-  jog.addEventListener('pointerup', jogEnd);
-  jog.addEventListener('pointercancel', jogEnd);
-  jog.addEventListener('keydown', (e) => {
-    const step = e.key === 'ArrowRight' ? 0.1 : e.key === 'ArrowLeft' ? -0.1 : 0;
-    if (step && media) {
-      e.preventDefault();
-      const to = media.nowReal() / 1000 + (e.shiftKey ? step * 10 : step);
-      seekTo(to);
-      if (hasStart()) applyStartAt(Math.max(0, to) * 1000);
-    }
+    const master = hooks.cursorMaster();
+    setStartBar(master);
+    applyStartAt(media.nowReal());
+    hooks.seekToBar(startIdx());
+    $('pa-link-note').textContent = `Bar ${master + 1} = ${fmtT(media.nowReal())}`;
   });
   document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
     if (!media) return;
