@@ -119,19 +119,24 @@ async function pickFiles(importFiles) {
 
 // tools/ug_collect.py leaves fretboard-run.json in each song folder it finishes (UG Songs\<song>).
 // Songs not imported (or put off with Not now) yet are offered in the library.
-async function readyRuns(dir) {
+export async function readyRuns(dir) {
   const ug = await ugSongs(dir);
   if (!ug) return [];
   const done = new Set((await getValue('importedRuns')) || []);
   const runs = [];
   for await (const entry of ug.values()) {
     if (entry.kind !== 'directory') continue;
-    let m;
-    try { m = JSON.parse(await (await (await entry.getFileHandle('fretboard-run.json')).getFile()).text()); } catch { continue; }
-    const key = `${entry.name}|${m?.finished}`;
-    const tracks = Array.isArray(m?.tracks) ? m.tracks.filter((t) => typeof t?.file === 'string' && /\.pdf$/i.test(t.file)) : [];
-    if (done.has(key) || !tracks.length) continue;
-    runs.push({ key, dir: entry, song: String(m.song || entry.name), tracks, finished: String(m.finished || '') });
+    // fretboard-run.json: the official song's PDFs; fretboard-run-chords.json etc.: one text or Guitar Pro file
+    for await (const f of entry.values()) {
+      if (f.kind !== 'file' || !/^fretboard-run.*\.json$/i.test(f.name)) continue;
+      let m;
+      try { m = JSON.parse(await (await f.getFile()).text()); } catch { continue; }
+      const key = `${entry.name}${f.name === 'fretboard-run.json' ? '' : '/' + f.name}|${m?.finished}`;
+      const tracks = Array.isArray(m?.tracks) ? m.tracks.filter((t) => typeof t?.file === 'string' && /\.(pdf|txt|gp\w*)$/i.test(t.file)) : [];
+      if (done.has(key) || !tracks.length) continue;
+      const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
+      runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || '') });
+    }
   }
   return runs.sort((a, b) => b.finished.localeCompare(a.finished));
 }
@@ -167,7 +172,9 @@ export async function showReady() {
     if (!runs.length) return;
     const r = runs[0];
     const text = document.createElement('span');
-    text.textContent = `“${r.song}” is ready: ${r.tracks.length} PDF${r.tracks.length > 1 ? 's' : ''} saved by the UG collector.${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
+    const n = r.tracks.length;
+    const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'a text file' : 'a Guitar Pro file';
+    text.textContent = `“${r.song}” is ready: ${kind} saved by the UG collector.${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
     box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.key); showReady(); }));
   } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
 }
@@ -186,7 +193,7 @@ async function importRun(r) {
   for (const t of r.tracks) {
     try { files.push(await (await r.dir.getFileHandle(t.file)).getFile()); } catch { /* moved or deleted: left out */ }
   }
-  if (!files.length) { ctx.toast(`The PDFs for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return; }
+  if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return; }
   const { ids } = await ctx.importFiles(files, { quietIfEmpty: true });
   if (ids?.length) await markRun(r.key); // cancelled: it stays offered
   showReady();

@@ -2,6 +2,8 @@
 (its own profile, so log in to UG Pro there once). Every time you open an official (Pro) song
 in it, a small window asks whether to save that song's instrument and vocal PDFs into
 Downloads\\UG Songs\\<Song> - <Artist> (Key X), one song at a time, using ug_collect.py.
+Chords, plain tabs and Guitar Pro tabs are offered too (one file each, same song folder);
+--official-only asks about official songs only.
 
 Songs already collected are remembered (Downloads\\UG Songs\\collected.txt) and not asked
 again. A song you Skip or Cancel isn't asked again while its tab stays open.
@@ -18,14 +20,15 @@ CHROME = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
 DONE, FAILED, SKIPPED, CANCELLED = 0, 1, 2, 3
 
 
-def official_tabs(port):
+def song_tabs(port, official_only=False):
     try:
         with urllib.request.urlopen(f"http://localhost:{port}/json/list", timeout=5) as r:
             ts = json.load(r)
     except OSError:
         return None
     return [t["url"].split("?")[0].split("#")[0] for t in ts
-            if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"] and "-official-" in t["url"]]
+            if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"]
+            and ("-official-" in t["url"] or not official_only)]
 
 
 def start_chrome(port, profile):
@@ -44,17 +47,19 @@ def main():
     ap.add_argument("--root", default=str(Path.home() / "Downloads" / "UG Songs"), help="where the song folders go")
     ap.add_argument("--profile", default=r"C:\ug-chrome", help="the collector Chrome's own profile folder")
     ap.add_argument("--no-ui", action="store_true", help="no windows: save every track without asking")
+    ap.add_argument("--official-only", action="store_true", help="only official songs, not chords / tabs / Guitar Pro pages")
     a = ap.parse_args()
     DONE_FILE = Path(a.root) / "collected.txt"
     DONE_FILE.parent.mkdir(parents=True, exist_ok=True)
     done = set(DONE_FILE.read_text(encoding="utf-8").split()) if DONE_FILE.exists() else set()
     seen = {}  # url -> first time it was seen open
     passed = set()  # skipped or cancelled: not asked again while the tab stays open
-    print("Watching the collector Chrome. Open any official UG song there and a window asks to save its PDFs.\n"
+    print("Watching the collector Chrome. Open a UG song there and a window asks to save it (official songs: their\n"
+          "PDFs; chords and tabs: the text; Guitar Pro tabs: their download).\n"
           f"They go into {a.root}. Ctrl+C here to stop.\n")
     started = warned = False
     while True:
-        urls = official_tabs(a.port)
+        urls = song_tabs(a.port, a.official_only)
         if urls is None:
             if not started:
                 started = True

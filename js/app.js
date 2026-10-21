@@ -507,7 +507,11 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '');
     if (/\.txt$/i.test(file.name)) {
-      ids.push(await putSong({ kind: 'text', title: base, artist: '', data: cleanTabText(await file.text()), added: Date.now() }));
+      // "Song - Artist - Chords.txt", as tools/ug_collect.py saves a chord sheet or plain tab
+      const { title, artist } = namesFromPdf(base);
+      const data = cleanTabText(await file.text());
+      const from = data.slice(0, 600).match(/^From: (https:\/\/\S+)$/m)?.[1];
+      ids.push(await putSong({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }));
       added++;
       continue;
     }

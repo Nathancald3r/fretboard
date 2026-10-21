@@ -2,6 +2,10 @@
 one per track, named "<Song> - <Artist> - <Instrument>.pdf", into
 Downloads\\UG Songs\\<Song> - <Artist> (Key X).
 
+Other UG pages work too, one file each into the same song folder:
+  chords and plain tabs   the text shown on the page -> "<Song> - <Artist> - Chords.txt" (or Tab, Bass Tab...)
+  Guitar Pro tabs          the page's own "Download (gp)" button -> "<Song> - <Artist> - Guitar Pro.gp"
+
 A small window first shows the song and its tracks (untick any you don't want, then Start or
 Skip). While it saves, a window stays on top with the progress and a Cancel button: please don't
 use the mouse or keyboard until it says Done (it pauses by itself if you do). Cancel stops it and
@@ -149,7 +153,74 @@ def song_name(pg):
     # the heading sometimes loads without "by <artist>": use the artist link, else the URL (/tab/bethel-music/...)
     artist = artist or link.strip() or pg.url.split("/tab/")[-1].split("/")[0].replace("-", " ").title()
     clean = lambda x: re.sub(r'[\\/:*?"<>|]+', " ", x).strip()
-    return clean(re.sub(r"\s+(Tab|Chords|Pro)\b.*$", "", song, flags=re.I)) or "Song", clean(artist.split(" @")[0])
+    song = re.sub(r"\s*\(ver\s*\d+\)\s*$", "", song.strip(), flags=re.I)
+    song = re.sub(r"\s+(?:Ukulele Chords|Bass Tab|Drum Tab|Guitar Pro|Tabs?|Chords|Pro|Bass|Drums?)$", "", song, flags=re.I)
+    return clean(song) or "Song", clean(artist.split(" @")[0])
+
+
+# What kind of UG page: an official song (PDF per track), a Guitar Pro tab (its Download button),
+# or chords / a plain tab (the text shown on the page). The URL says it; the page settles the rest.
+TEXT_KINDS = [("-chords-", "Chords"), ("-ukulele-", "Ukulele Chords"), ("-bass-", "Bass Tab"),
+              ("-drums-", "Drum Tab"), ("-tabs-", "Tab"), ("-power-", "Tab")]
+
+
+def page_kind(pg):
+    url = pg.url.split("?")[0]
+    if "-official-" in url:
+        return "official", ""
+    if gp_button(pg) is not None:
+        return "gp", "Guitar Pro"
+    for part, label in TEXT_KINDS:
+        if part in url:
+            return "text", label
+    t = pg.evaluate("document.title").lower()
+    return "text", "Chords" if "chords" in t else "Tab"
+
+
+def gp_button(pg):
+    """The visible 'Download (gp)' button of a Guitar Pro tab page, or None."""
+    b = pg.locator("button", has_text=re.compile(r"^\s*Download\s*\((gp\w*)\)\s*$", re.I))
+    for i in range(b.count()):
+        if b.nth(i).is_visible():
+            return b.nth(i)
+    return None
+
+
+def page_text(pg):
+    """The tab or chord sheet exactly as the page shows it (the visible text, nothing hidden),
+    with the Tuning / Key / Capo line above it."""
+    return pg.evaluate("""()=>{const ps=[...document.querySelectorAll('pre')].filter(p=>p.offsetParent!==null&&p.innerText.trim());
+      ps.sort((a,b)=>b.innerText.length-a.innerText.length);const t=document.body.innerText;
+      const m=(re)=>((t.match(re)||[])[1]||'').trim();
+      return {text:(ps[0]?.innerText||'').replace(/\\r\\n?/g,'\\n'),tuning:m(/Tuning:\\s*([^\\n]*?)\\s*(?=Key:|Capo:|\\n|$)/),
+        key:m(/Key:\\s*([A-G][#b\u266d\u266f]?m?)/),capo:m(/Capo:\\s*(?:\\n\\s*)?([^\\n]*)/)}}""")
+
+
+def song_folder(root, song, artist, key):
+    """Downloads\\UG Songs\\<Song> - <Artist> (Key X). A folder already made for this song (under any
+    key, e.g. by its official PDFs) is used again, so a song's files stay together."""
+    base = " - ".join(x for x in (song, artist) if x)
+    root = Path(root)
+    if root.is_dir():
+        same = sorted(d for d in root.iterdir() if d.is_dir() and (d.name == base or d.name.startswith(base + " (Key ")))
+        if same:
+            return same[0]
+    return root / (base + (f" (Key {key})" if key else ""))
+
+
+def free_name(folder, stem, ext):
+    """<stem><ext>, or "<stem> (2)<ext>"... when that's taken: nothing is ever replaced."""
+    dest, k = folder / f"{stem}{ext}", 2
+    while dest.exists():
+        dest = folder / f"{stem} ({k}){ext}"
+        k += 1
+    return dest
+
+
+def write_manifest(out, name, data):
+    """What Fretboard reads to offer the song for import (fretboard-run*.json in the song folder)."""
+    data = {"app": "fretboard-ug-collect", "version": 1, **data, "finished": datetime.now().isoformat(timespec="seconds")}
+    (out / name).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # ---------- windows ----------
@@ -260,7 +331,7 @@ class TkUI:
         self._clear()
         self.root.title("Found a song")
         self._label(f"{info['song']} — {info['artist']}" + (f"  (Key {info['key']})" if info['key'] else ""), 13, bold=True)
-        self._label(f"Save its {len(info['names'])} tracks as PDFs? Untick any you don't want.", 10, color=self.MUTED)
+        self._label(info.get("what") or f"Save its {len(info['names'])} tracks as PDFs? Untick any you don't want.", 10, color=self.MUTED)
         grid = tk.Frame(self.body, bg=self.BG)
         grid.pack(fill="x", pady=(0, 8))
         vars_ = []
@@ -270,9 +341,10 @@ class TkUI:
                            activeforeground=self.FG, anchor="w", font=("Segoe UI", 10)).grid(row=k // 2, column=k % 2, sticky="w", padx=(0, 18))
             vars_.append((n, v))
         mins = max(1, round(len(info["names"]) * SECONDS_PER_TRACK / 60))
-        self._label(f"Saves into  {info['out']}\n\nTakes about {mins} min. Please don't use the mouse or keyboard while it "
+        self._label(f"Saves into  {info['out']}\n\n" + (info.get("note") or
+                    f"Takes about {mins} min. Please don't use the mouse or keyboard while it "
                     "runs; a small window shows the progress and you can Cancel any time (it then removes what it saved).\n\n"
-                    "Afterwards, in Fretboard: Import files (it opens in this folder), select all, check the tracks, Create song.",
+                    "Afterwards, in Fretboard: Import files (it opens in this folder), select all, check the tracks, Create song."),
                     9, color=self.MUTED)
         row = tk.Frame(self.body, bg=self.BG)
         row.pack(fill="x", pady=(6, 0))
@@ -425,6 +497,102 @@ def save_track(ui, a, n, dest, label):
     return dest.exists(), (r.stdout.strip() or r.stderr.strip()[:80])
 
 
+def save_gp(pg, out, stem):
+    """Click the page's own Download button, the file going into a fresh folder inside the song
+    folder; then it's moved to its name (never over an existing file) and that folder removed.
+    Chrome's download setting is put back afterwards."""
+    tmp = free_name(out, ".download", "")
+    tmp.mkdir(parents=True)
+    cdp = pg.context.browser.new_browser_cdp_session()
+    try:
+        cdp.send("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": str(tmp)})
+        gp_button(pg).click(timeout=5000)
+        got = None
+        for _ in range(120):  # up to a minute
+            files = [f for f in tmp.iterdir() if f.is_file()]
+            done = [f for f in files if not f.name.endswith((".crdownload", ".tmp"))]
+            if done and len(done) == len(files):
+                got = done[0]
+                break
+            time.sleep(0.5)
+        if not got:
+            return None
+        ext = got.suffix.lower() if re.fullmatch(r"\.gp\w*", got.suffix.lower()) else ".gp"
+        dest = free_name(out, stem, ext)
+        got.rename(dest)
+        return dest
+    finally:
+        try:
+            cdp.send("Browser.setDownloadBehavior", {"behavior": "default"})
+        except Exception:
+            pass
+        for f in (tmp.iterdir() if tmp.exists() else []):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        try:
+            tmp.rmdir()
+        except OSError:
+            pass
+
+
+def save_single(ui, a, result, pg, kind, label):
+    """A chord sheet / plain tab (as text) or a Guitar Pro tab (its download): one file."""
+    song, artist = song_name(pg)
+    info = page_text(pg) if kind == "text" else {}
+    if kind == "text" and not info.get("text", "").strip():
+        raise RuntimeError("Couldn't find the tab's text on this page. Wait until it has loaded and open it again.")
+    key = (info.get("key") or "").replace("\u266d", "b").replace("\u266f", "#")
+    out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
+    what = (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
+            else "Save this Guitar Pro tab with the page's Download button?")
+    names = [label] if a.yes else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
+                                          "note": "One file, saved in a few seconds. Then Fretboard's library offers it (Review & create)."})
+    if not names:
+        result["code"] = SKIPPED
+        ui.finish(f"Skipped {song}. Nothing was saved.")
+        return
+    stem = " - ".join(x for x in (song, artist, label) if x)
+    run = Run(out, a.root, set_latest=not a.out)
+    try:
+        run.start()
+        ui.progress(0, 1, label)
+        if ui.cancel.is_set():
+            raise Cancelled
+        if kind == "text":
+            head = " · ".join(x for x in (label, info["key"] and f"Key: {info['key']}", info["capo"] and f"Capo: {info['capo']}",
+                                          info["tuning"] and f"Tuning: {info['tuning']}") if x)
+            dest = free_name(out, stem, ".txt")
+            dest.write_text(f"{song} - {artist}\n{head}\nFrom: {a.url}\n\n{info['text'].rstrip()}\n", encoding="utf-8")
+            run.files.append(dest)
+        else:
+            wait_idle(ui, 0, 1, label, 5)
+            dest = save_gp(pg, out, stem)
+            if not dest:
+                raise RuntimeError("The download didn't arrive (the page may need you to be logged in). Nothing was kept.")
+            run.files.append(dest)
+        if ui.cancel.is_set():
+            raise Cancelled
+        man = free_name(out, "fretboard-run-" + label.lower().replace(" ", "-"), ".json")
+        write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": a.url, "kind": kind,
+                                       "tracks": [{"name": label, "file": dest.name}], "missing": []})
+        run.files.append(man)
+    except Cancelled:
+        run.undo()
+        result["code"] = CANCELLED
+        ui.finish("Cancelled. Nothing from this run was kept.")
+        return
+    except Exception:
+        run.undo()
+        raise
+    ui.progress(1, 1, "done", 0)
+    result["code"] = DONE
+    text = f"Saved {dest.name} into\n{out}\n\nNext: Fretboard's library offers it (Review & create)."
+    print(text)
+    ui.finish(text, out)
+
+
 def work(ui, a, result):
     from playwright.sync_api import sync_playwright
     run = None
@@ -435,6 +603,9 @@ def work(ui, a, result):
             pg = song_page(ctx, a.url)
             if "login" in pg.url.lower():
                 raise RuntimeError("Not logged in: log in to UG Pro in that Chrome window and open the song again.")
+            kind, label = page_kind(pg)
+            if kind != "official":
+                return save_single(ui, a, result, pg, kind, label)
             open_instruments(pg)
             names = track_names(pg)
             song, artist = song_name(pg)
@@ -446,8 +617,7 @@ def work(ui, a, result):
         only = [s.strip().lower() for s in a.only.split(",") if s.strip()]
         if only:
             names = [x for x in names if x.lower() in only]
-        folder = " - ".join(x for x in (song, artist) if x) + (f" (Key {key})" if key else "")
-        out = (Path(a.out) if a.out else Path(a.root) / folder).resolve()
+        out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
         names = names if a.yes else ui.ask({"song": song, "artist": artist, "key": key, "names": names, "out": str(out)})
         if not names:
             result["code"] = SKIPPED
@@ -459,11 +629,7 @@ def work(ui, a, result):
         for i, n in enumerate(names):
             label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
             for attempt in (1, 2):  # a track that didn't save is tried once more
-                dest = out / f"{label}.pdf"
-                k = 2
-                while dest.exists():  # an existing file is never replaced: the new one gets "(2)", "(3)"...
-                    dest = out / f"{label} ({k}).pdf"
-                    k += 1
+                dest = free_name(out, label, ".pdf")  # an existing file is never replaced
                 run.pending = dest
                 eta = (sum(took) / len(took) if took else SECONDS_PER_TRACK) * (len(names) - i)
                 if ui.cancel.is_set():
@@ -492,11 +658,8 @@ def work(ui, a, result):
                         raise Cancelled
                     time.sleep(0.25)
         ui.progress(len(names), len(names), "done", 0)
-        # what Fretboard reads to offer this song for import
-        (out / "fretboard-run.json").write_text(json.dumps({
-            "app": "fretboard-ug-collect", "version": 1, "song": song, "artist": artist, "key": key, "url": a.url,
-            "tracks": saved, "missing": missing, "finished": datetime.now().isoformat(timespec="seconds"),
-        }, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_manifest(out, "fretboard-run.json", {"song": song, "artist": artist, "key": key, "url": a.url,
+                                                    "tracks": saved, "missing": missing})
         result["code"] = DONE if saved else FAILED
         text = (f"Done: saved {len(saved)} of {len(names)} tracks of {song} into\n{out}"
                 + (f"\n\nNot saved: {', '.join(missing)} (open the song again later to fetch them)." if missing else "")
