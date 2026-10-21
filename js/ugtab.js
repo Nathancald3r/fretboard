@@ -87,11 +87,18 @@ function glyphAt(comp) {
   return best <= MAX_MISS ? ch : null;
 }
 
-export function components(ink, w, st, bars) {
+export function components(ink, w, st, bars, dropLines = false) {
   const u = st.u;
   const t = Math.max(0, Math.round(st.ys[0] - 0.8 * u)), b = Math.round(st.ys[st.ys.length - 1] + 0.8 * u);
   const seen = new Uint8Array(w * (b + 1));
   const isBar = (x) => bars.some((bx) => Math.abs(x - bx) <= 2);
+  // Staff lines sometimes come through as ink (anti-aliasing). With dropLines, a pixel on a line row with
+  // nothing just above and below it is taken as the line itself, so it doesn't glue rests to the lines
+  // (notes keep them: it would cut the flat strokes of their digits).
+  const lineRow = new Uint8Array(b + 3);
+  for (const ly of st.ys) for (let y = Math.round(ly) - 1; y <= Math.round(ly) + 1; y++) if (y >= 0 && y <= b + 2) lineRow[y] = 1;
+  const onLine = (x, y) => lineRow[y] && !ink[(y - 2) * w + x] && !ink[(y + 2) * w + x];
+  if (dropLines) for (let y = t; y <= b; y++) for (let x = st.x0; x <= st.x1; x++) if (ink[y * w + x] && onLine(x, y)) seen[y * w + x] = 1;
   const comps = [];
   for (let y = t; y <= b; y++) {
     for (let x = st.x0; x <= st.x1; x++) {
@@ -120,10 +127,10 @@ export function components(ink, w, st, bars) {
   return comps;
 }
 
-function readNotes(ink, w, st, bars) {
+function readNotes(ink, w, st, bars, comps = components(ink, w, st, bars)) {
   const u = st.u;
   const glyphs = [];
-  for (const c of components(ink, w, st, bars)) {
+  for (const c of comps) {
     const cy = (c.y0 + c.y1) / 2;
     if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u || c.w <= 4) continue; // (a bracket is thinner than any digit)
     if (cy < st.ys[0] - 0.45 * u || cy > st.ys[st.ys.length - 1] + 0.45 * u) continue;
@@ -155,6 +162,25 @@ function readNotes(ink, w, st, bars) {
     n.tied = bracket(n.x0 - 0.9 * u, n.x0 - 1, st.ys[n.s]) && bracket(n.x1 + 1, n.x1 + 0.9 * u, st.ys[n.s]);
   });
   return notes.sort((a, b) => a.cx - b.cx);
+}
+
+// Rests inside the staff: a quarter rest is a tall narrow zigzag, a sixteenth as tall but wider
+// (two flags), an eighth about half as tall. A dot just after one makes it half as long again.
+// Lengths in sixteenths.
+function readRests(comps, st) {
+  const u = st.u, top = st.ys[0], bot = st.ys[st.ys.length - 1];
+  const rests = [];
+  for (const c of comps) {
+    const cy = (c.y0 + c.y1) / 2;
+    if (cy < top || cy > bot || c.w < 0.4 * u || c.w > 0.95 * u || c.area < 0.15 * c.w * c.h) continue;
+    let len = 0;
+    if (c.h >= 1.7 * u && c.h <= 2.2 * u) len = c.w <= 0.7 * u ? 4 : 1;
+    else if (c.h >= 1.0 * u && c.h <= 1.4 * u && c.w >= 0.55 * u) len = 2;
+    if (!len) continue;
+    const dot = comps.some((d) => d.w <= 0.4 * u && d.h <= 0.4 * u && d.area >= 6 && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.8 * u && d.y0 >= c.y0 && d.y1 <= c.y1);
+    rests.push({ cx: (c.x0 + c.x1) / 2, len: dot ? len * 1.5 : len, rest: true, notes: [] });
+  }
+  return rests;
 }
 
 /* ---------- rhythm row ---------- */
@@ -199,23 +225,73 @@ function bandCount(ink, w, xa, xb, ya, yb) {
 // What a stem says about the length of its note, in sixteenths.
 function stemLength(ink, w, s, u) {
   const x = s.x;
-  const bottom = [s.bot - Math.round(0.6 * u), s.bot + 2];
-  const far = Math.max(bandCount(ink, w, x + 1.0 * u, x + 1.2 * u, bottom[0], bottom[1]), bandCount(ink, w, x - 1.2 * u, x - 1.0 * u, bottom[0], bottom[1]));
-  if (far) return { len: far >= 2 ? 1 : 2, beamed: true }; // beamed eighths / sixteenths
-  // To the right of a lone stem: a dot is a small blob, a flag a tall curl at the bottom.
+  const bottom = [s.bot - Math.round(1.0 * u), s.bot + 2]; // room for three beams (thirty-seconds)
+  // Beams running from the stem at least 1.1 spaces to one side. Only the stem's own beams count: not the
+  // next group's just past a gap, nor a neighbour's short stub that doesn't reach this stem.
+  const joined = (d) => {
+    const xs = Math.round(x), xe = Math.round(x + d * 1.1 * u), need = 0.9 * (Math.abs(xe - xs) + 1);
+    let bands = 0, inBand = false;
+    for (let y = bottom[0]; y <= bottom[1]; y++) {
+      let n = 0;
+      for (let xx = Math.min(xs, xe); xx <= Math.max(xs, xe); xx++) n += ink[y * w + xx];
+      const on = n >= need;
+      if (on && !inBand) bands++;
+      inBand = on;
+    }
+    return bands;
+  };
+  const far = Math.max(joined(1), joined(-1));
   const xa = Math.round(x + 0.3 * u), xb = Math.round(x + 1.0 * u);
-  const runs = [];
+  if (far) { // beamed eighths / sixteenths; a dot sits beside the stem, above the beams
+    let dot = false, run = 0, wide = false;
+    for (let y = s.top - 2; y <= s.bot - Math.round(0.9 * u) && !dot; y++) {
+      let n = 0;
+      for (let xx = xa; xx <= xb; xx++) n += ink[y * w + xx];
+      if (n) { run++; wide ||= n > 0.45 * u; } // a beam stub runs wider than a dot
+      else { dot = run >= 3 && run <= 8 && !wide; run = 0; wide = false; }
+    }
+    // a sixteenth beside eighths has only a short second beam (a stub about half a space long) at its stem
+    const near = Math.max(bandCount(ink, w, x + 0.2 * u, x + 0.45 * u, bottom[0], s.bot), bandCount(ink, w, x - 0.45 * u, x - 0.2 * u, bottom[0], s.bot)); // not below the beam: bar numbers sit there
+    const beams = Math.max(far, near);
+    const len = beams >= 3 ? 0.5 : beams >= 2 ? 1 : 2;
+    return { len: dot ? len * 1.5 : len, beamed: true };
+  }
+  // To the right of a lone stem: a dot is a small blob, a flag a tall curl at the bottom.
+  const runs = [], spans = [];
   let start = -1;
   for (let y = s.top - 2; y <= s.bot + 4; y++) {
     let any = false;
     for (let xx = xa; xx <= xb && !any; xx++) any = ink[y * w + xx] === 1;
     if (any && start < 0) start = y;
-    if (!any && start >= 0) { runs.push(y - start); start = -1; }
+    if (!any && start >= 0) { runs.push(y - start); spans.push([start, y - 1]); start = -1; }
   }
-  if (start >= 0) runs.push(s.bot + 5 - start);
+  if (start >= 0) { runs.push(s.bot + 5 - start); spans.push([start, s.bot + 4]); }
   const flagRun = runs.length && runs[runs.length - 1] >= 9 ? runs[runs.length - 1] : 0;
-  const dot = runs.some((r, i) => r <= 8 && r >= 3 && (i < runs.length - 1 || !flagRun));
-  const base = flagRun ? (flagRun >= 18 ? 1 : 2) : 4;
+  let dot = runs.some((r, i) => r <= 8 && r >= 3 && (i < runs.length - 1 || !flagRun));
+  if (flagRun && !dot) { // a flag pushes the dot out past its curl
+    let run = 0;
+    for (let y = s.top - 2; y <= s.bot + 1 && !dot; y++) {
+      let any = false;
+      for (let xx = Math.round(x + 1.0 * u); xx <= Math.round(x + 1.6 * u) && !any; xx++) any = ink[y * w + xx] === 1;
+      if (any) run++;
+      else { dot = run >= 3 && run <= 8; run = 0; }
+    }
+  }
+  // a half note's stem is drawn about half as tall as a quarter's (1 staff space against 2)
+  const half = !flagRun && s.bot - s.top + 1 < 1.4 * u;
+  // an eighth's flag is one curl, a sixteenth's two: count the strokes a column just right of the stem crosses
+  let strokes = 0;
+  if (flagRun) {
+    const [y0, y1] = spans[spans.length - 1];
+    for (let xx = Math.round(x + 0.25 * u); xx <= Math.round(x + 0.45 * u); xx++) {
+      let n = 0, gap = 2;
+      for (let y = y0; y <= y1; y++) {
+        if (ink[y * w + xx]) { if (gap >= 2) n++; gap = 0; } else gap++;
+      }
+      strokes = Math.max(strokes, n);
+    }
+  }
+  const base = flagRun ? (strokes >= 2 ? 1 : 2) : half ? 8 : 4;
   return { len: dot ? base * 1.5 : base, beamed: false };
 }
 
@@ -240,9 +316,12 @@ function thickRest(ink, w, st, xa, xb) {
 export function readStrip(ink, light, w, h, st) {
   const bl = barLines(light, w, st);
   if (bl.length < 2) return null;
-  const notes = readNotes(ink, w, st, bl);
+  const comps = components(ink, w, st, bl);
+  const notes = readNotes(ink, w, st, bl, comps);
+  const rests = readRests(components(ink, w, st, bl, true), st);
   const stems = stemsBelow(ink, w, h, st);
   const bars = [];
+  let last = null; // the last column read so far, for a held note at the start of a bar
   for (let i = 0; i + 1 < bl.length; i++) {
     const inBar = notes.filter((n) => n.cx > bl[i] && n.cx < bl[i + 1]);
     const cols = [];
@@ -256,11 +335,25 @@ export function readStrip(ink, light, w, h, st) {
       const r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false };
       c.len = r.len; c.beamed = r.beamed;
     }
+    // A stem with no number over it is the previous note held on (its tie arc ends there). Stems start just
+    // under the staff; anything starting lower (a bar number) isn't one.
+    const lastLine = st.ys[st.ys.length - 1];
+    for (const s of stems) {
+      if (s.x < bl[i] + 0.5 * st.u || s.x > bl[i + 1] - 0.5 * st.u || s.top > lastLine + 1.2 * st.u || cols.some((c) => Math.abs(c.cx - s.x) < 1.0 * st.u)) continue; // a flag curl sits within 1u of its stem
+      const r = stemLength(ink, w, s, st.u);
+      const prev = [...cols].reverse().find((c) => c.cx < s.x) || (cols.some((c) => c.cx < s.x) ? null : last);
+      cols.push({ cx: s.x, len: r.len, beamed: r.beamed, notes: prev ? prev.notes.map((n) => ({ ...n, tied: true })) : [] });
+      cols.sort((a, b) => a.cx - b.cx);
+    }
+    if (cols.length) last = cols[cols.length - 1];
     const bar = { x0: bl[i], x1: bl[i + 1], cols };
     const thick = !cols.length && thickRest(ink, w, st, bl[i], bl[i + 1]);
     if (thick) { // the number sits centred over the thick bar
       const c = (thick.x0 + thick.x1) / 2;
       bar.rest = readRestCount(ink, w, st, c - 2.2 * st.u, c + 2.2 * st.u) || 1;
+    } else if (cols.length) { // rests between the notes keep them in time (a bar of only rests stays empty)
+      const inside = rests.filter((r) => r.cx > bl[i] && r.cx < bl[i + 1] && !cols.some((c) => Math.abs(c.cx - r.cx) < 0.6 * st.u));
+      if (inside.length) { cols.push(...inside.map((r) => ({ ...r }))); cols.sort((a, b) => a.cx - b.cx); }
     }
     bars.push(bar);
   }
@@ -313,7 +406,7 @@ function tuningTex(strips) {
 
 /* ---------- alphaTex ---------- */
 
-const UNITS = [[12, 2, true], [8, 2, false], [6, 4, true], [4, 4, false], [3, 8, true], [2, 8, false], [1, 16, false]];
+const UNITS = [[12, 2, true], [8, 2, false], [6, 4, true], [4, 4, false], [3, 8, true], [2, 8, false], [1.5, 16, true], [1, 16, false], [0.5, 32, false]];
 const dur = (len) => {
   const u = UNITS.find(([n]) => n === len);
   return u ? `${u[1]}${u[2] ? '{d}' : ''}` : null;
@@ -322,7 +415,7 @@ const dur = (len) => {
 // Splits a length (sixteenths) into note values.
 function pieces(len) {
   const out = [];
-  for (let left = Math.round(len); left > 0;) {
+  for (let left = Math.round(len * 2) / 2; left > 0;) { // to the nearest thirty-second
     const p = UNITS.find(([n]) => n <= left && n <= 16) || UNITS[UNITS.length - 1];
     out.push(p[0]);
     left -= p[0];
@@ -335,21 +428,23 @@ const snap = (len) => {
   return allowed.reduce((b, a) => (Math.abs(a - len) < Math.abs(b - len) ? a : b), 4);
 };
 
+const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
 const fretOf = (n) => (n.tie ? '-' : n.t === 'X' ? 'x' : n.t);
 const beatTex = (notes, len) => {
+  if (!notes.length) return restTex(len);
   const d = dur(len);
   const one = notes.map((n) => `${fretOf(n)}.${n.s + 1}`);
   return notes.length === 1 ? `${one[0]}.${d}` : `(${one.join(' ')}).${d}`;
 };
 // A length with no single note value (e.g. 10 sixteenths) is written as tied notes.
 const tiedTex = (notes, len) => {
+  if (!notes.length) return restTex(len);
   const [first, ...rest] = pieces(len);
   const n = notes.map((x) => `${fretOf(x)}.${x.s + 1}`);
   const head = n.length === 1 ? `${n[0]}.${dur(first)}` : `(${n.join(' ')}).${dur(first)}`;
   const tail = rest.map((p) => (n.length === 1 ? `-.${notes[0].s + 1}.${dur(p)}` : `(${notes.map((x) => `-.${x.s + 1}`).join(' ')}).${dur(p)}`));
   return [head, ...tail].join(' ');
 };
-const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
 
 // The lyrics ride on a track of their own (rests carrying the syllables), so the tablature stays clean.
 // A syllable's time in the bar comes from where it sits between the notes above it.
