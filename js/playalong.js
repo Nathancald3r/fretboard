@@ -308,6 +308,7 @@ function setStart(sec) {
 // tab that begins there. A video with no intro starts at the verse, for example.
 let pendingMaster = 0;
 let scrubbing = false;
+let stickHeld = false;
 let lastScrubShown = 0;
 const fmtT = (ms) => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(1).padStart(4, '0')}`;
 const chosenName = () => $('pa-start-chips').querySelector('.on')?.dataset.name || 'the start of the tab';
@@ -324,12 +325,13 @@ function showScrub(real) {
 function paintScrub(real) {
   const sec = Math.max(0, real / 1000);
   const max = Math.max(1, (media?.rawDuration || 0) / 1000 || 600);
-  for (const [slider, time] of [['pa-scrub', 'pa-scrub-time'], ['pa-vid-scrub', 'pa-vid-time']]) {
+  for (const [slider, time] of [['pa-scrub', 'pa-scrub-time']]) {
     $(slider).max = max;
     $(slider).value = sec;
     $(time).textContent = fmtT(real);
   }
-  for (const id of ['pa-scrub-play', 'pa-vid-play']) $(id).textContent = media?.isPlaying ? '⏸' : '▶';
+  if (!stickHeld) $('pa-vid-time').textContent = fmtT(real);
+  for (const id of ['pa-scrub-play']) $(id).textContent = media?.isPlaying ? '⏸' : '▶';
 }
 
 function setLabel() {}
@@ -398,7 +400,8 @@ function tempoHint() {
 }
 
 function refreshScrub() {
-  for (const id of ['pa-scrub', 'pa-vid-scrub', 'pa-scrub-play', 'pa-vid-play', 'pa-link-here']) $(id).disabled = !media;
+  for (const id of ['pa-scrub', 'pa-scrub-play', 'pa-link-here']) $(id).disabled = !media;
+  $('pa-vid-jog').setAttribute('aria-disabled', String(!media));
   if (media) paintScrub(media.nowReal());
 }
 
@@ -961,10 +964,40 @@ export function initPlayAlong(h) {
     el.addEventListener('pointercancel', end);
   };
   bindScrub($('pa-scrub'), 'pa-scrub-time');
-  bindScrub($('pa-vid-scrub'), 'pa-vid-time');
   bindJog($('pa-scrub-time'), $('pa-scrub'));
-  bindJog($('pa-vid-time'), $('pa-vid-scrub'));
-  $('pa-vid-play').addEventListener('click', () => $('pa-scrub-play').click());
+  // The big pad on the video: hold it and push left or right like a stick. A small push scrubs
+  // slowly (fine tuning), a bigger one faster; let go and it stops where it is.
+  const pad = $('pa-vid-jog');
+  let hold = null;
+  const speed = (dx) => (Math.abs(dx) < 8 ? 0 : Math.sign(dx) * 0.25 * ((Math.abs(dx) - 8) / 30) ** 1.5); // video seconds per second
+  const step = (now) => {
+    if (!hold) return;
+    hold.target = Math.max(0, Math.min((media.rawDuration || 1e9) / 1000, hold.target + speed(hold.dx) * ((now - hold.t) / 1000)));
+    hold.t = now;
+    $('pa-vid-time').textContent = fmtT(hold.target * 1000);
+    if (now - hold.seek > 80 && speed(hold.dx)) { hold.seek = now; seekTo(hold.target); }
+    requestAnimationFrame(step);
+  };
+  pad.addEventListener('pointerdown', (e) => {
+    if (!media) return;
+    pad.setPointerCapture(e.pointerId);
+    stickHeld = true;
+    pad.classList.add('on');
+    startScrub();
+    hold = { x: e.clientX, dx: 0, target: media.nowReal() / 1000, t: performance.now(), seek: 0 };
+    requestAnimationFrame(step);
+  });
+  pad.addEventListener('pointermove', (e) => { if (hold) hold.dx = e.clientX - hold.x; });
+  const release = () => {
+    if (!hold) return;
+    const t = hold.target;
+    hold = null;
+    stickHeld = false;
+    pad.classList.remove('on');
+    finishScrub(t);
+  };
+  pad.addEventListener('pointerup', release);
+  pad.addEventListener('pointercancel', release);
   // From the song screen: the video is at the moment the music starts; the selected bar (or the
   // one the cursor is on) is what starts there.
   $('pa-link-here').addEventListener('click', () => {

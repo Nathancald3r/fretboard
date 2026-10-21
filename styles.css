@@ -1097,3 +1097,9 @@ body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
 .hear.on { border-color: var(--accent); color: var(--accent); }
 .hear:not(.on) { opacity: .6; }
 .pa-video-ctl .jog-time { min-width: 4.4rem; font-size: 1.1rem; }
+
+.jog-pad { flex: 1 1 10rem; display: flex; align-items: center; justify-content: space-between; gap: .6rem; height: 56px; padding: 0 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); touch-action: none; user-select: none; cursor: ew-resize; }
+.jog-pad .mono { font-size: 1.4rem; font-weight: 700; }
+.jog-pad .jog-arrow { color: var(--muted); font-size: 1.2rem; }
+.jog-pad.on { border-color: var(--accent); background: var(--panel-2); }
+.jog-pad[aria-disabled=true] { opacity: .45; }
