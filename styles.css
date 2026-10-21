@@ -1033,3 +1033,21 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
   .playbar-row > .pa-video:not(.mini):not(.collapsed) { flex-basis: 100%; }
   .playbar-row:has(> .pa-video:not(.mini):not(.collapsed)) { flex-wrap: wrap; }
 }
+
+@media (max-width: 640px) {
+  /* The instrument gets the room it needs; the video is a pop-up from the bottom. */
+  .playbar-row > .track-chip { flex: 1 1 auto; min-width: 0; max-width: none; }
+  #pa-peek { display: none; flex: none; min-height: 40px; padding: .2rem .7rem; font-weight: 600; }
+  #pa-video:not([hidden]) ~ #pa-peek { display: inline-flex; align-items: center; }
+  .playbar-row > #pa-video, .playbar-row > #pa-video.mini, .playbar-row > #pa-video.collapsed {
+    position: fixed; left: .5rem; right: .5rem; bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .4rem);
+    width: auto; max-width: none; flex: none; z-index: 41; margin: 0; box-shadow: 0 -10px 30px #000c;
+    transform: translateY(calc(100% + var(--dock-h, 110px) + 2rem)); transition: transform .22s ease-out; pointer-events: none;
+  }
+  body.video-open .playbar-row > #pa-video { transform: none; pointer-events: auto; }
+  #pa-video .pa-video-bar { position: static; background: var(--panel); padding: .15rem .3rem .15rem .6rem; justify-content: flex-start; }
+  #pa-video #pa-video-title { display: block; }
+  #pa-video #pa-video-hide, #pa-video #pa-video-size { display: none; }
+  #pa-video.collapsed .pa-video-frame, #pa-video.mini .pa-video-frame { position: static; width: auto; max-height: 34vh; aspect-ratio: 16 / 9; margin: 0 auto; }
+  #pa-video #pa-video-close, #pa-video #pa-video-sync { display: inline-flex; }
+}
