@@ -64532,10 +64532,12 @@
 			}
 		}
 		createLinePreBeatGlyphs() {
-			if (this.isFirstOfStaff) {
+			if (this.isFirstOfStaff) { // Fretboard patch: the TAB clef is drawn on the first line only
 				const center = (this.bar.staff.tuning.length - 1) / 2;
-				this.createStartSpacing();
-				this.addPreBeatGlyph(new TabClefGlyph(0, this.getLineY(center)));
+				if (!this.bar.previousBar) {
+					this.createStartSpacing();
+					this.addPreBeatGlyph(new TabClefGlyph(0, this.getLineY(center)));
+				}
 			}
 			if (this.showTimeSignature && (!this.bar.previousBar || this.bar.previousBar && this.bar.masterBar.timeSignatureNumerator !== this.bar.previousBar.masterBar.timeSignatureNumerator || this.bar.previousBar && this.bar.masterBar.timeSignatureDenominator !== this.bar.previousBar.masterBar.timeSignatureDenominator || this.bar.previousBar && this.bar.masterBar.isFreeTime && this.bar.masterBar.isFreeTime !== this.bar.previousBar.masterBar.isFreeTime)) {
 				this.createStartSpacing();

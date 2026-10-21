@@ -103,7 +103,7 @@ const group = (items, key, gap) => {
 };
 
 /**
- * @returns {{ sections: {name: string, x: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
+ * @returns {{ sections: {name: string, x: number, x1: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
  */
 export function readHeading(ink, w, st, { debug = null } = {}) {
   const u = st.u;
@@ -163,7 +163,7 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
       if (d < 0.225) {
         const next = boxes[i + 1];
         // "Verse 1": the number is counted by the caller
-        sections.push({ name: wd, x: bx.a, numbered: !!(next && next.n === 1 && next.w < 0.9 * u && next.h > 0.55 * u) });
+        sections.push({ name: wd, x: bx.a, x1: bx.b, numbered: !!(next && next.n === 1 && next.w < 0.9 * u && next.h > 0.55 * u) });
       }
     }
   }

@@ -228,12 +228,15 @@ export function readStrip(ink, light, w, h, st) {
   const dbg = [];
   const hd = readHeading(ink, w, st, { debug: dbg });
   // Each mark belongs to the bar it stands above (a section can start mid-line).
-  const barAt = (x) => {
+  // A name is drawn centred on the bar line it starts at, so the nearest bar start wins.
+  const barAt = (x, x1 = x) => {
+    const mid = (x + x1) / 2;
     let k = 0;
-    bars.forEach((b, i) => { if (b.x0 <= x + 0.6 * st.u) k = i; });
+    bars.forEach((b, i) => { if (b.x0 <= mid) k = i; });
+    bars.forEach((b, i) => { if (Math.abs(b.x0 - mid) < Math.abs(bars[k].x0 - mid) && Math.abs(b.x0 - mid) <= (x1 - x) / 2 + 0.5 * st.u) k = i; });
     return bars[k];
   };
-  for (const sec of hd.sections) Object.assign(barAt(sec.x), { heading: true, name: sec.name, numbered: sec.numbered });
+  for (const sec of hd.sections) Object.assign(barAt(sec.x, sec.x1), { heading: true, name: sec.name, numbered: sec.numbered });
   for (const t of hd.tempos) barAt(t.x).tempo = t.v;
   return { bars, dbg };
 }
