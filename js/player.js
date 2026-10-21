@@ -231,6 +231,7 @@ function currentBarLookup() {
 // Starts playback from the current position, with the count-in if it's on.
 function startPlayback() {
   if (!api || !readyForPlayback || counting) return;
+  api.scrollToCursor?.(); // show the playhead right away, so the count-in happens where the song will start
   if (!countInOn() || usesClassicCountIn(click)) {
     api.countInVolume = countInOn() && !recordingOn() ? click.countVolume : 0;
     api.play();
