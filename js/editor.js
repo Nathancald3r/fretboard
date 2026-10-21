@@ -750,7 +750,8 @@ export function initEditor(h) {
   $('ed-export').addEventListener('click', () => {
     const song = hooks.song();
     if (!song) return;
-    try { download(`${song.title || 'tab'}.gp`, write(hooks.readScore())); } catch (err) { toast('Could not save the file: ' + (err?.message || err)); }
+    const name = [song.title || 'tab', song.artist].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
+    try { download(`${name}.gp`, write(hooks.readScore())); } catch (err) { toast('Could not save the file: ' + (err?.message || err)); }
   });
   // While the sheet is open the tab gets room above it, scrolled so the staff is in reach.
   new MutationObserver(() => {
