@@ -69,7 +69,7 @@ function ensureApi() {
   });
 
   if (customSoundFont) api.loadSoundFont(customSoundFont.data, false);
-  installPlayhead(api);
+  playheadCtl = installPlayhead(api);
   applyClickVolume();
 
   api.scoreLoaded.on((s) => {
@@ -264,6 +264,7 @@ function scrollToPlayhead() {
 // video plays (the cursor still moves), so the bar you are matching stays where you can see it.
 let frozenTop = null;
 let userScrolled = 0;
+let playheadCtl = null;
 let holdScroll = false;
 let pinnedBar = null; // a bar you locked as the spot the video's music starts at
 const frozen = () => pinnedBar !== null || holdScroll || document.body.classList.contains('has-range') && document.body.classList.contains('video-open') && !document.body.classList.contains('edit-mode');
@@ -1142,8 +1143,16 @@ function drawPin() {
 function setPin(masterIndex) {
   pinnedBar = masterIndex;
   drawPin();
-  if (masterIndex !== null) scrollBarToTop(masterIndex, false);
-  else frozenTop = null;
+  if (masterIndex !== null) {
+    playheadCtl?.lock(false);
+    const mb = score?.masterBars[masterIndex];
+    if (mb) moveTo(mb.start); // the playhead goes to the pinned bar, then stays there (red)
+    scrollBarToTop(masterIndex, false);
+    setTimeout(() => { if (pinnedBar === masterIndex) playheadCtl?.lock(true); }, 200);
+  } else {
+    playheadCtl?.lock(false);
+    frozenTop = null;
+  }
   window.dispatchEvent(new CustomEvent('fbpin', { detail: masterIndex }));
 }
 

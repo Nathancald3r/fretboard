@@ -598,8 +598,17 @@ function paintSyncStatus() {
     ${steps[2] ? `<button id="pa-sync-done" class="small ${song.syncDone ? 'ghost' : 'primary'}" type="button">${song.syncDone ? 'Mark as still in progress' : 'Mark as synced ✓'}</button>` : ''}`;
 }
 
+// The video moment you last linked to the music start, to jump back to while you are pinning.
+function paintLast() {
+  const b = $('pa-last');
+  const l = song?.lastLink;
+  b.hidden = !l || !media;
+  if (l) b.textContent = `↩ Last spot ${fmtT(l.ms)}`;
+}
+
 function showState() {
   paintSyncStatus();
+  paintLast();
   $('pa-on').checked = on;
   $('pa-on').disabled = !song?.recording;
   const rec = song?.recording;
@@ -1052,7 +1061,10 @@ export function initPlayAlong(h) {
     setStartBar(master);
     applyStartAt(media.nowReal());
     hooks.seekToBar(startIdx());
+    updateSong(song.id, { lastLink: { bar: master, ms: Math.round(media.nowReal()) } });
+    song.lastLink = { bar: master, ms: Math.round(media.nowReal()) };
     hooks.releaseSelection?.(); // pinned: the tab follows the video again
+    paintLast();
     $('pa-link-note').textContent = `Bar ${master + 1} = ${fmtT(media.nowReal())}`;
   });
   document.querySelectorAll('[data-scrub]').forEach((b) => b.addEventListener('click', () => {
@@ -1068,6 +1080,7 @@ export function initPlayAlong(h) {
     setTimeout(() => { $('pa-scrub-play').textContent = media?.isPlaying ? '⏸' : '▶'; }, 250);
   });
   $('pa-tempo-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapVideoBeat(); });
+  $('pa-last').addEventListener('click', () => { if (media && song?.lastLink) { stopListening(); seekTo(song.lastLink.ms / 1000); settle = { sec: song.lastLink.ms / 1000, until: performance.now() + 4000 }; paintScrub(song.lastLink.ms); } });
   window.addEventListener('fbpin', (e) => {
     const bar = e.detail;
     $('pa-link-here').textContent = bar === null ? 'Music starts here' : `Music starts at bar ${bar + 1}`;

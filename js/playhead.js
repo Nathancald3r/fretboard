@@ -14,6 +14,7 @@ const RADIUS = 8;
 const SVG = 'http://www.w3.org/2000/svg';
 
 export function installPlayhead(api) {
+  let locked = false; // pinned: the playhead stays where it is (and shows red)
   let head = null;
   let shape = null;
   let y = 0;
@@ -40,6 +41,7 @@ export function installPlayhead(api) {
 
   // Size and shape: around the staff of the shown track, wide enough for the beat's numbers.
   function draw(el, beatBounds) {
+    el.classList.toggle('locked', locked);
     const s = scale();
     const staff = beatBounds.barBounds.visualBounds;
     w = Math.max(BOX * s, (beatBounds.visualBounds?.w || 0) + 2 * SIDE * s);
@@ -70,6 +72,7 @@ export function installPlayhead(api) {
     onAttach() {},
     onDetach() { head?.remove(); head = null; },
     placeBeatCursor(cursor, beatBounds, x) {
+      if (locked && head?.parentElement === cursor.element?.parentElement) return;
       const el = ensureHead(cursor);
       if (!el) return;
       draw(el, beatBounds);
@@ -82,9 +85,16 @@ export function installPlayhead(api) {
       cursor.setBounds(bar.x, bar.y, bar.w, bar.h);
     },
     transitionBeatCursor(cursor, _beatBounds, _fromX, toX, ms) {
-      if (!ensureHead(cursor)) return;
+      if (locked || !ensureHead(cursor)) return;
       move = { from: headX, to: toX, t0: performance.now(), ms };
       if (!raf) raf = requestAnimationFrame(frame);
+    },
+  };
+  return {
+    lock(on) {
+      locked = on;
+      move = null;
+      head?.classList.toggle('locked', on);
     },
   };
 }
