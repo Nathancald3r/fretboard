@@ -285,13 +285,13 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
         const { pdfToTab } = await import('./pdftab.js');
         toast('Reading the PDF…', 8000);
         const { title, artist } = namesFromPdf(base);
-        const r = await pdfToTab(await file.arrayBuffer(), undefined, { title, artist });
+        const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist });
         if (!r.tex && !r.text.trim()) { failed.push(file.name); continue; }
         ids.push(await putSong(r.tex
           ? { kind: 'tex', title, artist, data: r.tex, fileName: file.name, added: Date.now() }
           : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));
         added++;
-        if (r.tex) toast(`Read ${r.bars} bars from the PDF, with its tempo and section names. Check the rhythm in Edit.`, 7000);
+        if (r.tex) toast(`Read ${r.bars} bars from the PDF, with its tempo and section names${r.lyrics ? ' and lyrics (the Lyrics switch in the player turns them on or off)' : ''}. Check the rhythm in Edit.`, 7000);
         else if (r.unknown) toast(`PDF read, but ${r.unknown} mark${r.unknown > 1 ? 's' : ''} couldn’t be read. Check the tab.`, 6000);
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;

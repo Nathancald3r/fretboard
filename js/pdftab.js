@@ -4,6 +4,7 @@
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, UG_UNIT } from './ugtab.js';
+import { readLyricLine, closeLyricReader } from './uglyrics.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
 const PAGE_WIDTH = 1634; // the width the templates were made at
@@ -284,7 +285,7 @@ const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test
  * @param {ArrayBuffer} buf the PDF
  * @returns {Promise<{ text: string, how: 'text'|'image', systems: number, unknown: number }>}
  */
-export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '' } = {}) {
+export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true } = {}) {
   const lib = await loadPdfjs();
   const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
   const pages = [];
@@ -305,13 +306,19 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     let staves = findStaves(r.light, r.w, r.h, r.ink);
     if (staves.length) { // a graphic TAB staff (Ultimate Guitar Tab Pro)
       how = 'staff';
+      let scale = base;
       if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
-        r = await renderInk(page, base * UG_UNIT / staves[0].u);
+        scale = base * UG_UNIT / staves[0].u;
+        r = await renderInk(page, scale);
         staves = findStaves(r.light, r.w, r.h, r.ink);
       }
-      for (const st of staves) {
+      for (let i = 0; i < staves.length; i++) {
+        const st = staves[i];
         const strip = readStrip(r.ink, r.light, r.w, r.h, st);
-        if (strip) strips.push(strip);
+        if (!strip) continue;
+        strip.lyr = lyrics ? await readLyricLine(page, scale, st, r.h) : []; // the line under the rhythm row
+        strips.push(strip);
+        onProgress(n, pdf.numPages, `line ${i + 1} of ${staves.length}`);
       }
       continue;
     }
@@ -328,6 +335,7 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     pages.push(text);
   }
   if (strips.length) {
+    await closeLyricReader();
     const made = ugToAlphaTex(strips, { tempo, title, artist });
     return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, strips, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
   }

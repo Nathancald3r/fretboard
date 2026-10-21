@@ -36,4 +36,20 @@ assert.equal(bars[3].voices[0].beats[0].notes.length, 2); // the chord
 assert.ok(bars[4].voices[0].beats[0].isRest, 'an empty bar is a rest');
 const length = (b) => b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
 assert.ok(bars.every((b) => length(b) === length(bars[0])), 'every bar is the same length');
+
+// lyrics ride on a rests-only track and come out in order, split at the hyphens
+import { lyricsTrack, buildLyrics } from '../js/lyrics.js';
+const sung = strips.map((s, i) => (i ? s : { ...s, lyr: [{ x: 40, x1: 60, text: 'Hel-' }, { x: 90, x1: 120, text: 'lo' }, { x: 300, x1: 330, text: 'my' }, { x: 500, x1: 540, text: "friend's" }] }));
+const withWords = ugToAlphaTex(sung, { title: 'Test', artist: 'Me', tempo: 72 });
+assert.equal(withWords.lyrics, true);
+const imp2 = new alphaTab.importer.AlphaTexImporter();
+imp2.initFromString(withWords.tex, new alphaTab.Settings());
+const sc2 = imp2.readScore();
+assert.equal(sc2.tracks.length, 2);
+const vt = lyricsTrack(sc2);
+assert.equal(vt, 1);
+const lines = buildLyrics(sc2, vt, sc2.masterBars.map((mb, i) => ({ start: mb.start, masterIndex: mb.index })));
+assert.equal(lines.flatMap((l) => l.words.map((w) => w.text + (w.joined ? '-' : ''))).join(' '), "Hel- lo my friend's");
+const total = (b) => b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
+assert.ok(sc2.tracks[1].staves[0].bars.every((b) => total(b) === total(bars[0])), 'lyric bars are as long as the tab bars');
 console.log('ugtab ok');

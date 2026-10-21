@@ -112,12 +112,9 @@ export function components(ink, w, st, bars) {
 function readNotes(ink, w, st, bars) {
   const u = st.u;
   const glyphs = [];
-  const parens = [];
   for (const c of components(ink, w, st, bars)) {
     const cy = (c.y0 + c.y1) / 2;
-    // "(8)": a note held over from before is written in brackets, which stand taller than the numbers
-    if (c.h > 0.6 * u && c.h < 1.6 * u && c.w <= 4 && c.area >= 10 && cy > st.ys[0] - 0.6 * u && cy < st.ys[5] + 0.6 * u) { parens.push({ x0: c.x0, x1: c.x1, cy }); continue; }
-    if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u) continue;
+    if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u || c.w <= 4) continue; // (a bracket is thinner than any digit)
     if (cy < st.ys[0] - 0.45 * u || cy > st.ys[5] + 0.45 * u) continue;
     const ch = glyphAt(c);
     if (ch === null) continue;
@@ -132,9 +129,19 @@ function readNotes(ink, w, st, bars) {
     if (last && last.s === g.s && g.x0 - last.x1 < 0.45 * u && last.t !== 'X' && g.ch !== 'X') { last.t += g.ch; last.x1 = g.x1; }
     else notes.push({ s: g.s, x0: g.x0, x1: g.x1, t: g.ch });
   }
+  // "(8)": a note held over from before is written in brackets, which are thin upright curves either side of it
+  // (they may touch the tie arcs, so they are looked for as a vertical run of ink rather than as a shape).
+  const upright = (x, y) => {
+    if (x <= 0 || x >= w || bars.some((b) => Math.abs(b - x) <= 2) || !ink[Math.round(y) * w + x]) return false;
+    let run = 1;
+    for (let d = 1; ink[(Math.round(y) - d) * w + x]; d++) run++;
+    for (let d = 1; ink[(Math.round(y) + d) * w + x]; d++) run++;
+    return run >= 4;
+  };
+  const bracket = (a, b, y) => { for (let x = Math.round(a); x <= Math.round(b); x++) if (upright(x, y)) return true; return false; };
   notes.forEach((n) => {
     n.cx = (n.x0 + n.x1) / 2;
-    n.tied = parens.some((q) => Math.abs(q.cy - st.ys[n.s]) < 0.8 * u && (Math.abs(q.x1 - n.x0) < 0.5 * u || Math.abs(q.x0 - n.x1) < 0.5 * u));
+    n.tied = bracket(n.x0 - 0.9 * u, n.x0 - 1, st.ys[n.s]) && bracket(n.x1 + 1, n.x1 + 0.9 * u, st.ys[n.s]);
   });
   return notes.sort((a, b) => a.cx - b.cx);
 }
@@ -281,12 +288,43 @@ const tiedTex = (notes, len) => {
 };
 const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
 
+// The lyrics ride on a track of their own (rests carrying the syllables), so the tablature stays clean.
+// A syllable's time in the bar comes from where it sits between the notes above it.
+function lyricBar(b, T) {
+  if (!b.lyr.length) return restTex(T);
+  const anchors = [[b.x0, 0], ...b.cols.map((c, k) => [c.cx, b.times[k]]), [b.x1, T]];
+  const timeAt = (x) => {
+    for (let i = 1; i < anchors.length; i++) {
+      const [xa, ta] = anchors[i - 1], [xb, tb] = anchors[i];
+      if (x <= xb) return xb > xa ? ta + ((Math.max(x, xa) - xa) / (xb - xa)) * (tb - ta) : tb;
+    }
+    return T;
+  };
+  const sy = b.lyr.slice(0, T);
+  const q = sy.map((l) => Math.round(timeAt(l.x)));
+  q.forEach((v, i) => { q[i] = Math.max(v, i ? q[i - 1] + 1 : 0); });
+  for (let i = q.length - 1; i >= 0; i--) q[i] = Math.min(q[i], T - (q.length - i));
+  const beats = [];
+  if (q[0] > 0) beats.push(restTex(q[0]));
+  sy.forEach((l, i) => {
+    const gap = (i + 1 < q.length ? q[i + 1] : T) - q[i];
+    const len = Math.min(gap, 4); // a long gap stays quiet, so a new line can start after it
+    const [first, ...rest] = pieces(len);
+    const d = dur(first);
+    const word = JSON.stringify(l.text);
+    beats.push((d.endsWith('}') ? `r.${d.slice(0, -1)} lyrics ${word}}` : `r.${d} {lyrics ${word}}`) + (rest.length ? ' ' + restTex(len - first) : ''));
+    if (gap > len) beats.push(restTex(gap - len));
+  });
+  return beats.join(' ');
+}
+
 /**
  * @param strips parsed strips in reading order ({ bars, heading })
  * @returns {{ tex: string, bars: number, exact: number } | null}
  */
 export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = {}) {
-  const bars = strips.flatMap((s) => s.bars);
+  // each lyric syllable belongs to the bar it starts in
+  const bars = strips.flatMap((s) => s.bars.map((b) => ({ ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) })));
   const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
@@ -326,6 +364,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
       prevStrings = new Set(c.notes.map((n) => n.s));
     }
     if (!b.cols.length) prevStrings = new Set();
+    let at = 0;
+    b.times = b.cols.map((c, k) => { const t = at; at += lens[k]; return t; });
     const beats = b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
     if (!b.cols.length) beats.splice(0, beats.length, restTex(T));
     const head = [];
@@ -334,6 +374,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     if (i === 0) head.push(`\\ts ${num} ${den}`);
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
   });
+  const sung = bars.some((b) => b.lyr.length);
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
@@ -344,5 +385,6 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100 } = 
     '\\tuning E4 B3 G3 D3 A2 E2',
     '\\instrument 27',
   ].filter(Boolean).join('\n');
-  return { tex: `${header}\n${out.join(' |\n')}`, bars: bars.length, exact };
+  const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${bars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
+  return { tex: `${header}\n${out.join(' |\n')}${voice}`, bars: bars.length, exact, lyrics: sung };
 }
