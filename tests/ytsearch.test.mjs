@@ -1,6 +1,6 @@
 // Run: node tests/ytsearch.test.mjs
 import assert from 'node:assert/strict';
-import { songQuery, rankResults, versionHints, pickConfident, explainPick, tabEvidence } from '../js/ytsearch.js';
+import { freshFirst, songQuery, rankResults, versionHints, pickConfident, explainPick, tabEvidence } from '../js/ytsearch.js';
 
 assert.deepEqual(songQuery({ title: 'Chris Tomlin - Here I Am To Worship' }), { artist: 'Chris Tomlin', title: 'Here I Am To Worship', text: 'Chris Tomlin Here I Am To Worship' });
 assert.equal(songQuery({ artist: 'Oasis', title: 'Wonderwall' }).text, 'Oasis Wonderwall');
@@ -70,5 +70,8 @@ const vocalPick = rankResults([
 assert.equal(vocalPick[0].id, 'song');
 const dur = rankResults([r('far', 'Metallica - Nothing Else Matters', 'Metallica', 330), r('near', 'Metallica - Nothing Else Matters', 'Metallica', 389)], want);
 assert.equal(dur[0].id, 'near');
+
+// Pressing Find again shows videos not shown before first.
+assert.deepEqual(freshFirst([{ id: 'a' }, { id: 'b' }, { id: 'c' }], new Set(['a'])).map((r) => r.id), ['b', 'c', 'a']);
 
 console.log('ytsearch: all tests passed');

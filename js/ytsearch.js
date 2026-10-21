@@ -195,15 +195,31 @@ export async function searchYouTube(q) {
 }
 
 // The song's recording, best match first.
-export async function findRecording(song, seconds, evidence) {
+// Each further press of "Find" (round 1, 2, ...) searches with other words, so it turns up
+// other uploads; ids already shown (`seen`) go to the back of the list.
+export const ROUND_WORDS = ['live', 'audio', 'lyrics', 'acoustic', 'full song', 'hd', 'performance', 'version'];
+export async function findRecording(song, seconds, evidence, round = 0, seen = []) {
   const q = songQuery(song);
   const want = { ...q, seconds, hints: versionHints(song, q.text), evidence };
-  const ranked = await findRanked(song, want);
-  return Object.assign(ranked, { want });
+  const ranked = await findRanked(song, want, round);
+  return Object.assign(freshFirst(ranked, new Set(seen)), { want });
 }
 
-async function findRanked(song, want) {
+export function freshFirst(list, seen) {
+  if (!seen.size) return list;
+  return [...list.filter((r) => !seen.has(r.id)), ...list.filter((r) => seen.has(r.id))];
+}
+
+async function findRanked(song, want, round = 0) {
   if (!want.text) return [];
+  if (round > 0) {
+    const w = ROUND_WORDS[(round - 1) % ROUND_WORDS.length];
+    const [a, b] = await Promise.allSettled([searchYouTube(`${want.text} ${w}`), searchYouTube(`${want.text} ${w} ${want.hints.words.join(' ')}`.trim())]);
+    if (a.status === 'rejected' && b.status === 'rejected') throw a.reason;
+    const h = want.hints;
+    const hints = { words: [...h.words, ...w.split(' ')], flags: { ...h.flags, live: h.flags.live || w === 'live', acoustic: h.flags.acoustic || w === 'acoustic' } };
+    return rankResults([...(a.value || []), ...(b.value || [])], { ...want, hints });
+  }
   // Searches: plain finds the artist's channel and album track, "official" the video, and, when
   // the tab's version note says which version it is, one with those words in.
   const extra = want.hints.words.length ? searchYouTube(`${want.text} ${want.hints.words.join(' ')}`) : Promise.resolve([]);

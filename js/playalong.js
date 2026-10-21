@@ -615,6 +615,9 @@ let matches = []; // the last search's results, to step through from the video
 
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 let finding = 0;
+let findRound = 0; // presses of Find for this song; each one looks for other videos
+let shownIds = new Set();
+let findSongId = null;
 
 // A YouTube link written in the file itself (Guitar Pro notices, copyright, instructions…).
 function linkInScore() {
@@ -639,13 +642,16 @@ async function findOnYouTube() {
   let confident = null;
   let whyPicked = '';
   usingBox(null);
+  if (findSongId !== song.id) { findSongId = song.id; findRound = 0; shownIds = new Set(); }
+  const round = findRound++;
   try {
-    const linked = linkInScore();
+    const linked = round === 0 ? linkInScore() : null;
     const secs = hooks.songSeconds?.() || 0;
     const ev = tabEvidence(song.sourceUrl ? parseSource(song.sourceUrl) : null, (hooks.score?.()?.tracks || []).map((t) => t.name));
-    results = await findRecording(song, secs, ev).catch((e) => { if (!linked) throw e; return []; });
+    results = await findRecording(song, secs, ev, round, [...shownIds]).catch((e) => { if (!linked) throw e; return []; });
     want = results.want || null;
     if (linked) { results.unshift(linked); confident = linked; whyPicked = 'the file links to it'; }
+    else if (round > 0) { confident = null; whyPicked = ''; } // asked again: show choices, don't pick for them
     else { confident = pickConfident(results, secs); whyPicked = confident && want ? explainPick(confident, want) : ''; }
   } catch (e) {
     if (mine === finding) {
@@ -658,9 +664,10 @@ async function findOnYouTube() {
   if (mine !== finding) return;
   $('pa-find').disabled = false;
   results = results.slice(0, 6);
+  results.forEach((r) => shownIds.add(r.id));
   matches = results;
   if (!results.length) { state.textContent = 'Nothing found. Try “Search on youtube.com”.'; list.hidden = true; return; }
-  state.textContent = confident ? '' : 'Best matches first. Click one to play it with the tab:';
+  state.textContent = confident ? '' : round ? 'Different videos. Press Find again for more, or click one:' : 'Best matches first. Click one to play it with the tab:';
   list.innerHTML = '';
   for (const r of results) {
     const li = document.createElement('li');

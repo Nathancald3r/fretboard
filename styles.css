@@ -830,3 +830,21 @@ label.block input, label.block textarea { display: block; width: 100%; margin-to
 label.block input, label.block textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; font: inherit; }
 
 .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* Linked video sheet: three columns on a wide screen so nothing needs scrolling */
+.pa-sheet h3 { margin: .2rem 0 .3rem; }
+.pa-sheet .row { margin: .3rem 0; }
+.pa-grid { display: grid; grid-template-columns: 1fr; gap: .2rem 1.2rem; }
+.pa-col { min-width: 0; }
+.pa-help { margin-left: auto; }
+.pa-help summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.pa-help[open] { position: absolute; left: 1rem; right: 1rem; top: 2.6rem; z-index: 3; background: var(--panel-2, var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: .4rem .8rem; }
+.pa-sheet .yt-results button { padding: .2rem .4rem; gap: .4rem; }
+.pa-sheet .yt-results img { width: 48px; }
+.pa-sheet #pa-yt-form input { width: auto; flex: 1; min-width: 0; }
+@media (min-width: 900px) {
+  .pa-sheet { max-height: min(72vh, 680px); }
+  .pa-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .pa-sheet .jog { height: 44px; }
+  .pa-sheet .jog .mono { font-size: 1.3rem; }
+}
