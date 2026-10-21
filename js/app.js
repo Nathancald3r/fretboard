@@ -226,6 +226,15 @@ function initEditor() {
 
 /* ---------- find online ---------- */
 
+// After an auto-import the song opens with the play-along panel showing (Linked video).
+function openPlayAlongSheet(tries = 20) {
+  const sheet = document.querySelector('.sheet[data-sheet="playalong"]');
+  if (!sheet || !sheet.hidden || !location.hash.startsWith('#song/')) return;
+  const btn = document.querySelector('[data-sheet-btn="playalong"]');
+  if (btn && btn.offsetParent) btn.click();
+  else if (tries > 0) setTimeout(() => openPlayAlongSheet(tries - 1), 150);
+}
+
 function initFind() {
   const box = $('find-sources');
   for (const s of TAB_SOURCES) {
@@ -241,8 +250,9 @@ function initFind() {
     e.preventDefault();
     const query = $('find-query').value;
     if (!query.trim()) { $('find-query').focus(); return; }
-    window.open(sourceUrl(e.submitter?.dataset.site || 'ug-gp', query), '_blank', 'noopener');
-    watchDownloads();
+    const url = sourceUrl(e.submitter?.dataset.site || 'ug-gp', query);
+    window.open(url, '_blank', 'noopener');
+    watchDownloads({ query, url });
   });
 }
 
@@ -267,7 +277,10 @@ async function main() {
   initScales();
   initKeys();
   initDrawer();
-  initQuickImport({ importFiles, openEditor, toast, openSong: (id) => { location.hash = `song/${id}`; } });
+  initQuickImport({ importFiles, openEditor, toast, openSong: (id, { playAlong = false } = {}) => {
+    location.hash = `song/${id}`;
+    if (playAlong) openPlayAlongSheet();
+  } });
   // The Android app's tab browser hands over each tab file it downloads (base64) to add here.
   window.fretboardImport = async (name, base64, url, pageTitle) => {
     const bin = atob(base64);

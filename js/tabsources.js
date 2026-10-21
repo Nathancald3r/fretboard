@@ -44,3 +44,22 @@ export const TAB_SOURCES = [
 ];
 
 export const sourceUrl = (id, text) => TAB_SOURCES.find((s) => s.id === id)?.url(splitQuery(text));
+
+const words = (s) => (s || '').toLowerCase().replace(/&/g, ' and ').replace(/['’.]/g, '').split(/[^a-z0-9]+/)
+  .filter((w) => w && w !== 'the' && w !== 'and' && w !== 'gp');
+
+/** How well a downloaded file's name fits the searched song (share of the query's words in the name). */
+export function matchScore(fileName, query) {
+  const q = words((query || '').replace(/[-–—]/g, ' '));
+  if (!q.length) return 0;
+  const have = new Set(words((fileName || '').replace(/\.\w+$/, '')));
+  return q.filter((w) => have.has(w)).length / q.length;
+}
+
+/** Of several new files, the index of the one that best fits the query (-1 when none fits at all). */
+export function bestMatch(fileNames, query) {
+  let best = -1;
+  let top = 0;
+  fileNames.forEach((n, i) => { const sc = matchScore(n, query); if (sc > top) { top = sc; best = i; } });
+  return best;
+}

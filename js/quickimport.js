@@ -1,6 +1,7 @@
 // One-click imports: paste a text tab straight from the clipboard, and pick up new
 // tab files from the Downloads folder (Chrome / Edge on desktop).
 import { getValue, setValue } from './db.js';
+import { bestMatch } from './tabsources.js';
 
 const $ = (id) => document.getElementById(id);
 const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|txt)$/i;
@@ -71,7 +72,7 @@ async function changeFolder(toast) {
 const WATCH_MINUTES = 20;
 const WATCH_EVERY = 3000;
 let ctx = null; // { importFiles, toast, openSong }
-let watch = null; // { since, until, timer }
+let watch = null; // { since, until, timer, query, url }
 let busy = false;
 
 async function grantedFolder() {
@@ -98,10 +99,10 @@ async function showAuto() {
   if (dir) {
     const on = document.createElement('span');
     on.className = 'find-auto-on';
-    on.textContent = watch ? `● Watching “${dir.name}” for new tab files…` : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
+    on.textContent = watch ? '● Waiting for your download: save the Guitar Pro file on the site and it opens here, ready for play-along.' : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
     el.append(on);
   } else {
-    el.append('Auto-import is off. ');
+    el.append(watch ? 'One click, once, so the file you download opens here by itself: ' : 'Auto-import is off. ');
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'ghost small';
@@ -132,9 +133,13 @@ async function autoImport() {
     if (!fresh.length) return;
     fresh.forEach((f) => seen.add(fileKey(f)));
     await setValue('importedFiles', [...seen].slice(-500));
+    // Best fit for the searched song first; the page it came from is remembered as its source.
+    const pick = watch.query ? bestMatch(fresh.map((f) => f.name), watch.query) : -1;
+    if (pick > 0) fresh.unshift(...fresh.splice(pick, 1));
+    if (watch.url) fresh.forEach((f) => { f.source = { url: watch.url, title: '' }; });
     const { ids } = await ctx.importFiles(fresh, { quietIfEmpty: true });
-    // One new tab: open it right away.
-    if (ids?.length === 1 && !document.hidden) ctx.openSong(ids[0]);
+    // One new tab, or the one that matches the search: open it in play-along right away.
+    if (ids?.length && (ids.length === 1 || pick >= 0) && !document.hidden) ctx.openSong(ids[0], { playAlong: true });
   } catch { /* folder gone or unreadable: try again next time */ } finally { busy = false; }
 }
 
@@ -144,11 +149,11 @@ function stopWatch() {
   showAuto();
 }
 
-export async function watchDownloads() {
+export async function watchDownloads({ query = '', url = '' } = {}) {
   if (!ctx || !canWatch) return;
   const since = watch?.since ?? Date.now() - 60e3; // a download that just finished counts
   clearInterval(watch?.timer);
-  watch = { since, until: Date.now() + WATCH_MINUTES * 60e3, timer: setInterval(autoImport, WATCH_EVERY) };
+  watch = { since, until: Date.now() + WATCH_MINUTES * 60e3, timer: setInterval(autoImport, WATCH_EVERY), query, url };
   await showAuto();
 }
 
