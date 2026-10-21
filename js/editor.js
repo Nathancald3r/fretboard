@@ -284,7 +284,8 @@ export function pickBeat(beat) {
   if (editMode()) {
     // Tapping a bar selects it; with Extend on, everything from the first bar to this one.
     const cur = selectionRange();
-    if (!extending && cur && cur.a === bar.index && cur.b === bar.index) { deselect(); paintBeat(); return; } // tap the selected bar again to deselect
+    if (ctxPending && cur && bar.index >= cur.a && bar.index <= cur.b) { paintBeat(); return; } // right-click inside the selection keeps it
+    if (!extending && !ctxPending && cur && cur.a === bar.index && cur.b === bar.index) { deselect(); paintBeat(); return; } // tap the selected bar again to deselect
     const from = extending && anchor !== null ? anchor : bar.index;
     if (!extending || anchor === null) anchor = bar.index;
     setTimeout(() => hooks.selectBars(Math.min(from, bar.index), Math.max(from, bar.index)), 0);
@@ -606,6 +607,75 @@ function initEditMode() {
     }
   });
   window.addEventListener('fbselection', paintBar);
+  initContextMenu();
+}
+
+/* ---------- right-click menu on the tab ---------- */
+
+let ctxEl = null;
+let ctxPending = false;
+const closeCtx = () => { ctxEl?.remove(); ctxEl = null; };
+
+function showCtx(items, x, y) {
+  closeCtx();
+  ctxEl = document.createElement('div');
+  ctxEl.className = 'card-menu ctx-menu';
+  ctxEl.setAttribute('role', 'menu');
+  ctxEl.innerHTML = items.map((it, i) => it === '-' ? '<hr>' : `<button role="menuitem" data-i="${i}" ${it.off ? 'disabled' : ''} class="${it.danger ? 'danger' : ''}">${esc(it.label)}${it.key ? `<small>${esc(it.key)}</small>` : ''}</button>`).join('');
+  document.body.append(ctxEl);
+  Object.assign(ctxEl.style, { left: Math.max(8, Math.min(x, innerWidth - 240)) + 'px', top: Math.max(8, Math.min(y, innerHeight - ctxEl.offsetHeight - 8)) + 'px' });
+  ctxEl.addEventListener('click', (e) => {
+    const it = items[Number(e.target.closest('[data-i]')?.dataset.i)];
+    if (!it || it.off) return;
+    closeCtx();
+    it.run();
+  });
+}
+
+function initContextMenu() {
+  const area = $('score-scroll');
+  area.addEventListener('pointerdown', (e) => { ctxPending = e.button === 2; }, true);
+  area.addEventListener('contextmenu', (e) => {
+    const song = hooks.song();
+    if (!song) return;
+    e.preventDefault();
+    // pickBeat has run for this right-click by now (it selects the bar under the pointer in edit mode).
+    setTimeout(() => {
+      ctxPending = false;
+      const r = selectionRange();
+      const bars = r ? (r.a === r.b ? `bar ${r.a + 1}` : `bars ${r.a + 1}–${r.b + 1}`) : '';
+      let items;
+      if (editMode()) {
+        items = [
+          { label: r ? `Copy ${bars}` : 'Copy', key: 'Ctrl+C', off: !r, run: () => copyBars(false) },
+          { label: 'Cut', key: 'Ctrl+X', off: !r, run: () => copyBars(true) },
+          { label: 'Paste after', key: 'Ctrl+V', off: !clip || (!r && !sel), run: pasteBars },
+          '-',
+          { label: 'Repeat (play twice)', key: 'Ctrl+D', off: !r, run: () => doBars('dup') },
+          { label: 'Make rests', off: !r, run: restBars },
+          { label: 'Insert empty bar after', off: !r && !sel, run: insertEmptyBar },
+          { label: 'Delete bars', key: 'Del', danger: true, off: !r, run: () => doBars('del') },
+          '-',
+          { label: 'Undo' + (undo.length ? `: ${undo[undo.length - 1].label}` : ''), key: 'Ctrl+Z', off: !undo.length, run: undoEdit },
+          { label: 'Redo', key: 'Ctrl+Y', off: !redo.length, run: redoEdit },
+          { label: 'Deselect', key: 'Esc', off: !r, run: deselect },
+        ];
+      } else {
+        items = [
+          { label: r ? `Loop ${bars}` : 'Loop (select bars first)', off: !r, run: () => hooks.loopSelection() },
+          { label: 'Save this loop', off: !r, run: () => document.querySelector('#pl-loops [data-save]')?.click() },
+          { label: 'Clear selection', key: 'Esc', off: !r, run: deselect },
+          '-',
+          { label: '✎ Edit this tab', run: () => { location.hash = `edit/${song.id}`; } },
+        ];
+      }
+      showCtx(items, e.clientX, e.clientY);
+    }, 30);
+  });
+  document.addEventListener('pointerdown', (e) => { if (ctxEl && !e.target.closest('.ctx-menu')) closeCtx(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCtx(); });
+  window.addEventListener('hashchange', closeCtx);
+  window.addEventListener('blur', closeCtx);
 }
 
 const sheetOpen = () => !$('ed-sheet').hidden;

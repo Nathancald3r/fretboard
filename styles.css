@@ -1225,3 +1225,8 @@ body.edit-mode .ed-close { display: none; }
   body.edit-mode .ed-bar { top: 3rem; }
   body.edit-mode #ed-version-chip { max-width: 9rem; }
 }
+
+.ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: .2rem 0; }
+.ctx-menu button:disabled { opacity: .4; }
+.ctx-menu { z-index: 120; }
+@media (max-width: 640px) { .ctx-menu { left: 8px !important; right: 8px; } }
