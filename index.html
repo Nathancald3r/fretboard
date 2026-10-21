@@ -118,6 +118,10 @@
         <a id="pl-source" class="pill src" hidden target="_blank" rel="noopener noreferrer" title="Where this tab came from (Tab info)"></a>
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
+      <span class="head-tools">
+        <button id="pl-focus" class="icon-btn" title="Focus view: hide everything except the tab, the title and the play controls" aria-label="Focus view" aria-pressed="false">⛶</button>
+        <button id="pl-more" class="icon-btn phone-only" title="More settings: tracks, linked video, tab info, view, sound, amp and more" aria-label="More settings" aria-expanded="false">⚙</button>
+      </span>
       <span id="pl-info" class="muted small-text"></span>
       <span class="seg mode-seg" role="group" aria-label="Mode" title="Practice: every tool (loops, speed, trainer, note check). Live: for rehearsals and gigs, songs at full tempo, one after another.">
         <button data-mode="practice">Practice</button><button data-mode="live">Live</button>
@@ -528,6 +532,7 @@
             <canvas id="sg-lane" class="sing-lane"></canvas>
             <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
           </div>
+          <button id="pl-tempo-open" class="pill-btn phone-only" title="Tempo and speed" aria-expanded="false"><span id="pl-tempo-open-txt">♩ –</span></button>
           <div class="speed" title="Tempo. Type a BPM, tap it, or − / + ( [ ] ) for 5 BPM steps. Pitch never changes.">
             <button id="pl-slower" class="icon-btn small practice-only" aria-label="Slower">−</button>
             <label class="bpm"><input id="pl-bpm-input" type="number" min="10" max="400" step="1" inputmode="numeric" aria-label="Tempo in BPM"><span>BPM</span></label>
@@ -539,6 +544,7 @@
             </div>
             <button id="pl-speed-pct" class="pill-btn practice-only" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
             <span id="pl-tempo-now" class="muted small-text"></span>
+            <button id="pl-tempo-adv" class="pill-btn phone-only" data-sheet-btn="speed">Advanced…</button>
           </div>
           <div class="toggles">
             <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
@@ -563,6 +569,8 @@
               <button class="ghost small" data-sheet-btn="amp">Amp</button>
               <button class="ghost small practice-only" data-sheet-btn="sing">Sing</button>
               <button class="ghost small practice-only" data-sheet-btn="judge" title="Note check: play the part and get each note judged">Note check</button>
+              <button class="ghost small phone-only" data-sheet-btn="click">Click settings</button>
+              <button class="ghost small phone-only" data-sheet-btn="bt">Bluetooth delay</button>
             </div>
           </div>
         </div>

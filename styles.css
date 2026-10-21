@@ -853,3 +853,75 @@ label.block input, label.block textarea { background: var(--bg); color: var(--te
 .pa-sheet .yt-results { max-height: 14rem; overflow: auto; }
 #pa-find.open { box-shadow: inset 0 0 0 2px var(--accent-ink, #0003); }
 #sb-bt.on { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- Phone player: only what practice needs on screen; the rest is a tap away ---------- */
+.phone-only { display: none; }
+.head-tools { display: inline-flex; gap: .3rem; margin-left: auto; align-self: center; }
+.head-tools .icon-btn { width: 2.4rem; height: 2.4rem; font-size: 1.15rem; }
+.player-head > .player-title { flex: 1 1 0; min-width: 0; }
+/* Focus view (any screen): the title line, the tab and the play controls, nothing else. */
+body.focus .topbar, body.focus .mode-seg, body.focus .player-head > .sections, body.focus .toggles,
+body.focus .playbar-end, body.focus #pl-source, body.focus #pl-artist { display: none; }
+body.focus #pl-more { display: none; }
+body.focus .player-head { flex-wrap: nowrap; }
+body.focus .player-head h1 { flex: 0 1 auto; }
+body.focus #pl-info { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .phone-only { display: inline-flex; }
+  .head-tools { order: 2; }
+  .player-head { flex-wrap: wrap; row-gap: .1rem; }
+  .player-head > .player-title { flex: 1 1 0; }
+  #pl-info { order: 3; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mode-seg { order: 4; }
+  .mode-seg button { min-height: 28px; padding: .1rem .6rem; font-size: .8rem; }
+  .player-head > .sections { order: 5; }
+  .player-head > .sections button { padding: .15rem .6rem; font-size: .8rem; min-height: 30px; }
+  .player-head > .setlist-nav { order: 3; margin-left: 0; }
+  /* Tempo: one button; the controls pop up above the bar. */
+  #pl-tempo-open { min-height: 40px; padding: .2rem .8rem; font-weight: 600; }
+  .playbar-row .speed { display: none; }
+  body.tempo-open .playbar-row .speed {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .4rem .6rem;
+    position: fixed; left: .5rem; right: .5rem; bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .4rem); z-index: 40;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem; box-shadow: 0 -8px 24px #000a;
+  }
+  body.tempo-open .speed .bpm input { font-size: 1.7rem; width: 4.5rem; }
+  body.tempo-open .speed .speed-slide { flex: 1 1 100%; }
+  /* The row of switches: small, one line, no gear buttons (those are in ⚙). */
+  .toggles { display: flex; flex-wrap: nowrap; gap: .25rem; overflow-x: auto; scrollbar-width: none; width: 100%; }
+  .toggles .tog { padding: .25rem .6rem; font-size: .78rem; white-space: nowrap; min-height: 34px; }
+  .toggles .tog-group .gear { display: none; }
+  .toggles .tog-group .tog:first-child { border-radius: 999px; }
+  #pl-clear-sel { display: none; }
+  /* Everything else: a menu at the top right. */
+  .playbar-end { display: none; }
+  body.more-open .playbar-end {
+    display: flex; flex-direction: column; align-items: stretch; gap: .4rem; width: auto; flex: none;
+    position: fixed; top: calc(var(--top-h, 52px) + 2.6rem); right: .5rem; z-index: 40; max-width: calc(100vw - 1rem);
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem; box-shadow: 0 8px 24px #000a;
+  }
+  body.more-open .sheet-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; }
+  body.more-open .sheet-btns button { min-height: 40px; }
+  /* The video sits above the tab, in view, instead of floating off the edge. */
+  .pa-video, .pa-video.mini, .pa-video.collapsed {
+    position: static; order: 1; flex: none; width: min(100%, 340px); max-width: 100%; margin: 0 auto; box-shadow: none;
+  }
+  .pa-video:not(.mini) { width: 100%; }
+  .pa-video:not(.collapsed) .pa-video-frame { max-height: 26vh; aspect-ratio: 16 / 9; margin: 0 auto; }
+  .score-scroll { order: 2; }
+  body.focus .player-head > .setlist-nav { display: flex; }
+}
+@media (max-width: 640px) {
+  .player-head > .player-title { flex: 1 1 calc(100% - 6rem); }
+  #pl-info { flex: 1 1 0; }
+}
+@media (max-width: 640px) {
+  body.more-open .track-chip { flex: none; min-width: 0; }
+  body.more-open .sheet-btns { flex: none; overflow: visible; }
+  .pa-video.mini { width: min(100%, 240px); }
+}
+body.focus #pl-info { font-size: 0; flex: 0 0 auto; }
+body.focus #pl-info::after { content: attr(data-short); font-size: .85rem; }
+body.focus .player-head { flex-wrap: wrap; }
+body.focus .player-head > .player-title { flex: 1 1 0; }
+body.focus .head-tools { order: 1; }

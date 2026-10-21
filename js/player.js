@@ -609,6 +609,7 @@ function updateBpm() {
   const pct = Math.round(speedPct);
   $('pl-speed-val').textContent = speedPct === 100 ? `original speed (${Math.round(baseTempo)} BPM)` : `${pct}% of ${Math.round(baseTempo)} BPM`;
   $('pl-speed-pct').textContent = pct + '%';
+  $('pl-tempo-open-txt').textContent = `♩ ${bpm}${pct === 100 ? '' : ` · ${pct}%`}`;
   $('pl-speed-pct').classList.toggle('changed', speedPct !== 100);
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === speedPct));
   if (document.activeElement !== $('pl-speed-slide')) $('pl-speed-slide').value = Math.min(100, speedPct);
@@ -884,6 +885,8 @@ function showTrackInfo() {
   const semis = song?.transpose || 0;
   if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
+  // The focus view shows just the key, and the capo when there is one.
+  $('pl-info').dataset.short = [songKey() ? 'Key ' + keyLabel(songKey()) : '', staff?.capo ? `Capo ${staff.capo}` : ''].filter(Boolean).join(' · ');
   showShift();
 }
 
@@ -1592,7 +1595,38 @@ function initFit() {
   fit();
 }
 
+// Phone / focus helpers: the tempo popover, the ⚙ menu and the focus view close when you press elsewhere.
+function initCompact() {
+  const body = document.body;
+  const flip = (cls, btn, force) => {
+    const on = force ?? !body.classList.contains(cls);
+    body.classList.toggle(cls, on);
+    btn?.setAttribute('aria-expanded', String(on));
+    return on;
+  };
+  $('pl-tempo-open').addEventListener('click', () => { flip('more-open', $('pl-more'), false); flip('tempo-open', $('pl-tempo-open')); });
+  $('pl-more').addEventListener('click', () => { flip('tempo-open', $('pl-tempo-open'), false); flip('more-open', $('pl-more')); });
+  document.addEventListener('pointerdown', (e) => {
+    if (body.classList.contains('tempo-open') && !e.target.closest('.speed, #pl-tempo-open')) flip('tempo-open', $('pl-tempo-open'), false);
+    if (body.classList.contains('more-open') && !e.target.closest('.playbar-end, #pl-more')) flip('more-open', $('pl-more'), false);
+  });
+  // Choosing something from the menu (or Advanced…) opens its sheet and tucks the menu away.
+  document.querySelectorAll('.playbar-end [data-sheet-btn], #pl-tempo-adv').forEach((b) => b.addEventListener('click', () => {
+    flip('more-open', $('pl-more'), false);
+    flip('tempo-open', $('pl-tempo-open'), false);
+  }));
+  $('pl-focus').addEventListener('click', () => {
+    const on = body.classList.toggle('focus');
+    $('pl-focus').setAttribute('aria-pressed', String(on));
+    $('pl-focus').textContent = on ? '⤡' : '⛶';
+    flip('more-open', $('pl-more'), false);
+    flip('tempo-open', $('pl-tempo-open'), false);
+    try { if (on) document.documentElement.requestFullscreen?.().catch(() => {}); else if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* not allowed here */ }
+  });
+}
+
 function initDock() {
+  initCompact();
   document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.addEventListener('click', () => { openSheet(b.dataset.sheetBtn); b.blur(); }));
   document.querySelectorAll('.sheet [data-close]').forEach((b) => b.addEventListener('click', () => openSheet(null)));
   // The score fills the space between the top bar and the play bar.
