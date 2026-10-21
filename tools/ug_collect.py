@@ -107,7 +107,6 @@ def main():
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--only", default="")
     ap.add_argument("--out", default="")
-    ap.add_argument("--again", action="store_true", help="save tracks already in the folder again as '(2)' copies")
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     a = ap.parse_args()
     PORT = a.port
@@ -122,11 +121,20 @@ def main():
         open_instruments(pg)
         names = track_names(pg)
         song, artist = song_name(pg)
+        # original key from the "Tuning: ... · Key: Bb · Capo: ..." line
+        km = re.search(r"Key:\s*([A-G][#b♭♯]?m?)", pg.evaluate("document.body.innerText"))
+        key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
         if not names:
             sys.exit("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, rerun.")
     if only:
         names = [n for n in names if n.lower() in only]
-    out = (Path(a.out) if a.out else Path.home() / "Downloads" / f"UG {song}").resolve()
+    # one folder per song: Downloads\UG Songs\Champion - Bethel Music (Key Bb)
+    folder = " - ".join(x for x in (song, artist) if x) + (f" (Key {key})" if key else "")
+    out = (Path(a.out) if a.out else Path.home() / "Downloads" / "UG Songs" / folder).resolve()
+    old = Path.home() / "Downloads" / f"UG {song}"  # earlier runs saved here; move them over
+    if not a.out and old.is_dir() and not out.exists():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        old.rename(out)
     print(f"{song}: {len(names)} tracks -> {', '.join(names)}\n"
           f"Saving each one into {out} by itself; keep hands off keyboard and mouse until it says Done.\n")
 
@@ -134,11 +142,8 @@ def main():
     for n in names:
         label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
         dest = out / f"{label}.pdf"
-        if dest.exists() and not a.again:
-            print(f"  {dest.name}: already there, skipped")
-            continue
         k = 2
-        while dest.exists():  # --again: never replace, save as "(2)", "(3)"...
+        while dest.exists():  # every track is saved; an existing file is never replaced, the new one gets "(2)", "(3)"...
             dest = out / f"{label} ({k}).pdf"
             k += 1
         with sync_playwright() as p:
