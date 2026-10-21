@@ -15,7 +15,7 @@ import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport, watchDownloads } from './quickimport.js';
+import { initQuickImport, watchDownloads, showReady } from './quickimport.js';
 import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
@@ -100,6 +100,7 @@ async function renderLibrary() {
   document.querySelectorAll('#lib-chart [data-chart]').forEach((b) => b.classList.toggle('on', b.dataset.chart === chartFilter));
   $('lib-controls').hidden = !total;
   renderTidy(all);
+  showReady();
 
   $('library-list').innerHTML = songs.map((s) => {
     const type = chartType(s);
@@ -465,6 +466,9 @@ async function importPdfParts(files) {
   const first = namesFromPdf(files[0].name.replace(/\.[^.]+$/, ''), true);
   const items = await readParts(files, first.title);
   if (!items) { toast('Cancelled: nothing was added.'); return null; }
+  // guitar parts with tab first, so the song opens on a guitar (the order can be changed in the review)
+  const guitar = (it) => (it.strips && /guitar|acoustic|electric|lead(?!\s*vocal)|rhythm/i.test(it.name) ? 0 : 1);
+  items.sort((x, y) => guitar(x) - guitar(y));
   const pick = await reviewParts(items, first.title, first.artist);
   if (!pick) { toast('Cancelled: nothing was added.'); return null; }
   const { title, artist } = pick;

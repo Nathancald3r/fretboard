@@ -115,6 +115,83 @@ async function pickFiles(importFiles) {
   importFiles(await Promise.all(handles.map((h) => h.getFile())));
 }
 
+/* ---------- songs the UG collector finished ---------- */
+
+// tools/ug_collect.py leaves fretboard-run.json in each song folder it finishes (UG Songs\<song>).
+// Songs not imported (or put off with Not now) yet are offered in the library.
+async function readyRuns(dir) {
+  const ug = await ugSongs(dir);
+  if (!ug) return [];
+  const done = new Set((await getValue('importedRuns')) || []);
+  const runs = [];
+  for await (const entry of ug.values()) {
+    if (entry.kind !== 'directory') continue;
+    let m;
+    try { m = JSON.parse(await (await (await entry.getFileHandle('fretboard-run.json')).getFile()).text()); } catch { continue; }
+    const key = `${entry.name}|${m?.finished}`;
+    const tracks = Array.isArray(m?.tracks) ? m.tracks.filter((t) => typeof t?.file === 'string' && /\.pdf$/i.test(t.file)) : [];
+    if (done.has(key) || !tracks.length) continue;
+    runs.push({ key, dir: entry, song: String(m.song || entry.name), tracks, finished: String(m.finished || '') });
+  }
+  return runs.sort((a, b) => b.finished.localeCompare(a.finished));
+}
+
+async function markRun(key) {
+  const done = (await getValue('importedRuns')) || [];
+  await setValue('importedRuns', [...done.filter((k) => k !== key), key].slice(-500));
+}
+
+let readyBusy = false;
+export async function showReady() {
+  const box = $('lib-ready');
+  if (!box || !ctx || !canWatch || readyBusy) return;
+  readyBusy = true;
+  try {
+    const stored = await getValue('downloadsDir').catch(() => null);
+    const dir = await grantedFolder();
+    box.innerHTML = '';
+    if (!dir) { // after a browser restart reading the folder needs a click again
+      box.hidden = !stored;
+      if (stored) {
+        box.append('Songs saved by the UG collector show up here. ');
+        const b = button('Check for them', 'ghost small', async () => {
+          try { await stored.requestPermission({ mode: 'read' }); } catch { return; }
+          showReady();
+        });
+        box.append(b);
+      }
+      return;
+    }
+    const runs = await readyRuns(dir);
+    box.hidden = !runs.length;
+    if (!runs.length) return;
+    const r = runs[0];
+    const text = document.createElement('span');
+    text.textContent = `“${r.song}” is ready: ${r.tracks.length} PDF${r.tracks.length > 1 ? 's' : ''} saved by the UG collector.${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
+    box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.key); showReady(); }));
+  } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
+}
+
+function button(label, cls, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = cls;
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+async function importRun(r) {
+  const files = [];
+  for (const t of r.tracks) {
+    try { files.push(await (await r.dir.getFileHandle(t.file)).getFile()); } catch { /* moved or deleted: left out */ }
+  }
+  if (!files.length) { ctx.toast(`The PDFs for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return; }
+  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true });
+  if (ids?.length) await markRun(r.key); // cancelled: it stays offered
+  showReady();
+}
+
 async function changeFolder(toast) {
   try {
     const dir = await window.showDirectoryPicker({ id: 'tab-downloads', startIn: 'downloads', mode: 'read' });
@@ -223,6 +300,7 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   showAuto();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) autoImport(); });
   window.addEventListener('focus', autoImport);
+  window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector
   $('btn-clip').hidden = !navigator.clipboard?.readText;
   $('btn-clip').addEventListener('click', () => pasteFromClipboard(openEditor));
   const folderSupported = canWatch;
