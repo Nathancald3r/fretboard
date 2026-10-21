@@ -1622,7 +1622,6 @@ function initCompact() {
     // The video is a pop-up from the bottom; its minimize button folds it down to just its title bar.
     const pop = (on) => {
       document.body.classList.toggle('video-open', on);
-      $('pa-video-close').textContent = on ? '⌄' : '⌃';
       $('pa-video-close').title = on ? 'Minimize the video (it keeps playing)' : 'Show the video';
       $('pa-video-close').setAttribute('aria-label', $('pa-video-close').title);
       if (on) setTimeout(keepPlayheadInView, 300);

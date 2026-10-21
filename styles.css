@@ -1073,3 +1073,7 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
   body:not(.video-open) .playbar-row > #pa-video { box-shadow: 0 -4px 14px #0008; }
   #pa-video .pa-video-bar button { min-width: 40px; font-size: 1.1rem; }
 }
+
+#pa-video-close svg { display: block; transition: transform .2s; }
+body:not(.video-open) #pa-video-close svg { transform: rotate(180deg); }
+@media (max-width: 640px) { #pa-video #pa-video-close { display: inline-flex; align-items: center; justify-content: center; } }
