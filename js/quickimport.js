@@ -4,7 +4,7 @@ import { getValue, setValue } from './db.js';
 import { bestMatch } from './tabsources.js';
 
 const $ = (id) => document.getElementById(id);
-const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|txt)$/i;
+const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|txt|pdf)$/i;
 const SCAN_DAYS = 14; // only look at recent downloads
 const fileKey = (f) => `${f.name}|${f.size}|${f.lastModified}`;
 
