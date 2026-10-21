@@ -3,7 +3,7 @@
 // (show / mute / solo / volume), play-along with the recording and a speed trainer.
 import { initEditor, pickBeat } from './editor.js';
 import { updateSong, getValue, setValue } from './db.js';
-import { TONES, installTone, getTone, setTone } from './tone.js';
+import { TONES, installTone, getTone, setTone, ROOMS, getRoom, setRoom } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
@@ -1694,6 +1694,10 @@ function initSound() {
   Object.entries(TONES).forEach(([key, t]) => tone.add(new Option(t.label, key)));
   tone.value = getTone();
   tone.addEventListener('change', () => setTone(tone.value));
+  const roomSel = $('pl-room');
+  Object.entries(ROOMS).forEach(([key, r]) => roomSel.add(new Option(r.label, key)));
+  roomSel.value = getRoom();
+  roomSel.addEventListener('change', () => setRoom(roomSel.value));
   const strum = $('pl-strum');
   strum.checked = strumOn();
   strum.addEventListener('change', () => {

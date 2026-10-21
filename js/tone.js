@@ -1,7 +1,10 @@
 // Output EQ for the player. alphaTab's synth connects its final node (an AudioWorklet or
 // ScriptProcessor) straight to the speakers; we catch that connection and route it
 // through a small tone chain instead, which takes the piercing top end off the
-// built-in soundfont's guitars.
+// built-in soundfont's guitars, and adds a little room around the dry synth (a generated
+// reverb, no downloaded files), which makes it sound played in a space, not inside the computer.
+
+import { makeReverbIR } from './ampdsp.js';
 
 export const TONES = {
   warm: { label: 'Warm (default)', lowShelf: 2, presence: -5, highShelf: -10, lowpass: 5200 },
@@ -10,6 +13,15 @@ export const TONES = {
   bright: { label: 'Bright (original)', lowShelf: 0, presence: 0, highShelf: 0, lowpass: 20000 },
 };
 const KEY = 'fretboard-tone';
+
+export const ROOMS = {
+  off: { label: 'None (dry)', send: 0, seconds: 0 },
+  room: { label: 'Room (default)', send: 0.16, seconds: 1.1 },
+  hall: { label: 'Hall', send: 0.26, seconds: 2.4 },
+};
+const ROOM_KEY = 'fretboard-room';
+let room = 'room';
+try { if (ROOMS[localStorage.getItem(ROOM_KEY)]) room = localStorage.getItem(ROOM_KEY); } catch { /* ignore */ }
 
 let current = 'warm';
 try { if (TONES[localStorage.getItem(KEY)]) current = localStorage.getItem(KEY); } catch { /* ignore */ }
@@ -31,7 +43,18 @@ function buildChain(ctx) {
   const out = ctx.createGain();
   out.gain.value = 0.9;
   low.connect(presence).connect(high).connect(lowpass).connect(comp).connect(out).connect(ctx.destination);
-  const chain = { ctx, input: low, low, presence, high, lowpass };
+  // Reverb on a side path: a short pre-delay keeps the attack clear, and no bass goes in, so
+  // the low end stays tight.
+  const send = ctx.createGain();
+  send.gain.value = 0;
+  const preDelay = ctx.createDelay(0.1);
+  preDelay.delayTime.value = 0.018;
+  const lowCut = ctx.createBiquadFilter();
+  lowCut.type = 'highpass'; lowCut.frequency.value = 280;
+  const reverb = ctx.createConvolver();
+  reverb.normalize = false;
+  lowpass.connect(send).connect(preDelay).connect(lowCut).connect(reverb).connect(comp);
+  const chain = { ctx, input: low, low, presence, high, lowpass, send, reverb, irFor: 0 };
   apply(chain);
   chains.add(chain);
   return chain;
@@ -44,6 +67,17 @@ function apply(chain) {
   chain.presence.gain.setTargetAtTime(t.presence, now, 0.05);
   chain.high.gain.setTargetAtTime(t.highShelf, now, 0.05);
   chain.lowpass.frequency.setTargetAtTime(Math.min(t.lowpass, chain.ctx.sampleRate / 2 - 100), now, 0.05);
+  const rm = ROOMS[room];
+  if (rm.seconds && chain.irFor !== rm.seconds) {
+    try {
+      const [l, r] = makeReverbIR(chain.ctx.sampleRate, rm.seconds);
+      const buf = chain.ctx.createBuffer(2, l.length, chain.ctx.sampleRate);
+      buf.copyToChannel(l, 0); buf.copyToChannel(r, 1);
+      chain.reverb.buffer = buf;
+      chain.irFor = rm.seconds;
+    } catch { /* no reverb; the dry sound still plays */ }
+  }
+  chain.send.gain.setTargetAtTime(chain.irFor ? rm.send : 0, now, 0.05);
 }
 
 function chainFor(ctx) {
@@ -69,6 +103,14 @@ export function installTone() {
 }
 
 export const getTone = () => current;
+export const getRoom = () => room;
+
+export function setRoom(name) {
+  if (!ROOMS[name]) return;
+  room = name;
+  try { localStorage.setItem(ROOM_KEY, name); } catch { /* ignore */ }
+  chains.forEach(apply);
+}
 
 export function setTone(name) {
   if (!TONES[name]) return;
