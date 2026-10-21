@@ -1026,9 +1026,10 @@ a.button { text-decoration: none; display: inline-flex; align-items: center; }
 
 @media (max-width: 640px) {
   /* The small video sits on the play row itself, between the tempo and instrument buttons and the end. */
-  .playbar-row { flex-wrap: nowrap; align-items: center; gap: .3rem; }
-  .playbar-row > .pa-video.mini:not(.collapsed) { width: 5.6rem; flex: 0 0 5.6rem; }
-  .playbar-row > .track-chip { flex: 0 1 auto; min-width: 4.2rem; max-width: 7.5rem; overflow: hidden; }
+  .playbar-row { flex-wrap: wrap; align-items: center; gap: .3rem; }
+  .playbar-row .toggles { flex: 1 1 100%; order: 9; }
+  .playbar-row > .pa-video.mini:not(.collapsed) { width: 5.2rem; flex: 0 0 5.2rem; }
+  .playbar-row > .track-chip { flex: 0 1 auto; min-width: 3.4rem; max-width: 5.2rem; overflow: hidden; }
   .playbar-row > .pa-video:not(.mini):not(.collapsed) { flex-basis: 100%; }
   .playbar-row:has(> .pa-video:not(.mini):not(.collapsed)) { flex-wrap: wrap; }
 }
