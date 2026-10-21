@@ -52,7 +52,7 @@ export function initLayers() {
   document.querySelectorAll('.sheet').forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['hidden'] }));
   // Tapping the tab (or anywhere outside the sheet and the buttons that open it) closes an open sheet.
   document.addEventListener('pointerdown', (e) => {
-    if (!document.querySelector('.sheet:not([hidden])')) return;
+    if (!document.querySelector('.sheet:not([hidden]):not(#ed-sheet)')) return; // the Edit sheet stays open while you tap notes
     if (e.target.closest('.sheet, .sheet-btns, [data-sheet-btn], #pl-more, .dock, dialog, .toast')) return;
     if (e.target.closest('#pl-score, #pl-viewport, .at-surface, #alphatab')) close('sheet');
   }, true);

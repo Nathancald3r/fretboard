@@ -191,6 +191,24 @@
           <p class="muted small-text">Arrange the song by moving, copying or removing sections. <span id="ed-count"></span></p>
           <p id="ed-note" class="muted small-text" hidden>Editing turns this typed tab into a Guitar Pro file. The text is kept as the original.</p>
           <ul id="ed-body" class="ed-list"></ul>
+          <h3>Notes &amp; bar at the tapped beat</h3>
+          <div id="ed-notes" class="ed-notes off">
+            <div class="row"><b id="ed-pos"></b>
+              <button id="ed-beat-prev" class="small ghost" aria-label="Previous beat" title="Left arrow">‹</button><button id="ed-beat-next" class="small ghost" aria-label="Next beat" title="Right arrow">›</button></div>
+            <div class="row">
+              <span class="stepper"><button id="ed-fret-dec" class="small ghost" aria-label="Fret down">−</button><input id="ed-fret" type="number" min="0" max="36" inputmode="numeric" aria-label="Fret" placeholder="fret"><button id="ed-fret-inc" class="small ghost" aria-label="Fret up">+</button></span>
+              <span class="stepper"><button id="ed-str-down" class="small ghost" aria-label="String lower" title="Down arrow">▼</button><span id="ed-string" class="small-text"></span><button id="ed-str-up" class="small ghost" aria-label="String higher" title="Up arrow">▲</button></span>
+              <button id="ed-note-del" class="small ghost danger" title="Delete">Remove note</button>
+            </div>
+            <div class="row">
+              <label class="small-text">Length <select id="ed-dur"><option value="1">Whole</option><option value="2">Half</option><option value="4">Quarter</option><option value="8">Eighth</option><option value="16">16th</option><option value="32">32nd</option></select></label>
+              <label class="small-text"><input id="ed-dot" type="checkbox"> dotted</label>
+              <label class="small-text">Tempo from this bar <input id="ed-tempo" type="number" min="20" max="400" inputmode="numeric"></label>
+              <label class="small-text">Time <input id="ed-tsn" type="number" min="1" max="32" inputmode="numeric"> / <select id="ed-tsd"><option>1</option><option>2</option><option>4</option><option>8</option><option>16</option><option>32</option></select></label>
+              <button id="ed-bar-add" class="small ghost">+ Empty bar after</button>
+            </div>
+            <p class="muted small-text">Type a fret number (<kbd>0</kbd>–<kbd>9</kbd>), <kbd>←</kbd><kbd>→</kbd> move along, <kbd>↑</kbd><kbd>↓</kbd> change string, <kbd>Del</kbd> removes the note.</p>
+          </div>
           <h3>Bars</h3>
           <div class="row"><span id="ed-sel" class="muted small-text"></span>
             <button id="ed-bar-dup" class="small ghost" disabled title="Ctrl+D">⧉ Copy selected bars</button>

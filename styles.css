@@ -1171,3 +1171,15 @@ kbd { }
 .ed-name { flex: 1 1 8rem; min-width: 6rem; }
 .ed-btns { display: inline-flex; gap: .2rem; margin-left: auto; }
 .ed-btns button { min-width: 40px; min-height: 40px; }
+
+.ed-notes { display: grid; gap: .5rem; }
+.ed-notes.off > .row:not(:first-child), .ed-notes.off > p { display: none; }
+.ed-notes .stepper { display: inline-flex; align-items: center; gap: .25rem; }
+.ed-notes #ed-fret { width: 4.5rem; text-align: center; }
+.ed-notes #ed-tempo { width: 5rem; }
+.ed-notes #ed-tsn { width: 3.5rem; }
+
+/* The Edit sheet stays short so the tab above it can still be tapped */
+#ed-sheet { max-height: min(40vh, 340px) !important; overflow-y: auto; }
+
+body.editing #score-scroll { padding-bottom: 42vh; }

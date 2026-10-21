@@ -1,7 +1,7 @@
 // Guitar Pro / MusicXML / alphaTex player built on alphaTab:
 // playback, tempo, A–B looping (drag-select bars), count-in, click track, a track mixer
 // (show / mute / solo / volume), play-along with the recording and a speed trainer.
-import { initEditor } from './editor.js';
+import { initEditor, pickBeat } from './editor.js';
 import { updateSong, getValue, setValue } from './db.js';
 import { TONES, installTone, getTone, setTone } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
@@ -152,6 +152,7 @@ function ensureApi() {
     if (clickResume) api.pause();
   });
   api.beatMouseUp.on((beat) => {
+    pickBeat(beat);
     if (clickResume !== 'pending') return;
     clickResume = null;
     const range = api.playbackRange;

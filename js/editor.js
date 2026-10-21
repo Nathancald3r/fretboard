@@ -47,6 +47,14 @@ function freshIds(m) {
   return m;
 }
 
+// Runs fn on the score as plain data (Maps and arrays) and returns Guitar Pro bytes of the result.
+function viaJson(score, fn) {
+  const AT = hooks.AT;
+  const o = AT.model.JsonConverter.scoreToJsObject(score);
+  fn(o);
+  return write(AT.model.JsonConverter.jsObjectToScore(o, new AT.Settings()));
+}
+
 // Rebuilds the score with its bars in a new order (an old bar may appear twice or not at all). Returns Guitar Pro bytes.
 function rearrange(score, order, rename) {
   const AT = hooks.AT;
@@ -104,7 +112,7 @@ async function restore(snap) {
   paint();
 }
 
-async function apply(label, make) {
+async function apply(label, make, merge = '') {
   const song = hooks.song();
   if (!song) return;
   let bytes;
@@ -125,13 +133,18 @@ async function apply(label, make) {
     const ext = song.kind === 'xml' ? 'musicxml' : song.kind === 'gp' ? 'gp' : song.kind === 'text' ? 'txt' : 'tex';
     changes.original = { kind: song.kind, data: song.data, name: `${song.title || 'tab'}.${ext}`, savedAt: Date.now() };
   }
-  undo.push({ label, snap: before });
-  if (undo.length > MAX_UNDO) undo.shift();
+  const top = undo[undo.length - 1];
+  if (merge && top?.merge === merge && Date.now() - top.at < 2500) top.at = Date.now(); // typing or nudging counts as one step
+  else {
+    undo.push({ label, snap: before, merge, at: Date.now() });
+    if (undo.length > MAX_UNDO) undo.shift();
+  }
   redo = [];
   Object.assign(song, changes);
   await updateSong(song.id, changes);
   hooks.reload();
   paint();
+  if (merge) return;
   const hadSync = before.syncPoints?.length;
   toast(label + (hadSync ? '. The video sync starts over: Undo brings it back.' : '.'));
 }
@@ -208,6 +221,7 @@ function paint() {
     : 'Nothing edited yet. The first change keeps a copy of the file you have now as the original.';
   $('ed-note').hidden = song?.kind !== 'text';
   paintSelection();
+  paintBeat();
 }
 
 function selectionRange() {
@@ -250,11 +264,193 @@ function doBars(act) {
   }
 }
 
+
+/* ---------- notes, tempo and bars at the selected beat ---------- */
+
+// The beat you tapped in the tab. string: the internal number, higher = higher on the page.
+let sel = null;
+
+export function pickBeat(beat) {
+  if (!beat || !$('ed-sheet') || $('ed-sheet').hidden) return;
+  const bar = beat.voice.bar;
+  if (beat.voice.index !== 0) { toast('Edit the first voice only.'); return; }
+  const top = beat.notes.length ? Math.max(...beat.notes.map((n) => n.string)) : sel?.string;
+  sel = { track: bar.staff.track.index, staff: bar.staff.index, bar: bar.index, beat: beat.index, string: top || bar.staff.tuning.length };
+  paintBeat();
+}
+
+const beatModel = () => {
+  const bar = hooks.score()?.tracks[sel.track]?.staves[sel.staff]?.bars[sel.bar];
+  return bar ? { bar, beat: bar.voices[0].beats[sel.beat] } : null;
+};
+
+function transposed() {
+  const song = hooks.song();
+  if (song?.transpose || song?.capo) { toast('Turn off Transpose / Capo before editing notes.'); return true; }
+  return false;
+}
+
+function paintBeat() {
+  const box = $('ed-notes');
+  if (!box) return;
+  const m = sel && beatModel();
+  if (!m || !m.beat) sel = null;
+  box.classList.toggle('off', !sel);
+  $('ed-pos').textContent = sel ? `Bar ${sel.bar + 1}, beat ${sel.beat + 1}` : 'Tap a note or beat in the tab to edit it.';
+  if (!sel) return;
+  const staff = hooks.score().tracks[sel.track].staves[sel.staff];
+  const note = m.beat.notes.find((n) => n.string === sel.string);
+  $('ed-string').textContent = `string ${staff.tuning.length - sel.string + 1}`;
+  $('ed-fret').value = note ? note.fret : '';
+  $('ed-dur').value = String(m.beat.duration);
+  $('ed-dot').checked = m.beat.dots > 0;
+  const mb = m.bar.masterBar;
+  $('ed-tempo').value = mb.tempoAutomations?.[0]?.value || '';
+  $('ed-tsn').value = mb.timeSignatureNumerator;
+  $('ed-tsd').value = String(mb.timeSignatureDenominator);
+}
+
+function beatJson(o) {
+  const staff = o.get('tracks')[sel.track].get('staves')[sel.staff];
+  const bar = staff.get('bars')[sel.bar];
+  return { beat: bar.get('voices')[0].get('beats')[sel.beat] };
+}
+
+function noteEdit(label, fn, merge = '') {
+  if (!sel || transposed()) return;
+  apply(label, (score) => viaJson(score, (o) => fn(beatJson(o))), merge);
+}
+
+function setFret(fret) {
+  if (!sel) return;
+  const str = sel.string;
+  fret = Math.max(0, Math.min(36, Math.round(fret)));
+  noteEdit(`Fret ${fret} in bar ${sel.bar + 1}`, ({ beat }) => {
+    const notes = beat.get('notes');
+    const n = notes.find((x) => x.get('string') === str);
+    if (n) n.set('fret', fret);
+    else notes.push(new Map([['id', nextId++], ['string', str], ['fret', fret]]));
+    beat.set('isempty', false);
+  }, 'fret');
+}
+
+function nudgeFret(by) {
+  const m = sel && beatModel();
+  const note = m?.beat.notes.find((n) => n.string === sel.string);
+  setFret(note ? note.fret + by : 0);
+}
+
+function removeNote() {
+  if (!sel) return;
+  const str = sel.string;
+  noteEdit(`Remove note in bar ${sel.bar + 1}`, ({ beat }) => {
+    beat.set('notes', beat.get('notes').filter((x) => x.get('string') !== str));
+  });
+}
+
+function setDuration(value, dots) {
+  noteEdit('Change note length', ({ beat }) => { beat.set('duration', value); beat.set('dots', dots); }, 'dur');
+}
+
+function setTempoAt(bpm) {
+  if (!sel || !(bpm >= 20 && bpm <= 400)) return;
+  apply(`Tempo ${bpm} from bar ${sel.bar + 1}`, (score) => viaJson(score, (o) => {
+    const list = o.get('masterbars')[sel.bar].get('tempoautomations');
+    if (list.length) list[0].set('value', bpm);
+    else list.push(new Map([['islinear', false], ['type', 0], ['value', bpm], ['ratioposition', 0], ['text', ''], ['isvisible', true]]));
+  }), 'tempo');
+}
+
+function setTimeSig(n, d) {
+  if (!sel || !(n >= 1 && n <= 32) || ![1, 2, 4, 8, 16, 32].includes(d)) return;
+  apply(`Bar ${sel.bar + 1} in ${n}/${d}`, (score) => viaJson(score, (o) => {
+    const mb = o.get('masterbars')[sel.bar];
+    mb.set('timesignaturenumerator', n);
+    mb.set('timesignaturedenominator', d);
+  }), 'timesig');
+}
+
+// An empty bar (a whole rest) right after the tapped one, in every track.
+function insertEmptyBar() {
+  const at = sel ? sel.bar : selectionRange()?.b;
+  if (at === undefined) { toast('Tap a bar in the tab first.'); return; }
+  apply(`Add an empty bar after bar ${at + 1}`, (score) => viaJson(score, (o) => {
+    const mbs = o.get('masterbars');
+    const mb = freshIds(structuredClone(mbs[at]));
+    mb.delete('section');
+    mb.set('isrepeatstart', false);
+    mb.set('repeatcount', 0);
+    mb.set('alternateendings', 0);
+    mbs.splice(at + 1, 0, mb);
+    o.get('tracks').forEach((t) => t.get('staves').forEach((s) => {
+      const bar = freshIds(structuredClone(s.get('bars')[at]));
+      bar.get('voices').forEach((v) => {
+        const first = v.get('beats')[0];
+        if (!first) return;
+        first.set('notes', []);
+        first.set('duration', 1);
+        first.set('dots', 0);
+        first.set('tupletnumerator', 1);
+        first.set('tupletdenominator', 1);
+        v.set('beats', [first]);
+      });
+      s.get('bars').splice(at + 1, 0, bar);
+    }));
+  }));
+}
+
+function moveBeat(by) {
+  if (!sel) return;
+  const bars = hooks.score().tracks[sel.track].staves[sel.staff].bars;
+  let b = sel.bar;
+  let i = sel.beat + by;
+  if (i < 0) { b--; if (b < 0) return; i = bars[b].voices[0].beats.length - 1; }
+  else if (i >= bars[b].voices[0].beats.length) { b++; if (b >= bars.length) return; i = 0; }
+  sel = { ...sel, bar: b, beat: i };
+  paintBeat();
+}
+
+function moveString(by) {
+  if (!sel) return;
+  const n = hooks.score().tracks[sel.track].staves[sel.staff].tuning.length;
+  sel = { ...sel, string: Math.max(1, Math.min(n, sel.string + by)) };
+  paintBeat();
+}
+
+let typedAt = 0;
+let typedFret = 0;
+function typeDigit(d) {
+  const now = Date.now();
+  typedFret = now - typedAt < 900 && typedFret * 10 + d <= 36 ? typedFret * 10 + d : d;
+  typedAt = now;
+  setFret(typedFret);
+}
+
+function initNotes() {
+  $('ed-fret-dec').addEventListener('click', () => nudgeFret(-1));
+  $('ed-fret-inc').addEventListener('click', () => nudgeFret(1));
+  $('ed-fret').addEventListener('change', (e) => { if (e.target.value !== '') setFret(Number(e.target.value)); });
+  $('ed-str-up').addEventListener('click', () => moveString(1));
+  $('ed-str-down').addEventListener('click', () => moveString(-1));
+  $('ed-note-del').addEventListener('click', removeNote);
+  $('ed-beat-prev').addEventListener('click', () => moveBeat(-1));
+  $('ed-beat-next').addEventListener('click', () => moveBeat(1));
+  const dur = () => setDuration(Number($('ed-dur').value), $('ed-dot').checked ? 1 : 0);
+  $('ed-dur').addEventListener('change', dur);
+  $('ed-dot').addEventListener('change', dur);
+  $('ed-tempo').addEventListener('change', (e) => setTempoAt(Number(e.target.value)));
+  const sig = () => setTimeSig(Number($('ed-tsn').value), Number($('ed-tsd').value));
+  $('ed-tsn').addEventListener('change', sig);
+  $('ed-tsd').addEventListener('change', sig);
+  $('ed-bar-add').addEventListener('click', insertEmptyBar);
+}
+
 const sheetOpen = () => !$('ed-sheet').hidden;
 const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
 
 export function initEditor(h) {
   hooks = h;
+  initNotes();
   $('ed-body').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (b) doSection(b.dataset.act, Number(b.closest('.ed-sec').dataset.i));
@@ -282,6 +478,12 @@ export function initEditor(h) {
     if (!song) return;
     try { download(`${song.title || 'tab'}.gp`, write(hooks.readScore())); } catch (err) { toast('Could not save the file: ' + (err?.message || err)); }
   });
+  // While the sheet is open the tab gets room above it, scrolled so the staff is in reach.
+  new MutationObserver(() => {
+    const open = !$('ed-sheet').hidden;
+    document.body.classList.toggle('editing', open);
+    if (open) setTimeout(() => $('score-scroll')?.scrollTo({ top: 70, behavior: 'smooth' }), 120);
+  }).observe($('ed-sheet'), { attributes: true, attributeFilter: ['hidden'] });
   window.addEventListener('fbselection', paintSelection);
   window.addEventListener('fbscore', paint);
   document.querySelector('[data-sheet-btn=edit]')?.addEventListener('click', () => setTimeout(paint, 0));
@@ -294,6 +496,12 @@ export function initEditor(h) {
     else if (mod && k === 'y') { e.preventDefault(); redoEdit(); }
     else if (mod && k === 'd' && selectionRange()) { e.preventDefault(); doBars('dup'); }
     else if (mod && k === 'e') { e.preventDefault(); document.querySelector('[data-sheet-btn=edit]')?.click(); }
+    else if (sheetOpen() && sel && !mod && !e.altKey && /^[0-9]$/.test(e.key)) { e.preventDefault(); typeDigit(Number(e.key)); }
+    else if (sheetOpen() && sel && !mod && !e.altKey && ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k)) {
+      e.preventDefault();
+      if (k === 'arrowleft') moveBeat(-1); else if (k === 'arrowright') moveBeat(1); else moveString(k === 'arrowup' ? 1 : -1);
+    }
+    else if ((k === 'delete' || k === 'backspace') && sheetOpen() && sel && !selectionRange()) { e.preventDefault(); removeNote(); }
     else if ((k === 'delete' || k === 'backspace') && sheetOpen() && selectionRange()) { e.preventDefault(); doBars('del'); }
     else if (e.altKey && (k === 'arrowup' || k === 'arrowdown')) {
       const bar = hooks.cursorBar();
