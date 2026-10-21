@@ -5,7 +5,7 @@
 import { updateSong } from './db.js';
 import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence, groupResults } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
-import { btDelay, onBtDelay, bindBtControls } from './btdelay.js';
+import { btDelay, onBtChange, bindBtControls } from './btdelay.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
@@ -848,7 +848,7 @@ export function initPlayAlong(h) {
   $('pa-toggle').addEventListener('click', toggleRecording);
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
   bindBtControls({ button: $('pa-bt'), input: $('pa-bt-ms'), nudges: document.querySelectorAll('#pa-bt-row [data-bt]') });
-  onBtDelay(() => { if (song && on) applySync(); });
+  onBtChange(() => { if (song && on) applySync(); });
   document.querySelectorAll('[data-nudge]').forEach((b) => b.addEventListener('click', () => {
     if (!song) return;
     song.syncOffset = (song.syncOffset || 0) + Number(b.dataset.nudge);

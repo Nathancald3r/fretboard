@@ -350,16 +350,23 @@
           </div>
         </section>
 
+        <section class="sheet" data-sheet="bt" hidden>
+          <div class="sheet-head"><h2>Bluetooth headphones</h2><button class="ghost small" data-close>Close</button></div>
+          <p class="muted small-text">Bluetooth headphones play the sound a little late, so the tab runs ahead of what you hear. This holds the cursor back by the same amount, for the built-in guitar and for the linked video. Turn it on, then raise the delay until the cursor lands on the beat you hear. The delay is saved on this device and kept when you switch it off.</p>
+          <div id="sb-bt-row" class="row">
+            <button id="sb-bt" class="ghost">Bluetooth headphones</button>
+            <button class="ghost small" data-bt="-50">−50</button>
+            <button class="ghost small" data-bt="-10">−10</button>
+            <label><input id="sb-bt-ms" type="number" min="0" max="1000" step="10" style="width:5rem"> ms</label>
+            <button class="ghost small" data-bt="10">+10</button>
+            <button class="ghost small" data-bt="50">+50</button>
+          </div>
+        </section>
+
         <section class="sheet" data-sheet="sound" hidden>
           <div class="sheet-head"><h2>Sound</h2><button class="ghost small" data-close>Close</button></div>
           <div class="row">
             <label title="How bright or warm playback sounds">Tone <select id="pl-tone"></select></label>
-          </div>
-          <div id="sb-bt-row" class="row" title="Bluetooth headphones play the sound a little late, so the tab cursor runs ahead of what you hear. This holds the cursor back by the same amount. Turn it on, then adjust until the cursor lands on the beat you hear.">
-            <button id="sb-bt" class="ghost small">Bluetooth headphones</button>
-            <button class="ghost small" data-bt="-10">−10</button>
-            <label><input id="sb-bt-ms" type="number" min="0" max="1000" step="10" style="width:4.5rem"> ms</label>
-            <button class="ghost small" data-bt="10">+10</button>
           </div>
           <p id="pl-sf-name" class="muted"></p>
           <p class="muted small-text">For more realistic instruments, load a free General MIDI soundfont (.sf2 or .sf3), for example <i>GeneralUser GS</i> or <i>MuseScore General</i>. It is stored in this browser and used for every song.</p>
@@ -537,6 +544,7 @@
             <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
             <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
             <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
+            <span class="tog-group"><button id="pl-bt" class="tog" title="Bluetooth headphones: hold the tab back by their delay so the cursor matches what you hear. Press to turn on or off; ⚙ sets the delay.">Bluetooth</button><button class="tog gear" data-sheet-btn="bt" title="Set the Bluetooth delay" aria-label="Set the Bluetooth delay">⚙</button></span>
             <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
             <button id="pa-toggle" class="tog rec" title="Linked video (R): on = this song plays with its linked YouTube video; off = the built-in guitar sound. The first press lets you find a video.">Video</button>
           </div>

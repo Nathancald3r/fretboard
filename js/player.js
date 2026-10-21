@@ -1729,6 +1729,7 @@ export function initPlayer() {
   document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
+  bindBtControls({ button: $('pl-bt'), labelMs: true, title: 'Bluetooth' });
   bindBtControls({ button: $('sb-bt'), input: $('sb-bt-ms'), nudges: document.querySelectorAll('#sb-bt-row [data-bt]') });
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
   $('pl-metro').addEventListener('click', toggleClick);
