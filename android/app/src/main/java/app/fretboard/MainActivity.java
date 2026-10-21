@@ -86,9 +86,45 @@ public class MainActivity extends ComponentActivity {
         web.postDelayed(this::flushImports, 400);
     }
 
+    // A tab file opened or shared into the app (Files, Downloads, Share) joins the import queue.
+    private void importFromIntent(Intent intent) {
+        if (intent == null) return;
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
+        else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return;
+        intent.setAction(null); // handle once
+        try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) return;
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > 20 * 1024 * 1024) return;
+            }
+            String name = uri.getLastPathSegment();
+            try (android.database.Cursor c = getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) name = c.getString(0);
+            } catch (Exception ignored) { }
+            if (name == null) name = "tab.gp";
+            queueImport(name, Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), "", "");
+            if (web != null) web.postDelayed(this::flushImports, 500);
+        } catch (Exception e) {
+            Toast.makeText(this, "Couldn't open that file.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        importFromIntent(intent);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        importFromIntent(getIntent());
         if (web != null) web.postDelayed(this::flushImports, 500);
     }
 
