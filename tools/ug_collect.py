@@ -104,6 +104,7 @@ def main():
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--only", default="")
     ap.add_argument("--out", default="")
+    ap.add_argument("--again", action="store_true", help="save tracks already in the folder again as '(2)' copies")
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     a = ap.parse_args()
     PORT = a.port
@@ -130,6 +131,13 @@ def main():
     for n in names:
         label = f"{song} - {n}"
         dest = out / f"{label}.pdf"
+        if dest.exists() and not a.again:
+            print(f"  {dest.name}: already there, skipped")
+            continue
+        k = 2
+        while dest.exists():  # --again: never replace, save as "(2)", "(3)"...
+            dest = out / f"{label} ({k}).pdf"
+            k += 1
         with sync_playwright() as p:
             ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
             pg = song_page(ctx, a.url)
