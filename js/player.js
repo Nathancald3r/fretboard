@@ -808,7 +808,7 @@ function applyMix() {
   score.tracks.forEach((t, i) => {
     if (!mix[i]) return;
     api.changeTrackMute([t], !isAudible(i));
-    api.changeTrackVolume([t], mix[i].volume);
+    api.changeTrackVolume([t], mix[i].volume * (i === trackIndex ? 1 : othersLevel()));
   });
   showMix();
 }
@@ -843,10 +843,19 @@ function buildTrackControls() {
   applyMix();
 }
 
+// "Other parts": every track but the one shown is turned down by this much (0..1), so you
+// hear your own part clearly. Kept between songs.
+let othersVol = (() => { try { const v = Number(localStorage.getItem('fretboard-others')); return localStorage.getItem('fretboard-others') === null || !(v >= 0 && v <= 1) ? 1 : v; } catch { return 1; } })();
+const othersLevel = () => othersVol;
+
 // The Tracks sheet's master slider shows the song volume (set here or in the Amp panel).
 function showMaster() {
   $('pl-master').value = $('amp-song-vol').value;
   $('pl-master-val').textContent = $('amp-song-vol').value + '%';
+  $('pl-others').value = Math.round(othersLevel() * 100);
+  $('pl-others-val').textContent = Math.round(othersLevel() * 100) + '%';
+  const t = score?.tracks[trackIndex];
+  $('pl-others-note').textContent = t ? 'all but ' + trackLabel(t, trackIndex) : '';
 }
 
 function showMix() {
@@ -2177,6 +2186,11 @@ export function initPlayer() {
   const songVol = $('amp-song-vol');
   master.addEventListener('input', () => { songVol.value = master.value; songVol.dispatchEvent(new Event('input')); });
   songVol.addEventListener('input', showMaster);
+  $('pl-others').addEventListener('input', () => {
+    othersVol = Number($('pl-others').value) / 100;
+    try { localStorage.setItem('fretboard-others', String(othersVol)); } catch { /* ignore */ }
+    applyMix();
+  });
   showMaster();
   initFretView($('pl-neck'));
   initKeyView($('pl-keys'));

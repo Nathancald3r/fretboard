@@ -345,6 +345,7 @@
           <div class="sheet-head"><h2>Tracks</h2><span class="row"><button id="pl-mix-reset" class="ghost small" hidden>Reset mix</button><button class="ghost small" data-close>Close</button></span></div>
           <p id="pl-mixer-note" class="muted small-text"></p>
           <div class="mixer-row master-row"><span class="track-name"><span class="ticon">🔊</span><span class="tname">Master</span><small>whole mix</small></span><input id="pl-master" type="range" min="0" max="150" step="1" value="100" list="pl-master-marks" title="Master volume: the whole song" aria-label="Master volume"><datalist id="pl-master-marks"><option value="100"></option></datalist><span id="pl-master-val" class="mono master-val"></span></div>
+          <div class="mixer-row master-row others-row"><span class="track-name"><span class="ticon">🎚️</span><span class="tname">Other parts</span><small id="pl-others-note"></small></span><input id="pl-others" type="range" min="0" max="100" step="1" value="100" title="Turn down every part except the one shown, so you hear yours clearly" aria-label="Volume of the other parts"><span id="pl-others-val" class="mono master-val"></span></div>
           <div id="mixer-list" class="mixer"></div>
           <p class="muted small-text"><kbd>M</kbd> mute and <kbd>S</kbd> solo the track you're looking at.</p>
         </section>
