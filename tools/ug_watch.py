@@ -222,6 +222,7 @@ def open_tab(url):
             with ctx.expect_page(timeout=15000) as new:  # a background tab: the window stays where it is
                 br.new_browser_cdp_session().send("Target.createTarget", {"url": "about:blank", "background": True})
             pg = new.value
+            state["asked"][url.split("?")[0]] = time.time()  # opened from Fretboard: wanted, even if saved before
             pg.goto(url, wait_until="domcontentloaded", timeout=30000)
             if "/search.php" not in url or not q:
                 return
@@ -233,6 +234,7 @@ def open_tab(url):
                 pg.wait_for_timeout(500)
             if best and is_ug(best):
                 print(f"Best match: {best}")
+                state["asked"][best.split("?")[0]] = time.time()
                 pg.goto(best, wait_until="domcontentloaded", timeout=30000)
             else:
                 print("No close match: the search results are open in the UG window.")
@@ -244,7 +246,7 @@ def open_tab(url):
 HELPER_PORT = 9231
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io", "http://localhost:8420", "http://127.0.0.1:8420"}
-state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0}  # set from the command line in main()
+state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}}  # set from the command line in main()
 
 
 def is_ug(url):
@@ -372,7 +374,7 @@ def main():
                           "there (once), then open an official song, or search from Fretboard.")
                     time.sleep(5)
                     continue
-            if not warned:
+            if not warned and time.time() - state["launched"] > 40:  # not while it's still starting
                 print("Can't reach Chrome on port %d. Close every window of that Chrome and run this again, or start it with:\n"
                       '  & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=%d --user-data-dir="%s"'
                       % (a.port, a.port, a.profile))
@@ -384,10 +386,18 @@ def main():
         seen = {u: seen.get(u, now) for u in urls}
         passed &= set(urls)  # a song closed and opened again is asked again
         for u in urls:
-            if u in done or u in passed or now - seen[u] < a.settle:
+            # saved before and opened again from Fretboard (within the last 2 minutes): a window asks what to do
+            again = u in done and now - state["asked"].get(u.split("?")[0], 0) < 120
+            if (u in done and not again) or u in passed or now - seen[u] < a.settle:
                 continue
+            state["asked"].pop(u.split("?")[0], None)
             print(f"\n=== {u}")
-            cmd = [sys.executable, "-u", str(COLLECT), u, "--port", str(a.port), "--root", a.root, "--auto-official"] + (["--no-ui"] if a.no_ui else [])
+            cmd = [sys.executable, "-u", str(COLLECT), u, "--port", str(a.port), "--root", a.root] + (["--no-ui"] if a.no_ui else [])
+            if again:
+                print("Saved before: a window asks whether to replace it or save a new copy.")
+                cmd.append("--again")
+            else:
+                cmd.append("--auto-official")
             state["busy"] = u
             try:
                 code = subprocess.run(cmd).returncode
@@ -398,6 +408,8 @@ def main():
                 with DONE_FILE.open("a", encoding="utf-8") as f:
                     f.write(u + "\n")
                 print("Ready for the next song.")
+            elif again and code in (SKIPPED, CANCELLED):
+                print("Left as it was.")
             elif code in (SKIPPED, CANCELLED):
                 passed.add(u)
                 print("Skipped." if code == SKIPPED else "Cancelled; what it saved was removed.")

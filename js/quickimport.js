@@ -136,7 +136,7 @@ export async function readyRuns(dir) {
       if (done.has(key) || !tracks.length) continue;
       const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
       runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
-        title: String(m.song || ''), artist: String(m.artist || '') });
+        title: String(m.song || ''), artist: String(m.artist || ''), replace: m.replace === true });
     }
   }
   return runs.sort((a, b) => b.finished.localeCompare(a.finished));
@@ -197,7 +197,8 @@ async function importRun(r, auto = false) {
   }
   if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return null; }
   if (auto) await markRun(r.key); // taken now, so it's never added twice
-  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
+  // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
+  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
   if (ids?.length && !auto) await markRun(r.key); // cancelled: it stays offered
   showReady();
   return ids?.[0] ?? null;

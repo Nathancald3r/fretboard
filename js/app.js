@@ -460,10 +460,27 @@ function reviewParts(items, title, artist) {
   });
 }
 
+// A song the UG helper saved again with "Replace the old files": the library's song of that title and artist
+// gets the new content and keeps its id, so its practice history, loops and settings stay. Otherwise a new song.
+async function saveImported(song, replace) {
+  if (replace) {
+    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    const old = (await listSongs()).filter((s) => same(s.title, song.title) && same(s.artist, song.artist))
+      .sort((a, b) => (b.added || 0) - (a.added || 0))[0];
+    if (old) {
+      const next = { ...old, ...song, id: old.id, added: old.added };
+      if (!song.sheets) delete next.sheets;
+      await putSong(next);
+      return old.id;
+    }
+  }
+  return putSong(song);
+}
+
 // Several PDFs of one song (one per instrument, as tools/ug_collect.py saves them): read, check, then one song.
 // Returns the new song's id, or null when cancelled or nothing could be made.
 // auto: { title, artist } of a song the UG helper saved: made as it is, without the review.
-async function importPdfParts(files, auto = null) {
+async function importPdfParts(files, auto = null, replace = false) {
   const first = namesFromPdf(files[0].name.replace(/\.[^.]+$/, ''), true);
   const items = await readParts(files, first.title);
   if (!items) { toast('Cancelled: nothing was added.'); return null; }
@@ -479,7 +496,7 @@ async function importPdfParts(files, auto = null) {
   const sheets = [];
   for (const it of pick.items.filter((x) => !x.strips)) sheets.push({ name: it.name, program: it.program, fileName: it.file.name, data: await it.file.arrayBuffer() });
   if (!tabs.length) {
-    const id = await putSong({ kind: 'sheet', title, artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, added: Date.now() });
+    const id = await saveImported({ kind: 'sheet', title, artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, added: Date.now() }, replace);
     toast(`Added “${title}” as sheet music, ${sheets.length} part${sheets.length > 1 ? 's' : ''}.`, 6000);
     return id;
   }
@@ -487,12 +504,12 @@ async function importPdfParts(files, auto = null) {
   const parts = tabs.map(({ name, program, strips }) => ({ name, program, strips }));
   const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
   if (!made) { toast('Couldn’t combine these PDFs into a song.', 6000); return null; }
-  const id = await putSong({ kind: 'tex', title, artist, data: made.tex, fileName: tabs[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() });
-  toast(`Added “${title}”: ${parts.length} tab track${parts.length > 1 ? 's' : ''}, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''}`, 8000);
+  const id = await saveImported({ kind: 'tex', title, artist, data: made.tex, fileName: tabs[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() }, replace);
+  toast(`${replace ? 'Updated' : 'Added'} “${title}”: ${parts.length} tab track${parts.length > 1 ? 's' : ''}, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''}`, 8000);
   return id;
 }
 
-async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
+async function importFiles(files, { quietIfEmpty = false, auto = null, replace = false } = {}) {
   files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name)); // the UG helper's note for the library, not a song
   let added = 0;
   const ids = [];
@@ -502,7 +519,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
   if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
     files = files.filter((f) => !pdfs.includes(f)); // cancelling adds none of them
     try {
-      const id = await importPdfParts(pdfs, auto);
+      const id = await importPdfParts(pdfs, auto, replace);
       if (id) { ids.push(id); added++; if (!files.length) open = id; }
     } catch (err) { console.error(err); failed.push(...pdfs.map((f) => f.name)); }
   }
@@ -513,7 +530,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
       const { title, artist } = namesFromPdf(base);
       const data = cleanTabText(await file.text());
       const from = data.slice(0, 600).match(/^From: (https:\/\/\S+)$/m)?.[1];
-      ids.push(await putSong({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }));
+      ids.push(await saveImported({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }, replace));
       added++;
       continue;
     }
@@ -542,7 +559,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
     const fromName = parseFilename(file.name); // Ultimate Guitar's "Artist-Song-date" names
     const info = readScoreInfo(new Uint8Array(buf));
     if (!info.ok) { failed.push(file.name); continue; }
-    ids.push(await putSong({
+    ids.push(await saveImported({
       kind: /\.(xml|musicxml|mxl)$/i.test(file.name) ? 'xml' : 'gp',
       title: info.title?.trim() || fromName?.song || base,
       artist: info.artist?.trim() || fromName?.artist || '',
@@ -550,7 +567,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
       fileName: file.name,
       ...(file.source ? { sourceUrl: file.source.url, versionNote: file.source.title || '' } : {}),
       added: Date.now(),
-    }));
+    }, replace));
     added++;
   }
   const parts = [];

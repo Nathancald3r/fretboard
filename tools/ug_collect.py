@@ -255,6 +255,23 @@ def free_name(folder, stem, ext):
     return dest
 
 
+def base_pdf(out, song, artist, n):
+    return out / (f"{song} - {artist} - {n}.pdf" if artist else f"{song} - {n}.pdf")
+
+
+def take_place(new, old):
+    """Replace: the new file (just saved in full, as "... (2).pdf") takes the old one's name. Returns its name."""
+    if new == old or not new.exists():
+        return new.name
+    try:
+        if old.exists():
+            old.unlink()
+        new.rename(old)
+        return old.name
+    except OSError:
+        return new.name  # the old one is open somewhere: both are kept
+
+
 def write_manifest(out, name, data):
     """What Fretboard reads to offer the song for import (fretboard-run*.json in the song folder)."""
     data = {"app": "fretboard-ug-collect", "version": 1, **data, "finished": datetime.now().isoformat(timespec="seconds")}
@@ -387,8 +404,11 @@ class TkUI:
     def _ask(self, info, ev, box):
         tk = self.tk
         self._clear()
-        self.root.title("Found a song")
+        self.root.title("Already saved" if info.get("again") else "Found a song")
         self._label(f"{info['song']} — {info['artist']}" + (f"  (Key {info['key']})" if info['key'] else ""), 13, bold=True)
+        if info.get("again"):
+            self._label("You've saved this song before: it's already in your UG Songs folder (and in Fretboard, if you imported it). "
+                        "Replace it with a fresh copy, or keep both?", 10, bold=True, color=self.ACCENT)
         self._label(info.get("what") or f"Save its {len(info['names'])} tracks as PDFs? Untick any you don't want.", 10, color=self.MUTED)
         grid = tk.Frame(self.body, bg=self.BG)
         grid.pack(fill="x", pady=(0, 8))
@@ -399,7 +419,9 @@ class TkUI:
                            activeforeground=self.FG, anchor="w", font=("Segoe UI", 10)).grid(row=k // 2, column=k % 2, sticky="w", padx=(0, 18))
             vars_.append((n, v))
         mins = max(1, round(len(info["names"]) * SECONDS_PER_TRACK / 60))
-        self._label(f"Saves into  {info['out']}\n\n" + (info.get("note") or
+        self._label(f"Saves into  {info['out']}\n\n" + ("Replace: the new files are saved first, and only once they're all done "
+                    "do they take the old ones' place (in the folder and in Fretboard, where the song keeps its practice "
+                    "history). A new copy is kept beside the old one, with \"(2)\" in its name.\n\n" if info.get("again") else "") + (info.get("note") or
                     f"Takes about {mins} min. Chrome works out of sight and a small window shows the progress, "
                     "so you can keep using the computer. Pause it any time, or Cancel (it then removes what it saved).\n\n"
                     "Afterwards, in Fretboard: Import files (it opens in this folder), select all, check the tracks, Create song."),
@@ -407,12 +429,19 @@ class TkUI:
         row = tk.Frame(self.body, bg=self.BG)
         row.pack(fill="x", pady=(6, 0))
 
-        def answer(names):
+        def answer(names, mode=""):
+            self.mode = mode
             box["names"] = names
             ev.set()
 
-        self._button(row, "Start", lambda: answer([n for n, v in vars_ if v.get()] or None), primary=True)
-        self._button(row, "Skip this song", lambda: answer(None))
+        picked = lambda: [n for n, v in vars_ if v.get()] or None
+        if info.get("again"):
+            self._button(row, "Replace the old files", lambda: answer(picked(), "replace"), primary=True)
+            self._button(row, "Save a new copy", lambda: answer(picked(), "copy"))
+            self._button(row, "Skip", lambda: answer(None))
+        else:
+            self._button(row, "Start", lambda: answer(picked()), primary=True)
+            self._button(row, "Skip this song", lambda: answer(None))
         self._on_close = lambda: answer(None)
         self._place()
         self.root.lift()
@@ -822,6 +851,7 @@ def save_single(ui, a, result, pg, kind, label):
     what = (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
             else "Save this Guitar Pro tab with the page's Download button?")
     names = [label] if a.yes or (a.auto_official and kind == "gp") else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
+                                          **({"again": True} if a.again else {}),
                                           "note": "One file, saved in a few seconds. Then Fretboard's library offers it (Review & create)."})
     if not names:
         result["code"] = SKIPPED
@@ -846,9 +876,14 @@ def save_single(ui, a, result, pg, kind, label):
                 raise RuntimeError("The download didn't arrive (the page may need you to be logged in). Nothing was kept.")
             run.files.append(dest)
         hold(ui)
+        replace = a.again and getattr(ui, "mode", "") == "replace"
         man = free_name(out, "fretboard-run-" + label.lower().replace(" ", "-"), ".json")
+        if replace:
+            name = take_place(dest, out / f"{stem}{dest.suffix}")
+            dest = out / name
+            man = out / ("fretboard-run-" + label.lower().replace(" ", "-") + ".json")
         write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": a.url, "kind": kind,
-                                       "tracks": [{"name": label, "file": dest.name}], "missing": []})
+                                       "tracks": [{"name": label, "file": dest.name}], "missing": [], **({"replace": True} if replace else {})})
         run.files.append(man)
     except Cancelled:
         run.undo()
@@ -886,11 +921,14 @@ def work(ui, a, result):
             key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
         if not names:
             raise RuntimeError("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, and try again.")
+        every = list(names)  # all the song's tracks (a replaced song keeps the ones not saved again)
         only = [s.strip().lower() for s in a.only.split(",") if s.strip()]
         if only:
             names = [x for x in names if x.lower() in only]
         out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
-        names = names if a.yes or a.auto_official else ui.ask({"song": song, "artist": artist, "key": key, "names": names, "out": str(out)})
+        names = names if a.yes or a.auto_official else ui.ask({"song": song, "artist": artist, "key": key, "names": names, "out": str(out),
+                                                              **({"again": True} if a.again else {})})
+        replace = a.again and getattr(ui, "mode", "") == "replace"
         if not names:
             result["code"] = SKIPPED
             ui.finish(f"Skipped {song}. Nothing was saved.")
@@ -949,8 +987,18 @@ def work(ui, a, result):
             finally:
                 normal_screen(cdp)  # the song's tab back as it was
         ui.progress(len(names), len(names), "done", 0)
+        if replace:  # everything saved: only now do the new files take the old ones' place
+            placed = set()
+            for s in saved:
+                if s["name"] in placed:  # a second track of the same name keeps its own file
+                    continue
+                placed.add(s["name"])
+                s["file"] = take_place(out / s["file"], base_pdf(out, song, artist, s["name"]))
+            # the tracks not saved again stay in the song as they were
+            saved += [{"name": n, "file": base_pdf(out, song, artist, n).name} for n in dict.fromkeys(every)
+                      if n not in placed and base_pdf(out, song, artist, n).exists()]
         write_manifest(out, "fretboard-run.json", {"song": song, "artist": artist, "key": key, "url": a.url,
-                                                    "tracks": saved, "missing": missing})
+                                                    "tracks": saved, "missing": missing, **({"replace": True} if replace else {})})
         result["code"] = DONE if saved else FAILED
         text = (f"Done: saved {len(saved)} of {len(names)} tracks of {song} into\n{out}"
                 + (f"\n\nNot saved: {', '.join(missing)} (open the song again later to fetch them)." if missing else "")
@@ -992,6 +1040,7 @@ def main():
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
+    ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
