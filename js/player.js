@@ -1933,7 +1933,7 @@ function openSheet(name) {
   document.querySelectorAll('.sheet').forEach((el) => { el.hidden = !(opening && el.dataset.sheet === name); });
   document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.classList.toggle('on', opening && b.dataset.sheetBtn === name));
   document.body.classList.toggle('sheet-up', !!opening); // the floating drum kit steps aside
-  document.body.classList.toggle('mixer-up', opening && name === 'mixer'); // Tracks: a card in front of everything
+  document.body.classList.toggle('card-up', !!opening && name !== 'edit'); // every sheet but Edit: a card in front of everything
 }
 
 // Returns true if a sheet was open.
@@ -2040,9 +2040,9 @@ function initCompact() {
   }));
   // Wide screens: the sheets, count-in and Bluetooth sit in one settings menu (like Ultimate Guitar's).
   $('pl-menu').addEventListener('click', () => flip('menu-open', $('pl-menu')));
-  // Tracks card: a click outside it puts it away
+  // A sheet's card: a click outside it puts it away (not on the linked video, a sheet button or a message)
   document.addEventListener('pointerdown', (e) => {
-    if (body.classList.contains('mixer-up') && !e.target.closest('.sheet[data-sheet="mixer"], [data-sheet-btn="mixer"]')) openSheet(null);
+    if (body.classList.contains('card-up') && !e.target.closest('.sheet, [data-sheet-btn], .pa-video, .toast, dialog')) openSheet(null);
   });
   document.addEventListener('pointerdown', (e) => {
     if (body.classList.contains('menu-open') && !e.target.closest('.sheet-btns, #pl-menu')) flip('menu-open', $('pl-menu'), false);
