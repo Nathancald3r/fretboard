@@ -245,7 +245,7 @@ def open_tab(url):
 # ---------- the helper Fretboard talks to ----------
 HELPER_PORT = 9231
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
-ORIGINS = {"https://nathancald3r.github.io", "http://localhost:8420", "http://127.0.0.1:8420"}
+ORIGINS = {"https://nathancald3r.github.io"} | {f"http://{h}:{p}" for h in ("localhost", "127.0.0.1") for p in (8420, 8421)}
 state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
 
 

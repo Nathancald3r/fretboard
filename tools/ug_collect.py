@@ -971,14 +971,46 @@ VISIBLE_JS = r"""()=>{
   }
   return { x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: bottom - r.y, dpr: devicePixelRatio };  // on the page, as the picture counts
 }"""
+# The page's top, or (end) as far down as the score scrolls in its frame: the frame stays put
+# while the page scrolls a little, then leaves the screen; its top is kept on the screen.
+SCROLL_JS = r"""(end) => {
+  const y = scrollY;
+  scrollTo(0, end ? document.documentElement.scrollHeight : 0);
+  const c = document.querySelector('#xtz_canvas');
+  if (end && c && c.getBoundingClientRect().y < 0) scrollBy(0, c.getBoundingClientRect().y);
+  return Math.abs(scrollY - y) > 1;
+}"""
 SHOW_JS = r"""()=>{ for (const [e, v] of (window.__fbHidden || []).reverse()) e.style.visibility = v; window.__fbHidden = []; }"""
 
-PAGES_JS = r"""async ({ shot, title, lines }) => {
-  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = shot; });
-  const w = img.width, h = img.height;
+PAGES_JS = r"""async ({ shots, title, lines }) => {
+  const imgs = await Promise.all(shots.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
+  // a song longer than the screen comes in pictures taken further down: each one is put where
+  // its rows (ink per row) match the ones before it
+  const rows = (img) => {
+    const k = document.createElement('canvas'); k.width = img.width; k.height = img.height;
+    const kg = k.getContext('2d', { willReadFrequently: true }); kg.drawImage(img, 0, 0);
+    const p = kg.getImageData(0, 0, img.width, img.height).data, r = new Float32Array(img.height);
+    for (let y = 0; y < img.height; y++) { let n = 0; for (let x = 0, i = y * img.width * 4; x < img.width; x++, i += 4) if (p[i] + p[i + 1] + p[i + 2] < 600) n++; r[y] = n; }
+    return r;
+  };
+  const at = [0];
+  let h = imgs[0].height;
+  const r0 = rows(imgs[0]);
+  for (const img of imgs.slice(1)) {
+    const r = rows(img), n = 3000;
+    let best = null;
+    for (let s = 0; s + n <= r0.length && s < r0.length; s += 1) {
+      let e = 0; for (let y = 0; y < n; y++) e += Math.abs(r0[s + y] - r[y]);
+      if (!best || e < best.e) best = { s, e };
+    }
+    if (!best || best.e / n > img.width * 0.05) break;  // no clear match: the first picture alone
+    at.push(best.s); h = Math.max(h, best.s + img.height);
+  }
+  const w = imgs[0].width;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(img, 0, 0);
+  g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+  at.forEach((y, i) => g.drawImage(imgs[i], 0, y));
   const d = g.getImageData(0, 0, w, h), px = d.data;
   // the player's play cursor (red) is painted out; a line it crossed is joined up again
   const red = (i) => px[i] > 110 && px[i] - px[i + 1] > 25 && px[i] - px[i + 2] > 20;
@@ -1089,13 +1121,16 @@ PAGES_JS = r"""async ({ shot, title, lines }) => {
     const el = document.createElement('img'); el.src = p.src; el.style.height = hh + 'mm'; page.append(el); used += hh;
   }
   await Promise.all([...document.images].map((i) => i.decode()));
-  return { lines: parts.length, pages, full: last >= h - 3 };
+  return { lines: parts.length, pages, full: last >= h - 3, pictures: at.length };
 }"""
 
 
-def shoot(cdp, pg):
-    """The score as it shows now, as a PNG data URL (at the sharp screen's full pixels)."""
+def shoot(cdp, pg, end=False):
+    """The score as a PNG data URL (at the sharp screen's full pixels): its top, or (end) as far
+    down as the page scrolls it."""
     try:
+        if pg.evaluate(SCROLL_JS, end):
+            pg.wait_for_timeout(1500)  # redrawn where it scrolled to
         v = pg.evaluate(VISIBLE_JS)
         if not v or v["h"] < 50:
             raise RuntimeError("Couldn't find the score on the page.")
@@ -1180,25 +1215,38 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
             raise RuntimeError(f"The player wouldn't show {n}.")
     # the track's tuning, as text under its name: Fretboard reads it to find a bass's 4-line staff
     tuning = pg.evaluate(r"((document.body.innerText.match(/Tuning:\s*([A-G][^\n]*?)\s*(?=Key:|Capo:|\n|$)/) || [])[1] || '').trim()")
-    shot, last = None, None
-    for _ in range(8):  # drawn when two looks in a row agree
-        hold(ui)
-        shot = shoot(cdp, pg)
-        if shot == last:
-            break
-        last = shot
-        pg.wait_for_timeout(1000)
+    def steady(end):
+        shot, last = None, None
+        for _ in range(8):  # drawn when two looks in a row agree
+            hold(ui)
+            shot = shoot(cdp, pg, end)
+            if shot == last:
+                break
+            last = shot
+            pg.wait_for_timeout(1000)
+        return shot
+
+    def lay_out(shots):
+        out = ctx.new_page()
+        try:
+            res = out.evaluate(PAGES_JS, {"shots": shots, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
+            if res.get("error"):
+                return res, None
+            hold(ui)
+            return res, ctx.new_cdp_session(out).send("Page.printToPDF", {"preferCSSPageSize": True, "printBackground": True})
+        finally:
+            out.close()
+
+    shots = [steady(False)]
+    res, pdf = lay_out(shots)
+    if res.get("full"):  # its end is below the screen: a second picture, scrolled down, joins on
+        shots.append(steady(True))
+        res, pdf = lay_out(shots)
+        pg.evaluate("scrollTo(0, 0)")
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
-    out = ctx.new_page()
-    try:
-        res = out.evaluate(PAGES_JS, {"shot": shot, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
-        if res.get("error"):
-            return False, res["error"], res
-        hold(ui)
-        pdf = ctx.new_cdp_session(out).send("Page.printToPDF", {"preferCSSPageSize": True, "printBackground": True})
-    finally:
-        out.close()
+    if res.get("error"):
+        return False, res["error"], res
     tmp = dest.with_name(dest.name + ".part")
     tmp.write_bytes(base64.b64decode(pdf["data"]))
     if dest.exists():  # appeared meanwhile: never replaced
@@ -1371,15 +1419,13 @@ def work(ui, a, result):
         run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
         run.start()
         saved, missing, took = [], [], []
-        sizes = [(SHOT_H, SHOT_DSF), (11000, 1.4)]  # a song longer than the screen: a taller one
         with sync_playwright() as p:
             ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
             pg = song_page(ctx, a.url)
             cdp = ctx.new_cdp_session(pg)
             park_chrome(cdp, pg)
-            size = 0
             try:
-                sharp_screen(cdp, pg, *sizes[size])
+                sharp_screen(cdp, pg)
                 open_instruments(pg)
                 for i, n in enumerate(names):
                     label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
@@ -1393,11 +1439,6 @@ def work(ui, a, result):
                         try:
                             keep_drawing(cdp, pg)
                             ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n))
-                            while ok and res.get("full") and size + 1 < len(sizes):
-                                dest.unlink()  # its end was below the screen: again, on a taller one
-                                size += 1
-                                sharp_screen(cdp, pg, *sizes[size])
-                                ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n))
                             if ok and res.get("full"):
                                 print(f"  {dest.name}: the song is very long; its end may be missing")
                         except Cancelled:
