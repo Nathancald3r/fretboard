@@ -123,7 +123,7 @@ function pedal(id, cx, y, label) {
 
 function build() {
   pieces = new Map();
-  svg = el('svg', { viewBox: '95 150 860 455', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
+  svg = el('svg', { viewBox: '55 150 900 455', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
   svg.append(defs());
   // the kick, seen along its top as it points away from you, with the toms on it
   const kick = el('g', { class: 'dk-piece', 'data-piece': 'kick', filter: 'url(#dk-soft)' });
@@ -138,9 +138,9 @@ function build() {
   svg.append(kick);
   svg.append(drum('tom1', 410, 278, 82, 40, 30), drum('tom2', 590, 278, 90, 43, 32));
   svg.append(drum('snare', 320, 430, 118, 54, 26), drum('floor', 735, 438, 132, 62, 58));
-  svg.append(pedal('hhpedal', 195, 515, [195, 503]), pedal('kickpedal', 500, 525, [500, 513]));
+  svg.append(pedal('hhpedal', 160, 412, [160, 520]), pedal('kickpedal', 500, 525, [500, 513]));
   // cymbals hang over the drums (no stands drawn), which keeps the kit compact
-  svg.append(cymbal('hihat', 210, 372, 100, 32), cymbal('crash', 292, 262, 122, 40), cymbal('splash', 500, 222, 55, 18),
+  svg.append(cymbal('hihat', 172, 372, 100, 32), cymbal('crash', 292, 262, 122, 40), cymbal('splash', 500, 222, 55, 18),
     cymbal('crash2', 645, 235, 100, 33), cymbal('china', 862, 282, 70, 23), cymbal('ride', 805, 362, 140, 46));
   pieces.get('kickpedal').joinsKick = true;
   tags = el('g', { class: 'dk-tags' });
