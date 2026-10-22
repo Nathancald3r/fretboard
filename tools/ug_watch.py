@@ -191,7 +191,7 @@ def _hide_when_up(port):
 
 
 def open_tab(url):
-    """Opens url in a background tab of the collector Chrome; a search goes on to its best song."""
+    """Opens url in the collector Chrome; a search shows its results up front so you pick the song."""
     port = state["chrome_port"]
     q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("value", [""])[0]
     try:
