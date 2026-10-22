@@ -117,14 +117,16 @@ function finish(g, id, glowShape, ringShape, label) {
 // (open: the pedal is up) and drops onto it when the pedal is pressed (closed).
 function hihat(cx, cy, rx, ry) {
   const g = el('g', { class: 'dk-piece dk-hh', 'data-piece': 'hihat', filter: 'url(#dk-soft)' });
-  const low = cy + 14;
+  const low = cy + 30;
   cymbalArt(g, cx, low, rx * 0.97, ry * 0.97);
-  g.append(el('ellipse', { cx, cy: low, rx: rx * 0.97, ry: ry * 0.97, fill: '#000', opacity: 0.28 })); // in the top one's shade
+  // the bottom one sits in the top one's shade: much darker, with a bright edge so it reads as its own piece
+  g.append(el('ellipse', { cx, cy: low, rx: rx * 0.97, ry: ry * 0.97, fill: '#120c03', opacity: 0.72 }));
+  g.append(el('ellipse', { cx, cy: low, rx: rx * 0.97, ry: ry * 0.97, fill: 'none', stroke: '#fff2c4', 'stroke-width': 4, opacity: 1 }));
   g.append(el('line', { x1: cx, y1: low, x2: cx, y2: cy - 18, stroke: 'url(#dk-chrome)', 'stroke-width': 4, 'stroke-linecap': 'round' }));
   const top = el('g', { class: 'dk-hh-top' });
   cymbalArt(top, cx, cy, rx, ry);
   g.append(top);
-  return finish(g, 'hihat', el('ellipse', { cx, cy: cy + 7, rx, ry: ry + 7 }), el('ellipse', { cx, cy: cy + 7, rx: rx + 9, ry: ry + 14 }), [cx, cy - ry - 12]);
+  return finish(g, 'hihat', el('ellipse', { cx, cy: cy + 15, rx, ry: ry + 15 }), el('ellipse', { cx, cy: cy + 15, rx: rx + 9, ry: ry + 23 }), [cx, cy - ry - 12]);
 }
 
 function build() {

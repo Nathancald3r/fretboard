@@ -90,7 +90,8 @@ const clampVel = (v) => Math.max(1, Math.min(127, Math.round(v)));
 
 // Hi-hats and cymbals: alphaTab's drum kit plays them quieter than the drums around them, so
 // they get lost under the kick and snare. Each hit on the drum channel is played louder.
-const CYMBALS = new Set([42, 44, 46, 49, 51, 52, 53, 55, 57, 59]);
+// The open hi-hat is loud enough as it is.
+const CYMBALS = new Set([42, 44, 49, 51, 52, 53, 55, 57, 59]);
 export const DRUM_CHANNEL = 9;
 
 /** Raises the loudness of hi-hat and cymbal hits in place; returns how many changed. */

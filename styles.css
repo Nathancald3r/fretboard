@@ -664,7 +664,7 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .dk-now .dk-glow { opacity: .55; }
 /* hi-hat: the top cymbal drops onto the bottom one when the pedal is pressed */
 .dk-hh-top { transition: transform .06s ease-out; }
-.hh-closed .dk-hh-top { transform: translateY(12px); }
+.hh-closed .dk-hh-top { transform: translateY(26px); }
 .dk-now .dk-ring { opacity: 1; stroke-dasharray: none; }
 .dk-next .dk-ring { opacity: .7; }
 .dk-tag { fill: var(--accent); }
