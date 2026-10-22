@@ -28,6 +28,7 @@ import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 import { humanize } from './humanize.js';
+import { autoLevels } from './mixlevels.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -729,7 +730,7 @@ const isDrums = (track) => track.staves.some((st) => st.isPercussion);
 // Tab is for fretted parts only: guitars and basses (by instrument or by name). Vocals, keys,
 // strings, synths and the rest are always shown as standard notation, even when the file
 // gives them a tab staff (UG PDFs and some Guitar Pro files do).
-const FRETTED_NAME = /guitar|gtr|bass|ukulele|banjo|mandolin/i;
+const FRETTED_NAME = /guitar|gtr|\bbass\b|ukulele|banjo|mandolin/i;
 const NOT_FRETTED_NAME = /vocal|voice|sing|piano|key|synth(?!.*bass)|string|violin|cello|organ|pad|horn|sax|trumpet|flute|choir/i;
 function isFretted(track) {
   if (!hasTab(track) || isDrums(track)) return false;
@@ -764,14 +765,23 @@ function trackLabel(track, i) {
 // the other tracks, so the click and count-in always stay audible.
 let mix = [];
 
+// The starting mix: vocals on top, lead guitar and drums next, then bass, keys, rhythm
+// guitars and synths (js/mixlevels.js).
+let mixDefaults = [];
 function defaultMix(sc) {
-  return sc.tracks.map(() => ({ mute: false, solo: false, volume: 1 }));
+  mixDefaults = autoLevels(sc.tracks.map((t) => ({
+    name: t.name, program: t.playbackInfo?.program, drums: isDrums(t), volume: t.playbackInfo?.volume,
+  })));
+  return sc.tracks.map((t, i) => ({ mute: false, solo: false, volume: mixDefaults[i] }));
 }
+const mixChanged = () => mix.some((m, i) => m.mute || m.solo || Math.abs(m.volume - (mixDefaults[i] ?? 1)) > 0.005);
 
 function loadMix(sc, saved) {
   mix = defaultMix(sc);
   if (Array.isArray(saved) && saved.length === sc.tracks.length) {
-    saved.forEach((m, i) => Object.assign(mix[i], { mute: !!m.mute, solo: !!m.solo, volume: Number.isFinite(m.volume) ? m.volume : 1 }));
+    // Volumes saved before the automatic mix existed are all 100%: those songs get it too.
+    const ownVolumes = saved.some((m) => Number.isFinite(m.volume) && m.volume !== 1);
+    saved.forEach((m, i) => Object.assign(mix[i], { mute: !!m.mute, solo: !!m.solo, ...(ownVolumes ? { volume: Number.isFinite(m.volume) ? m.volume : 1 } : {}) }));
   }
   // Files can be saved with tracks muted or soloed (a soloed track silences every other
   // one). Start from what the mixer shows instead.
@@ -852,8 +862,8 @@ function showMix() {
   $('pl-mute').classList.toggle('on', mix[trackIndex].mute || playAlongMuted(trackIndex));
   $('pl-solo').classList.toggle('on', mix[trackIndex].solo);
   $('pl-track-btn').classList.toggle('silent', !isAudible(trackIndex));
-  $('pl-mixer-note').textContent = mix.some((m) => m.mute || m.solo || m.volume !== 1) ? '' : 'Click a name to show that track. M = mute, S = solo (you can solo several).';
-  $('pl-mix-reset').hidden = !mix.some((m) => m.mute || m.solo || m.volume !== 1);
+  $('pl-mixer-note').textContent = mixChanged() ? '' : 'Vocals are set loudest, then lead guitar and drums. Click a name to show that track. M = mute, S = solo (you can solo several).';
+  $('pl-mix-reset').hidden = !mixChanged();
 }
 
 function setMute(i, on = !mix[i].mute) {
