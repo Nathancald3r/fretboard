@@ -36,7 +36,7 @@ def song_tabs(port, official_only=False):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5) as r:
             ts = json.load(r)
-    except OSError:
+    except (OSError, ValueError):  # Chrome closed, or mid-change
         return None
     return [t["url"].split("?")[0].split("#")[0] for t in ts
             if t["type"] == "page" and "tabs.ultimate-guitar.com/tab/" in t["url"]
@@ -364,63 +364,68 @@ def main():
           f"They go into {a.root}. Ctrl+C here to stop.\n")
     started = warned = False
     while True:
-        urls = song_tabs(a.port, a.official_only)
-        state["chrome"] = urls is not None
-        if urls is None:
-            if not started:
-                started = True
-                if start_chrome(a.port, a.profile):
-                    print("Opened the collector Chrome, out of sight: click it in the taskbar to use it. Log in to UG Pro\n"
-                          "there (once), then open an official song, or search from Fretboard.")
-                    time.sleep(5)
+        try:
+            urls = song_tabs(a.port, a.official_only)
+            state["chrome"] = urls is not None
+            if urls is None:
+                if not started:
+                    started = True
+                    if start_chrome(a.port, a.profile):
+                        print("Opened the collector Chrome, out of sight: click it in the taskbar to use it. Log in to UG Pro\n"
+                              "there (once), then open an official song, or search from Fretboard.")
+                        time.sleep(5)
+                        continue
+                if not warned and time.time() - state["launched"] > 40:  # not while it's still starting
+                    print("Can't reach Chrome on port %d. Close every window of that Chrome and run this again, or start it with:\n"
+                          '  & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=%d --user-data-dir="%s"'
+                          % (a.port, a.port, a.profile))
+                    warned = True
+                time.sleep(5)
+                continue
+            warned = False
+            now = time.time()
+            if now - state["picking"] < 900:  # a song opened after a search from Fretboard: you picked it
+                for u in urls:
+                    if u not in seen:
+                        state["asked"][u.split("?")[0]] = now
+            seen = {u: seen.get(u, now) for u in urls}
+            passed &= set(urls)  # a song closed and opened again is asked again
+            for u in urls:
+                # saved before and opened again from Fretboard (within the last 2 minutes): a window asks what to do
+                again = u in done and now - state["asked"].get(u.split("?")[0], 0) < 120
+                if (u in done and not again) or u in passed or now - seen[u] < a.settle:
                     continue
-            if not warned and time.time() - state["launched"] > 40:  # not while it's still starting
-                print("Can't reach Chrome on port %d. Close every window of that Chrome and run this again, or start it with:\n"
-                      '  & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=%d --user-data-dir="%s"'
-                      % (a.port, a.port, a.profile))
-                warned = True
+                state["asked"].pop(u.split("?")[0], None)
+                print(f"\n=== {u}")
+                cmd = [sys.executable, "-u", str(COLLECT), u, "--port", str(a.port), "--root", a.root] + (["--no-ui"] if a.no_ui else [])
+                if again:
+                    print("Saved before: a window asks whether to replace it or save a new copy.")
+                    cmd.append("--again")
+                else:
+                    cmd.append("--auto-official")
+                state["busy"] = u
+                try:
+                    code = subprocess.run(cmd).returncode
+                finally:
+                    state["busy"] = ""
+                if code == DONE:
+                    done.add(u)
+                    with DONE_FILE.open("a", encoding="utf-8") as f:
+                        f.write(u + "\n")
+                    print("Ready for the next song.")
+                elif again and code in (SKIPPED, CANCELLED):
+                    print("Left as it was.")
+                elif code in (SKIPPED, CANCELLED):
+                    passed.add(u)
+                    print("Skipped." if code == SKIPPED else "Cancelled; what it saved was removed.")
+                else:
+                    print("That song didn't finish; it will be tried again in a minute while it stays open.")
+                    seen[u] = time.time() + 60
+                break  # one song at a time; re-read the open tabs afterwards
+        except Exception as e:  # one bad moment never closes the helper
+            print(f"(Something went wrong, carrying on: {e})")
             time.sleep(5)
             continue
-        warned = False
-        now = time.time()
-        if now - state["picking"] < 900:  # a song opened after a search from Fretboard: you picked it
-            for u in urls:
-                if u not in seen:
-                    state["asked"][u.split("?")[0]] = now
-        seen = {u: seen.get(u, now) for u in urls}
-        passed &= set(urls)  # a song closed and opened again is asked again
-        for u in urls:
-            # saved before and opened again from Fretboard (within the last 2 minutes): a window asks what to do
-            again = u in done and now - state["asked"].get(u.split("?")[0], 0) < 120
-            if (u in done and not again) or u in passed or now - seen[u] < a.settle:
-                continue
-            state["asked"].pop(u.split("?")[0], None)
-            print(f"\n=== {u}")
-            cmd = [sys.executable, "-u", str(COLLECT), u, "--port", str(a.port), "--root", a.root] + (["--no-ui"] if a.no_ui else [])
-            if again:
-                print("Saved before: a window asks whether to replace it or save a new copy.")
-                cmd.append("--again")
-            else:
-                cmd.append("--auto-official")
-            state["busy"] = u
-            try:
-                code = subprocess.run(cmd).returncode
-            finally:
-                state["busy"] = ""
-            if code == DONE:
-                done.add(u)
-                with DONE_FILE.open("a", encoding="utf-8") as f:
-                    f.write(u + "\n")
-                print("Ready for the next song.")
-            elif again and code in (SKIPPED, CANCELLED):
-                print("Left as it was.")
-            elif code in (SKIPPED, CANCELLED):
-                passed.add(u)
-                print("Skipped." if code == SKIPPED else "Cancelled; what it saved was removed.")
-            else:
-                print("That song didn't finish; it will be tried again in a minute while it stays open.")
-                seen[u] = time.time() + 60
-            break  # one song at a time; re-read the open tabs afterwards
         time.sleep(3)
 
 
