@@ -215,8 +215,75 @@ export async function ugHelper() {
   try {
     const r = await fetch(HELPER + '/status', { signal: AbortSignal.timeout(1500) });
     const s = r.ok ? await r.json() : null;
-    return s?.app === 'fretboard-ug-helper' ? s : null;
+    if (s?.app !== 'fretboard-ug-helper') return null;
+    try { localStorage.setItem(HELPER_SET, '1'); } catch { /* fine */ }
+    return s;
   } catch { return null; }
+}
+
+// The helper is a Windows program; "Set up UG helper.cmd" installs it once per computer and
+// registers the fretboard-helper: link, which starts it (Chrome asks once: Always allow).
+export const helperPossible = () => canWatch && /Windows/.test(navigator.userAgent);
+const HELPER_SET = 'fretboard-ug-helper-set'; // it has answered in this browser before
+const SETUP_URL = 'tools/ug_helper_setup.cmd';
+const helperKnown = () => { try { return localStorage.getItem(HELPER_SET) === '1'; } catch { return false; } };
+let helperState = ''; // '' | 'starting' | 'failed'
+
+/** Starts the helper through its link and waits for it; its status, or null when it didn't come up. */
+export async function startHelper(waitMs = 30000) {
+  if (!helperPossible()) return null;
+  helperState = 'starting';
+  showHelper();
+  location.href = 'fretboard-helper://start';
+  const until = Date.now() + waitMs;
+  let s = null;
+  while (!s && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 1000));
+    s = await ugHelper();
+  }
+  helperState = s ? '' : 'failed';
+  // didn't come up: Find tabs online stops waiting for it (and opens the site as before) until it answers again
+  if (!s) try { localStorage.removeItem(HELPER_SET); } catch { /* fine */ }
+  await showHelper(s);
+  return s;
+}
+
+/** The UG helper line in Find tabs online: running, or a button that starts it. */
+export async function showHelper(status) {
+  const el = $('find-helper');
+  if (!el || !helperPossible()) return;
+  const s = status === undefined ? await ugHelper() : status;
+  el.hidden = false;
+  el.innerHTML = '';
+  const setup = document.createElement('a');
+  setup.href = SETUP_URL;
+  setup.download = 'Set up UG helper.cmd';
+  setup.textContent = 'Set up UG helper';
+  setup.title = 'Once per computer: download and run it (it installs the helper for your Windows user only)';
+  if (s) {
+    const on = document.createElement('span');
+    on.className = 'find-auto-on';
+    on.textContent = '● UG helper running: Ultimate Guitar opens in its Chrome window. Official and Pro songs and Guitar Pro tabs you open there are added here by themselves.';
+    el.append(on);
+    return;
+  }
+  if (helperState === 'starting') {
+    el.append('Starting the UG helper… (if Chrome asks to open it, tick Always allow and press Open)');
+    return;
+  }
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'ghost small';
+  b.textContent = 'Start UG helper';
+  b.title = 'Opens the UG helper: Official / Pro songs and Guitar Pro tabs are then added here by themselves';
+  b.addEventListener('click', () => startHelper());
+  if (helperState === 'failed') {
+    el.append('The UG helper didn’t start. First time on this computer? Download and run ', setup, ' once, then ', b);
+  } else if (helperKnown()) {
+    el.append(b, ' Official and Pro songs and Guitar Pro tabs you open in it are added here by themselves.');
+  } else {
+    el.append(b, ' First time on this computer? ', setup, ' once (Windows).');
+  }
 }
 
 /** Opens a page in the helper's Chrome; false when that didn't work. */
@@ -302,7 +369,7 @@ async function showAuto() {
   if (dir) {
     const on = document.createElement('span');
     on.className = 'find-auto-on';
-    on.textContent = runs ? '● UG helper on: open an Official or Pro song in its Chrome window. Its PDFs are saved and added here as one song by themselves (Guitar Pro files too, once you download them).'
+    on.textContent = runs ? '● Auto-import on: what the UG helper saves is added here as one song.'
       : watch ? '● Waiting for your download: save the Guitar Pro file on the site and it opens here, ready for play-along.' : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
     el.append(on);
   } else {
@@ -364,6 +431,7 @@ export async function watchDownloads({ query = '', url = '' } = {}) {
 export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   ctx = { importFiles, toast, openSong };
   showAuto();
+  showHelper();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); } });
   window.addEventListener('focus', () => { autoImport(); checkRuns(); });
   window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector

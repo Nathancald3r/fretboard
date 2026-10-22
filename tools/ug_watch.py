@@ -136,10 +136,10 @@ def start_helper():
     try:
         srv = HelperServer(("127.0.0.1", HELPER_PORT), Helper)
     except OSError:
-        print(f"(Fretboard link off: port {HELPER_PORT} is in use, probably by another copy of this window.)")
-        return
+        return False  # another copy of the helper is running
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(f"Fretboard link on: Find tabs online opens Ultimate Guitar here, and Official / Pro songs are added by themselves.")
+    return True
 
 
 def main():
@@ -152,7 +152,10 @@ def main():
     ap.add_argument("--official-only", action="store_true", help="only official songs, not chords / tabs / Guitar Pro pages")
     a = ap.parse_args()
     state["chrome_port"], state["profile"] = a.port, a.profile
-    start_helper()
+    if not start_helper():
+        print("The UG helper is already running in another window. This one closes in a few seconds.")
+        time.sleep(4)
+        return
     DONE_FILE = Path(a.root) / "collected.txt"
     DONE_FILE.parent.mkdir(parents=True, exist_ok=True)
     done = set(DONE_FILE.read_text(encoding="utf-8").split()) if DONE_FILE.exists() else set()

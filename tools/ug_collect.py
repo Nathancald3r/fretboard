@@ -549,7 +549,7 @@ def save_single(ui, a, result, pg, kind, label):
     out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
     what = (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
             else "Save this Guitar Pro tab with the page's Download button?")
-    names = [label] if a.yes else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
+    names = [label] if a.yes or (a.auto_official and kind == "gp") else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
                                           "note": "One file, saved in a few seconds. Then Fretboard's library offers it (Review & create)."})
     if not names:
         result["code"] = SKIPPED
@@ -703,7 +703,7 @@ def main():
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
-    ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs: save every track without asking (other pages still ask)")
+    ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
     result = {"code": FAILED}

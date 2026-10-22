@@ -15,7 +15,7 @@ import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns } from './quickimport.js';
+import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showHelper } from './quickimport.js';
 import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
@@ -640,13 +640,19 @@ function initFind() {
     // Ultimate Guitar with the UG helper running (tools/ug_watch.py): the search opens in the helper's
     // Chrome, every type listed. Open an Official or Pro song there and its PDFs are saved and added
     // here as one song by themselves.
-    if (site === 'ug-gp' && (await ugHelper())) {
+    // Not running yet: it's started (its link) when it has run in this browser before.
+    if (site === 'ug-gp' && helperPossible()) {
+      let up = await ugHelper();
+      const tried = !up && localStorage.getItem('fretboard-ug-helper-set') === '1';
+      if (tried) up = await startHelper();
       const all = url.replace(/&type=\d+/, '');
-      if (await openInCollector(all)) {
+      if (up && (await openInCollector(all))) {
         watchRuns();
         watchDownloads({ query, url: all });
+        showHelper(up);
         return;
       }
+      if (tried) return; // too late for a new tab (the browser would block it); the line under the search says what to do
     }
     window.open(url, '_blank', 'noopener');
     watchDownloads({ query, url });
