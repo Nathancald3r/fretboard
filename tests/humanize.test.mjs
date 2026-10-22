@@ -86,3 +86,34 @@ console.log('humanize tests passed');
   assert.equal(sustainPads(guitar), 0, 'guitars are left alone');
   console.log('pad sustain ok');
 }
+
+// Drums and a shaker: each percussion track gets its own channel, still played as drums (bank 128).
+{
+  const { ownDrumChannels, DRUM_CHANNEL } = await import('../js/humanize.js');
+  const alphaTab = await import('@coderline/alphatab');
+  const { ugToAlphaTex } = await import('../js/ugtab.js');
+  const hits = (piece) => [{ drums: true, bars: [{ x0: 0, x1: 200, cols: [0, 1, 2, 3].map((i) => ({ cx: 20 + i * 45, len: 4, notes: [{ drum: piece }] })) }] }];
+  const guitar = [{ bars: [{ x0: 0, x1: 200, cols: [0, 1, 2, 3].map((i) => ({ cx: 20 + i * 45, len: 4, notes: [{ s: 5, t: '0' }] })) }] }];
+  // five guitars before the drums: alphaTab gives the fifth channels 8 and 9, the drum channel
+  const five = [1, 2, 3, 4].map((i) => ({ name: 'Guitar ' + i, program: 25, strips: guitar }));
+  const { tex } = ugToAlphaTex(guitar, { title: 'T', name: 'Guitar', program: 25, extra: [...five, { name: 'Drums', strips: hits('kick') }, { name: 'Shaker', strips: hits('shaker') }] });
+  const imp = new alphaTab.importer.AlphaTexImporter();
+  imp.initFromString(tex, new alphaTab.Settings());
+  const score = imp.readScore();
+  assert.equal(score.tracks[4].playbackInfo.secondaryChannel, DRUM_CHANNEL, 'alphaTab puts the fifth guitar on the drum channel');
+  assert.equal(ownDrumChannels(score.tracks), 2);
+  const infos = score.tracks.map((t) => t.playbackInfo);
+  const [g, d, s] = [infos[0], infos[5], infos[6]];
+  assert.ok(infos.every((p, i) => i === 5 || (p.primaryChannel !== DRUM_CHANNEL && p.secondaryChannel !== DRUM_CHANNEL)), 'only the drums use the drum channel');
+  assert.equal(d.primaryChannel, DRUM_CHANNEL, 'the drums stay on the drum channel');
+  assert.ok(s.primaryChannel !== DRUM_CHANNEL && s.primaryChannel === s.secondaryChannel, 'the shaker has a channel of its own');
+  assert.ok(![g.primaryChannel, g.secondaryChannel].includes(s.primaryChannel), 'not one the guitar uses');
+  const midi = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, new alphaTab.Settings(), new alphaTab.midi.AlphaSynthMidiFileHandler(midi)).generate();
+  const ev = midi.tracks.flatMap((t) => t.events);
+  const bank = ev.filter((e) => e.channel === s.primaryChannel && e.controller === 0).map((e) => e.value);
+  assert.deepEqual(bank, [1], 'bank select 128 (coarse 1) on the shaker channel');
+  assert.ok(ev.some((e) => e.channel === s.primaryChannel && e.noteKey === 82), 'shaker notes play on its channel');
+  assert.ok(ev.some((e) => e.channel === DRUM_CHANNEL && e.noteKey === 36) && !ev.some((e) => e.channel === DRUM_CHANNEL && e.noteKey === 82), 'drum notes stay on 9');
+  console.log('drum channels ok');
+}

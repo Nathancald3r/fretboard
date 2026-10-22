@@ -133,6 +133,38 @@ export function sustainPads(events, release = QUARTER, overlap = QUARTER / 4) {
 const CYMBALS = new Set([42, 44, 49, 51, 52, 53, 55, 57, 59]);
 export const DRUM_CHANNEL = 9;
 
+// alphaTab puts every percussion track on the drum channel, so a second one (a shaker beside the
+// drums) shares the first one's volume and mute: muting the shaker silenced the drums. Each extra
+// percussion track gets a channel of its own with the drum kit bank (128), which the synth plays as drums.
+// alphaTab can also give an instrument the drum channel as its second one (a pad on 8 and 9): moved too.
+export const DRUM_BANK = 128;
+
+/** Gives every track but the first percussion one channels off the drum channel (score tracks, changed in place); returns how many moved. */
+export function ownDrumChannels(tracks) {
+  const used = new Set(tracks.flatMap((t) => [t.playbackInfo.primaryChannel, t.playbackInfo.secondaryChannel]));
+  const free = () => {
+    let ch = 0;
+    while (used.has(ch) || ch === DRUM_CHANNEL) ch++;
+    used.add(ch);
+    return ch;
+  };
+  let first = true;
+  let moved = 0;
+  for (const t of tracks) {
+    const p = t.playbackInfo;
+    if (p.primaryChannel === DRUM_CHANNEL) {
+      if (first) { first = false; continue; }
+      p.primaryChannel = p.secondaryChannel = free();
+      p.bank = DRUM_BANK;
+      moved++;
+    } else if (p.secondaryChannel === DRUM_CHANNEL) {
+      p.secondaryChannel = free();
+      moved++;
+    }
+  }
+  return moved;
+}
+
 /** Raises the loudness of hi-hat and cymbal hits in place; returns how many changed. */
 export function liftCymbals(events, gain = 1.3, add = 10) {
   let n = 0;
