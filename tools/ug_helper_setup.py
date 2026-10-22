@@ -2,7 +2,7 @@
 
 Run by "Set up UG helper.cmd" (download it from Fretboard: Find tabs online). It
   - copies the helper (ug_watch.py, ug_collect.py) from the Fretboard site into
-    %LOCALAPPDATA%\\Fretboard UG helper,
+    %USERPROFILE%\\Fretboard UG helper,
   - installs Playwright for Python if it's missing (it drives the helper's own Chrome window),
   - registers the fretboard-helper: link for this Windows user only, so the button can start
     the helper. The link only ever runs start.cmd in that folder; anything after
@@ -17,7 +17,8 @@ from pathlib import Path
 
 SITE = "https://nathancald3r.github.io/fretboard/tools/"
 FILES = ["ug_watch.py", "ug_collect.py", "ug_helper_setup.py"]
-HOME = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Fretboard UG helper"
+# Not under AppData: the Microsoft Store's Python keeps its own private copy of that folder.
+HOME = Path.home() / "Fretboard UG helper"
 SCHEME = "fretboard-helper"
 CHROME = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
           Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),

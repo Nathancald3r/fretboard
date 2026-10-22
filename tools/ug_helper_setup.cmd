@@ -2,7 +2,7 @@
 rem Sets up Fretboard's UG helper on this computer (run it once; again any time to repair).
 title Set up Fretboard UG helper
 setlocal
-set "HOME=%LOCALAPPDATA%\Fretboard UG helper"
+set "HOME=%USERPROFILE%\Fretboard UG helper"
 python -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >nul 2>nul
 if errorlevel 1 goto nopython
 if not exist "%HOME%" mkdir "%HOME%"
