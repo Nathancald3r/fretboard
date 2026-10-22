@@ -52716,7 +52716,7 @@
 		canBeUsed(band) {
 			if (!(!this.shared.uniqueEffectId && band.info.canShareBand || band.info.effectId === this.shared.uniqueEffectId)) return false;
 			if (!this.shared.firstBeat) return true;
-			if (this.shared.lastBeat === band.firstBeat) return true;
+			if (this.shared.lastBeat === band.firstBeat && this.bands.every((b) => b.info.effectId === band.info.effectId)) return true;
 			if (this.shared.lastBeat.isBefore(band.firstBeat)) return true;
 			if (this.shared.lastBeat.isBefore(this.shared.firstBeat)) return true;
 			return false;
@@ -64532,7 +64532,7 @@
 			}
 		}
 		createLinePreBeatGlyphs() {
-			if (this.isFirstOfStaff) { // Fretboard patch: the TAB clef is drawn on the first line only
+			if (this.isFirstOfStaff) {
 				const center = (this.bar.staff.tuning.length - 1) / 2;
 				if (!this.bar.previousBar) {
 					this.createStartSpacing();

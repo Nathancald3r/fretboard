@@ -297,9 +297,10 @@
 
         <section class="sheet" data-sheet="speed" hidden>
           <div class="sheet-head"><h2>Speed</h2><button class="ghost small" data-close>Close</button></div>
-          <p class="muted small-text">Changes the tempo only: the pitch stays the same, for the synth and for recordings.</p>
+          <p class="muted small-text">Slower or faster without changing the pitch (synth and recordings). The middle of the slider is the song's own speed.</p>
           <div class="row">
-            <input id="pl-speed" class="wide-range" type="range" min="10" max="200" step="1" value="100" aria-label="Speed">
+            <input id="pl-speed" class="wide-range" type="range" min="25" max="175" step="1" value="100" aria-label="Speed" list="pl-speed-marks">
+            <datalist id="pl-speed-marks"><option value="50"></option><option value="100"></option><option value="150"></option></datalist>
             <span id="pl-speed-val" class="muted small-text"></span>
           </div>
           <div class="row chips">

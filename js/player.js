@@ -64,7 +64,7 @@ function ensureApi() {
   installTone();
   api = new AT.AlphaTabApi($('alphatab'), {
     core: { fontDirectory: VENDOR + 'font/', scriptFile: VENDOR + 'alphaTab.js' },
-    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, resources: { barNumberColor: '#222222' } },
+    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, effectBandPaddingBottom: 5, resources: { barNumberColor: '#222222' } }, // a little air between chord names and swells
     player: {
       playerMode: AT.PlayerMode.EnabledSynthesizer,
       soundFont: customSoundFont ? undefined : DEFAULT_SF,
@@ -622,7 +622,7 @@ function setSpeed(percent, save = true) {
   percent = Math.max(MIN_SPEED, Math.min(MAX_SPEED, Math.round(percent * 10) / 10));
   speedPct = percent;
   if (api) api.playbackSpeed = percent / 100;
-  $('pl-speed').value = Math.min(150, percent);
+  $('pl-speed').value = Math.max(25, Math.min(175, percent)); // the slider has 100% in the middle
   timer.noteSpeed(Math.round(percent));
   updateBpm();
   if (save && song) updateSong(song.id, { speed: percent });
@@ -681,7 +681,7 @@ function updateBpm() {
   const bpm = Math.round((baseTempo * speedPct) / 100);
   if (document.activeElement !== $('pl-bpm-input')) $('pl-bpm-input').value = bpm;
   const pct = Math.round(speedPct);
-  $('pl-speed-val').textContent = speedPct === 100 ? `original speed (${Math.round(baseTempo)} BPM)` : `${pct}% of ${Math.round(baseTempo)} BPM`;
+  $('pl-speed-val').textContent = speedPct === 100 ? `${bpm} BPM, the song's own speed` : `${bpm} BPM: ${pct}% of the song's ${Math.round(baseTempo)}`;
   $('pl-speed-pct').textContent = pct + '%';
   $('pl-tempo-open-txt').textContent = `♩ ${bpm}${pct === 100 ? '' : ` · ${pct}%`}`;
   $('pl-speed-pct').classList.toggle('changed', speedPct !== 100);
