@@ -428,22 +428,25 @@ const snap = (len) => {
   return allowed.reduce((b, a) => (Math.abs(a - len) < Math.abs(b - len) ? a : b), 4);
 };
 
-const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
+// fx: beat effects for the first beat written (e.g. lyrics "word")
+const withFx = (d, fx) => (!fx ? d : d.endsWith('}') ? `${d.slice(0, -1)} ${fx}}` : `${d} {${fx}}`);
+const restTex = (len, fx = '') => pieces(len).map((p, i) => `r.${withFx(dur(p), i ? '' : fx)}`).join(' ');
 const fretOf = (n) => (n.tie ? '-' : n.t === 'X' ? 'x' : n.t);
 // a drum hit is named by its kit piece (see drumHead), a tab note by fret and string
 const noteTex = (n) => (n.drum ? n.drum : `${fretOf(n)}.${n.s + 1}`);
-const beatTex = (notes, len) => {
-  if (!notes.length) return restTex(len);
-  const d = dur(len);
+const beatTex = (notes, len, fx = '') => {
+  if (!notes.length) return restTex(len, fx);
+  const d = withFx(dur(len), fx);
   const one = notes.map(noteTex);
   return notes.length === 1 ? `${one[0]}.${d}` : `(${one.join(' ')}).${d}`;
 };
 // A length with no single note value (e.g. 10 sixteenths) is written as tied notes.
-const tiedTex = (notes, len) => {
-  if (!notes.length) return restTex(len);
+const tiedTex = (notes, len, fx = '') => {
+  if (!notes.length) return restTex(len, fx);
   const [first, ...rest] = pieces(len);
   const n = notes.map(noteTex);
-  const head = n.length === 1 ? `${n[0]}.${dur(first)}` : `(${n.join(' ')}).${dur(first)}`;
+  const d = withFx(dur(first), fx);
+  const head = n.length === 1 ? `${n[0]}.${d}` : `(${n.join(' ')}).${d}`;
   if (notes[0].drum) return `${head} ${restTex(len - first)}`; // a drum isn't held: the rest of its time is quiet
   const tail = rest.map((p) => (n.length === 1 ? `-.${notes[0].s + 1}.${dur(p)}` : `(${notes.map((x) => `-.${x.s + 1}`).join(' ')}).${dur(p)}`));
   return [head, ...tail].join(' ');
@@ -451,8 +454,7 @@ const tiedTex = (notes, len) => {
 
 // The lyrics ride on a track of their own (rests carrying the syllables), so the tablature stays clean.
 // A syllable's time in the bar comes from where it sits between the notes above it.
-function lyricBar(b, T) {
-  if (!b.lyr.length) return restTex(T);
+function lyricTimes(b, T) {
   const anchors = [[b.x0, 0], ...b.cols.map((c, k) => [c.cx, b.times[k]]), [b.x1, T]];
   const timeAt = (x) => {
     for (let i = 1; i < anchors.length; i++) {
@@ -465,6 +467,12 @@ function lyricBar(b, T) {
   const q = sy.map((l) => Math.round(timeAt(l.x)));
   q.forEach((v, i) => { q[i] = Math.max(v, i ? q[i - 1] + 1 : 0); });
   for (let i = q.length - 1; i >= 0; i--) q[i] = Math.min(q[i], T - (q.length - i));
+  return sy.map((l, i) => ({ t: q[i], text: l.text }));
+}
+function lyricBar(b, T) {
+  if (!b.lyr.length) return restTex(T);
+  const words = lyricTimes(b, T);
+  const sy = words, q = words.map((w) => w.t);
   const beats = [];
   if (q[0] > 0) beats.push(restTex(q[0]));
   sy.forEach((l, i) => {
@@ -519,9 +527,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   };
   const firstTempo = bars.find((b) => b.tempo)?.tempo;
   let lastTempo = firstTempo || tempo;
-  const render = (barList, first) => {
-  let prevStrings = new Set();
-  return barList.map((b, i) => {
+  // each bar's note lengths (sixteenths) fitted to the bar, and when each note starts
+  const layout = (b, first) => {
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
     if (Math.round(sum) === T && first) exact++;
@@ -546,15 +553,34 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     }
     // when the row says less than a full bar, the last note rings on to the end of the bar
     if (b.cols.length && total < T) { lens[lens.length - 1] += T - total; total = T; }
+    b.lens = lens;
+    let at = 0;
+    b.times = b.cols.map((c, k) => { const t = at; at += lens[k]; return t; });
+  };
+  // A drum bar with the sung words under it: a syllable that starts between two hits splits the
+  // time there (a drum hit isn't held, so the rest of its time is a rest that carries the word).
+  const wordedBeats = (b, ws) => {
+    const starts = [...new Set([0, ...b.times, ...ws.map((w) => w.t)])].filter((t) => t < T).sort((x, y) => x - y);
+    return starts.map((s, k) => {
+      const len = (k + 1 < starts.length ? starts[k + 1] : T) - s;
+      const c = b.times.indexOf(s);
+      const said = ws.filter((w) => w.t === s).map((w) => w.text).join(' ');
+      const fx = said ? `lyrics ${JSON.stringify(said)}` : '';
+      return pieces(len).length === 1 ? beatTex(c >= 0 ? b.cols[c].notes : [], len, fx) : tiedTex(c >= 0 ? b.cols[c].notes : [], len, fx);
+    }).join(' ');
+  };
+  const render = (barList, first, words = []) => {
+  let prevStrings = new Set();
+  return barList.map((b, i) => {
+    const lens = b.lens;
     for (const c of b.cols) {
       for (const n of c.notes) n.tie = n.tied && prevStrings.has(n.s); // only a note on a string that was just played can be a tie
       prevStrings = new Set(c.notes.map((n) => n.s));
     }
     if (!b.cols.length) prevStrings = new Set();
-    let at = 0;
-    b.times = b.cols.map((c, k) => { const t = at; at += lens[k]; return t; });
-    const beats = b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
-    if (!b.cols.length) beats.splice(0, beats.length, restTex(T));
+    const beats = words[i]?.length ? [wordedBeats(b, words[i])]
+      : b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
+    if (!beats.length) beats.push(restTex(T));
     const head = [];
     if (first) {
       if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
@@ -564,8 +590,18 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
   });
   };
-  const out = render(bars, true);
-  const lists = [bars];
+  const lists = [bars, ...extra.map((part) => {
+    const list = barsOf(part.strips).slice(0, bars.length);
+    while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
+    return list;
+  })];
+  lists.forEach((list, k) => list.forEach((b) => layout(b, k === 0)));
+  // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order);
+  // drum and percussion parts show them under their notes too, as their own PDFs do
+  const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
+  const sung = !!sungBars;
+  const words = sung ? sungBars.map((b) => (b.lyr.length ? lyricTimes(b, T) : [])) : [];
+  const out = render(bars, true, isDrums(strips) ? words : []);
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
@@ -574,16 +610,11 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     `\\track ${JSON.stringify(name || title || 'Guitar')}`,
     ...(isDrums(strips) ? [drumHead(strips)] : ['\\staff {score tabs}', `\\tuning ${tuningTex(strips)}`, `\\instrument ${program}`]),
   ].filter(Boolean).join('\n');
-  const others = extra.map((part) => {
-    const list = barsOf(part.strips).slice(0, bars.length);
-    while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
-    lists.push(list);
-    const head = isDrums(part.strips) ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
-    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(list, false).join(' |\n')}`;
+  const others = extra.map((part, k) => {
+    const drums = isDrums(part.strips);
+    const head = drums ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
+    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums ? words : []).join(' |\n')}`;
   }).join('');
-  // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order)
-  const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
-  const sung = !!sungBars;
   const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${sungBars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
   return { tex: `${header}\n${out.join(' |\n')}${others}${voice}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }

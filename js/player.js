@@ -26,6 +26,7 @@ import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
 import { initKeyView, keyRange, setKeys, showKeys } from './keyview.js';
 import { initDrumView, setKit, showDrums, drumMidi } from './drumview.js';
+import { initShakerView, setShaker, showShake, SHAKEN } from './shakerview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
@@ -1426,7 +1427,7 @@ function initLoops() {
 // on the track's own instrument. A neck for guitar and bass, keys for every other pitched
 // part, a drum kit for drums.
 const fretboardOn = () => $('pl-fretboard').checked;
-let viewKind = null; // 'neck' | 'keys' | 'drums'
+let viewKind = null; // 'neck' | 'keys' | 'drums' | 'shaker'
 let playedBeat = null;
 
 const trackNotes = (staff) => {
@@ -1441,10 +1442,14 @@ function showNeck() {
   const staff = track?.staves[0];
   const on = fretboardOn() && !!staff;
   $('pl-fretview').hidden = !on;
-  setNeck(null); setKeys(null); setKit(false);
+  setNeck(null); setKeys(null); setShaker(false); setKit(false);
   viewKind = null;
   if (on) {
-    if (staff.isPercussion) {
+    const shaken = staff.isPercussion && handPercussion(track);
+    if (shaken) {
+      viewKind = 'shaker';
+      setShaker(true, shaken);
+    } else if (staff.isPercussion) {
       viewKind = 'drums';
       setKit(true);
     } else if (staff.tuning.length > 0 && isFretted(track)) {
@@ -1463,10 +1468,33 @@ function showNeck() {
       setKeys(keyRange(trackNotes(staff).map((n) => n.realValue).filter((m) => m > 0)), octaveName);
     }
   }
-  for (const [id, kind] of [['pl-neck', 'neck'], ['pl-keys', 'keys'], ['pl-drums', 'drums']]) $(id).hidden = viewKind !== kind;
-  $('pl-fretview').classList.toggle('over-music', viewKind === 'drums'); // the kit floats over the bottom of the music
-  document.body.classList.toggle('kit-over', viewKind === 'drums'); // room under the last line of music
+  const kit = viewKind === 'drums' || viewKind === 'shaker';
+  for (const [id, on] of [['pl-neck', viewKind === 'neck'], ['pl-keys', viewKind === 'keys'], ['pl-drums', kit]]) $(id).hidden = !on;
+  $('pl-fretview').classList.toggle('over-music', kit); // the kit floats over the bottom of the music
+  document.body.classList.toggle('kit-over', kit); // room under the last line of music
   onBeat(playedBeat?.voice?.bar?.staff?.track?.index === trackIndex ? playedBeat : null);
+}
+
+// A percussion track of only shaken hand percussion (shaker, tambourine...): its name, else ''.
+function handPercussion(track) {
+  const notes = trackNotes(track.staves[0]);
+  if (!notes.length || !notes.every((n) => SHAKEN.has(drumNote(n)))) return '';
+  if (/shaker|tamb|maraca|cabasa/i.test(track.name || '')) return track.name;
+  return { 82: 'Shaker', 54: 'Tambourine', 70: 'Maracas', 69: 'Cabasa' }[drumNote(notes[0])];
+}
+// Down or up for a shaker hit: strokes alternate on the bar's finest beat (16ths, else 8ths),
+// down on the beat, up between, the way a shaker is played.
+function shakeDir(beat) {
+  let grid = 480;
+  for (const b of beat.voice.beats) if (b.notes.length && b.playbackDuration > 0) grid = Math.min(grid, b.playbackDuration);
+  grid = Math.max(240, grid);
+  return Math.round(beat.playbackStart / grid) % 2 ? 'up' : 'down';
+}
+// The count a hit falls on: "2", "2 e", "2 &", "2 a".
+function countOf(beat) {
+  const pos = beat.playbackStart;
+  const sub = Math.round((pos % 960) / 240);
+  return `${Math.floor(pos / 960) + 1}${['', ' e', ' &', ' a'][sub] ?? ''}`;
 }
 
 // The MIDI drum note of a drum note: the track's own articulation list, else the Guitar Pro id.
@@ -1522,6 +1550,10 @@ function onBeat(beat) {
     const keys = (b) => sounding(b).map((n) => n.realValue).filter((m) => m > 0);
     const ms = api?.playerState === PLAYING && beat === playedBeat ? beatMs(beat) : 0;
     showKeys(sounding(beat).filter((n) => n.realValue > 0).map((n) => ({ m: n.realValue, ...loudness(n, ms) })), keys(next));
+  } else if (viewKind === 'shaker') {
+    const hit = (b) => !!b && sounding(b).length > 0;
+    const ms = api?.playerState === PLAYING && beat === playedBeat ? beatMs(beat) : 150;
+    showShake(hit(beat) ? shakeDir(beat) : null, hit(next) ? shakeDir(next) : null, hit(beat) ? countOf(beat) : '', ms);
   } else {
     const hits = (b) => sounding(b).map(drumNote);
     showDrums(hits(beat), hits(next));
@@ -2236,6 +2268,7 @@ export function initPlayer() {
   initFretView($('pl-neck'));
   initKeyView($('pl-keys'));
   initDrumView($('pl-drums'));
+  initShakerView($('pl-drums'));
   hoverNotes($('alphatab'));
   for (const [id, key, def] of [['pl-fretboard', 'fretboard-fretview', '0'], ['pl-lyrics-on', 'fretboard-lyrics', '1']]) {
     let v = def;

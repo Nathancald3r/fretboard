@@ -672,6 +672,18 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .dk-next .dk-ring { opacity: .7; }
 .dk-tag { fill: var(--accent); }
 .dk-tag-text { fill: var(--accent-ink); font-size: 22px; font-weight: 700; text-anchor: middle; }
+/* Shaker: moves down or up on each hit, with the stroke and the count beside it */
+.sk-view { display: block; width: 100%; max-width: 520px; max-height: min(300px, 40vh); }
+.fret-pane.over-music .sk-view { max-height: min(190px, 26vh); }
+.sk-rail { stroke: var(--accent); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 2 10; opacity: .6; }
+.sk-arrow { fill: var(--accent); opacity: .25; transition: opacity .08s; }
+.sk-arrow.sk-on { opacity: 1; }
+.sk-name, .sk-word, .sk-count, .sk-next { paint-order: stroke; stroke: #000000b0; stroke-linejoin: round; }
+.sk-name { fill: #fff; font-size: 22px; font-weight: 600; stroke-width: 4; }
+.sk-word { fill: var(--accent); font-size: 64px; font-weight: 800; dominant-baseline: middle; stroke-width: 7; }
+.sk-count { fill: #fff; font-size: 30px; font-weight: 700; stroke-width: 5; }
+.sk-next { fill: #fff; font-size: 20px; opacity: .85; stroke-width: 4; }
+@media (max-width: 640px) { .sk-view { max-height: 200px; } }
 @media (max-width: 640px) {
   .ly-now { font-size: 1rem; }
   .fv-neck { max-height: 90px; }
