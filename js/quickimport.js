@@ -263,8 +263,14 @@ export async function showHelper(status) {
   if (s) {
     const on = document.createElement('span');
     on.className = 'find-auto-on';
-    on.textContent = '● UG helper running: Ultimate Guitar opens in its Chrome window. Official and Pro songs and Guitar Pro tabs you open there are added here by themselves.';
-    el.append(on);
+    on.textContent = '● UG helper running: a search opens the best match in its Chrome, out of sight, and Official and Pro songs are saved and added here by themselves. ';
+    const show = document.createElement('button');
+    show.type = 'button';
+    show.className = 'ghost small';
+    show.textContent = 'Show UG window';
+    show.title = 'Brings the UG helper\'s Chrome up, full screen (clicking it in the taskbar does too)';
+    show.addEventListener('click', showCollector);
+    el.append(on, show);
     return;
   }
   if (helperState === 'starting') {
@@ -284,6 +290,13 @@ export async function showHelper(status) {
   } else {
     el.append(b, ' First time on this computer? ', setup, ' once (Windows).');
   }
+}
+
+/** Brings the helper's Chrome window up (it works out of sight). */
+export async function showCollector() {
+  try {
+    await fetch(HELPER + '/show', { method: 'POST', signal: AbortSignal.timeout(5000) });
+  } catch { /* not running */ }
 }
 
 /** Opens a page in the helper's Chrome; false when that didn't work. */

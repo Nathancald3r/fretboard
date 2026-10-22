@@ -38,6 +38,37 @@ class Cancelled(Exception):
     pass
 
 
+def hold(ui):
+    """Waits here while the run is paused; stops the run when it's cancelled."""
+    paused = getattr(ui, "paused", None)
+    while paused is not None and paused.is_set() and not ui.cancel.is_set():
+        time.sleep(0.25)
+    if ui.cancel.is_set():
+        raise Cancelled
+
+
+def park_chrome(cdp, pg):
+    """Moves the collector Chrome off the screen while it works, so it doesn't sit in front of you.
+    A Chrome the helper didn't start stops drawing out of sight: that one is brought back."""
+    try:
+        from ug_watch import hide_window, show_window
+        hide_window(cdp)
+        pg.wait_for_timeout(800)
+        if pg.evaluate("document.visibilityState") != "visible":
+            show_window(activate=False)
+            print("  (This Chrome wasn't started by the UG helper, so it stays on the screen while it works.)")
+    except Exception:
+        pass
+
+
+def show_chrome():
+    try:
+        from ug_watch import show_window
+        show_window()
+    except Exception:
+        pass
+
+
 # ---------- the computer: is someone using it? ----------
 
 class _LastInput(ctypes.Structure):
@@ -236,6 +267,7 @@ class ConsoleUI:
     """--no-ui: the same steps, told in the console."""
     def __init__(self):
         self.cancel = threading.Event()
+        self.paused = threading.Event()
 
     def ask(self, info):
         print(f"{info['song']} - {info['artist']}: {len(info['names'])} tracks -> {', '.join(info['names'])}\n"
@@ -260,6 +292,7 @@ class TkUI:
         from tkinter import ttk
         self.tk, self.ttk = tk, ttk
         self.cancel = threading.Event()
+        self.paused = threading.Event()
         self.closed = False
         self.q = queue.Queue()
         self.root = tk.Tk()
@@ -350,8 +383,8 @@ class TkUI:
             vars_.append((n, v))
         mins = max(1, round(len(info["names"]) * SECONDS_PER_TRACK / 60))
         self._label(f"Saves into  {info['out']}\n\n" + (info.get("note") or
-                    f"Takes about {mins} min. A small window shows the progress; you can keep using the computer, "
-                    "and Cancel any time (it then removes what it saved).\n\n"
+                    f"Takes about {mins} min. Chrome works out of sight and a small window shows the progress, "
+                    "so you can keep using the computer. Pause it any time, or Cancel (it then removes what it saved).\n\n"
                     "Afterwards, in Fretboard: Import files (it opens in this folder), select all, check the tracks, Create song."),
                     9, color=self.MUTED)
         row = tk.Frame(self.body, bg=self.BG)
@@ -373,7 +406,8 @@ class TkUI:
         if not getattr(self, "_bar", None) or not self._bar.winfo_exists():
             self._clear()
             self.root.title("Saving PDFs")
-            self._label("Saving PDFs", 11, bold=True, color=self.ACCENT)
+            self._label("Saving PDFs in the background", 11, bold=True, color=self.ACCENT)
+            self._label("Keep using the computer, or Pause while you need it.", 9, color=self.MUTED)
             self._now = self._label("", 10)
             style = ttk.Style(self.root)
             style.theme_use("default")
@@ -383,18 +417,36 @@ class TkUI:
             self._eta = self._label("", 9, color=self.MUTED)
             row = self.tk.Frame(self.body, bg=self.BG)
             row.pack(fill="x")
+            self._pause_btn = self._button(row, "Pause", self._pause, primary=True)
             self._cancel_btn = self._button(row, "Cancel", self._cancel)
+            self._button(row, "Show UG window", lambda: threading.Thread(target=show_chrome, daemon=True).start())
             self._on_close = self._cancel
             self._place(corner=True)
         self._bar["value"] = i
         self._now["text"] = f"Track {min(i + 1, n)} of {n}: {name}"
         left = f"About {max(1, round(eta / 60))} min left." if eta else ""
         self._eta["text"] = " ".join(x for x in (note, left) if x)
+        self._eta_text = self._eta["text"]
+        if self.paused.is_set():
+            self._eta["text"] = "Paused after this step. Press Resume when you're done."
+
+    def _pause(self):
+        if self.cancel.is_set():
+            return
+        if self.paused.is_set():
+            self.paused.clear()
+            self._pause_btn.configure(text="Pause")
+            self._eta["text"] = getattr(self, "_eta_text", "")
+        else:
+            self.paused.set()
+            self._pause_btn.configure(text="Resume")
+            self._eta["text"] = "Paused after this step. Press Resume when you're done."
 
     def _cancel(self):
         if self.cancel.is_set():
             return
         self.cancel.set()
+        self.paused.clear()
         self._now["text"] = "Cancelling: finishing this step, then removing what this run saved…"
         self._cancel_btn.configure(state="disabled")
 
@@ -463,8 +515,7 @@ def wait_idle(ui, i, n, name, eta):
     could land in the Save As window)."""
     told = False
     while idle_seconds() < 3:
-        if ui.cancel.is_set():
-            raise Cancelled
+        hold(ui)
         if not told:
             ui.progress(i, n, name, eta, "Paused: waiting until the mouse and keyboard are left alone.")
             told = True
@@ -677,8 +728,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
     pg.wait_for_timeout(2500)
     shot, last = None, None
     for _ in range(8):  # drawn when two looks in a row agree
-        if ui.cancel.is_set():
-            raise Cancelled
+        hold(ui)
         shot = shoot(cdp, pg)
         if shot == last:
             break
@@ -689,8 +739,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
         res = out.evaluate(PAGES_JS, {"shot": shot, "title": label, "lines": [lines[0], lines[1], n]})
         if res.get("error"):
             return False, res["error"], res
-        if ui.cancel.is_set():
-            raise Cancelled
+        hold(ui)
         pdf = ctx.new_cdp_session(out).send("Page.printToPDF", {"preferCSSPageSize": True, "printBackground": True})
     finally:
         out.close()
@@ -764,8 +813,7 @@ def save_single(ui, a, result, pg, kind, label):
     try:
         run.start()
         ui.progress(0, 1, label)
-        if ui.cancel.is_set():
-            raise Cancelled
+        hold(ui)
         if kind == "text":
             head = " · ".join(x for x in (label, info["key"] and f"Key: {info['key']}", info["capo"] and f"Capo: {info['capo']}",
                                           info["tuning"] and f"Tuning: {info['tuning']}") if x)
@@ -778,8 +826,7 @@ def save_single(ui, a, result, pg, kind, label):
             if not dest:
                 raise RuntimeError("The download didn't arrive (the page may need you to be logged in). Nothing was kept.")
             run.files.append(dest)
-        if ui.cancel.is_set():
-            raise Cancelled
+        hold(ui)
         man = free_name(out, "fretboard-run-" + label.lower().replace(" ", "-"), ".json")
         write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": a.url, "kind": kind,
                                        "tracks": [{"name": label, "file": dest.name}], "missing": []})
@@ -837,6 +884,7 @@ def work(ui, a, result):
             ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
             pg = song_page(ctx, a.url)
             cdp = ctx.new_cdp_session(pg)
+            park_chrome(cdp, pg)
             size = 0
             try:
                 sharp_screen(cdp, pg, *sizes[size])
@@ -847,8 +895,7 @@ def work(ui, a, result):
                         dest = free_name(out, label, ".pdf")  # an existing file is never replaced
                         run.pending = dest
                         eta = (sum(took) / len(took) if took else SECONDS_PER_TRACK) * (len(names) - i)
-                        if ui.cancel.is_set():
-                            raise Cancelled
+                        hold(ui)
                         ui.progress(i, len(names), n, eta, "" if attempt == 1 else "Trying this track again.")
                         t0 = time.time()
                         try:
@@ -878,8 +925,7 @@ def work(ui, a, result):
                     if i + 1 < len(names):
                         end = time.time() + a.gap  # unhurried pace
                         while time.time() < end:
-                            if ui.cancel.is_set():
-                                raise Cancelled
+                            hold(ui)
                             time.sleep(0.25)
             finally:
                 normal_screen(cdp)  # the song's tab back as it was

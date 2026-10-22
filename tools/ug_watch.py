@@ -9,6 +9,11 @@ It also answers Fretboard (http://127.0.0.1:9231, this computer only): Find tabs
 its Ultimate Guitar search in this Chrome, and an Official or Pro song you open is saved without
 asking which tracks; Fretboard then adds its PDFs as one song by itself.
 
+The collector Chrome works out of sight (moved off the screen, where it keeps drawing at full
+speed), so it never jumps in front of what you're doing. Click it in the taskbar, or Show UG
+window in Fretboard or the collector, and it comes up maximized. A search from Fretboard opens
+the best match straight away (official first, then Pro), not the list of results.
+
 Songs already collected are remembered (Downloads\\UG Songs\\collected.txt) and not asked
 again. A song you Skip or Cancel isn't asked again while its tab stays open.
 
@@ -36,19 +41,210 @@ def song_tabs(port, official_only=False):
             and ("-official-" in t["url"] or not official_only)]
 
 
-def start_chrome(port, profile, url="https://www.ultimate-guitar.com/"):
+# ---------- the collector Chrome's window: out of sight while it works ----------
+# Minimized windows draw about once a second and can't be captured reliably, so "out of sight" is
+# off the screen instead; these flags keep Chrome drawing at full speed there.
+CHROME_FLAGS = ["--start-maximized", "--no-first-run", "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding", "--disable-background-timer-throttling"]
+OFF_LEFT = -20000
+
+
+def _win32():
+    import ctypes
+    from ctypes import wintypes
+
+    class Placement(ctypes.Structure):
+        _fields_ = [("length", ctypes.c_uint), ("flags", ctypes.c_uint), ("showCmd", ctypes.c_uint),
+                    ("ptMin", wintypes.POINT), ("ptMax", wintypes.POINT), ("rc", wintypes.RECT)]
+    return ctypes, wintypes, ctypes.windll.user32, Placement
+
+
+def offscreen_windows(iconic=None):
+    """The collector Chrome's windows that are parked off the screen (no other window is out there)."""
+    try:
+        ctypes, wintypes, u32, Placement = _win32()
+    except (ImportError, AttributeError, OSError):
+        return []
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(h, _):
+        cls = ctypes.create_unicode_buffer(64)
+        u32.GetClassNameW(h, cls, 64)
+        if cls.value == "Chrome_WidgetWin_1" and u32.IsWindowVisible(h):
+            wp = Placement()
+            wp.length = ctypes.sizeof(Placement)
+            if u32.GetWindowPlacement(h, ctypes.byref(wp)) and wp.rc.left < OFF_LEFT // 2 \
+                    and (iconic is None or bool(u32.IsIconic(h)) == iconic):
+                found.append(h)
+        return True
+    u32.EnumWindows(each, 0)
+    return found
+
+
+def hide_window(cdp):
+    """Parks the window of this CDP session's tab off the screen without taking the focus from
+    what you're using. True when it's out of sight."""
+    w = cdp.send("Browser.getWindowForTarget")["windowId"]
+    b = cdp.send("Browser.getWindowBounds", {"windowId": w})["bounds"]
+    if b.get("windowState") == "normal" and b.get("left", 0) < OFF_LEFT // 2:
+        return True
+    cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "normal"}})
+    cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"left": OFF_LEFT, "top": 0, "width": 1500, "height": 1000}})
+    # minimizing hands the focus back to the window you were using; then it's restored, still off
+    # the screen, without taking the focus
+    cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "minimized"}})
+    time.sleep(0.6)
+    hs = offscreen_windows(iconic=True)
+    if hs:
+        _, _, u32, _ = _win32()
+        for h in hs:
+            u32.ShowWindow(h, 4)  # SW_SHOWNOACTIVATE
+    else:
+        cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "normal"}})
+    time.sleep(0.4)
+    return True
+
+
+def show_window(activate=True):
+    """Brings the parked window back onto the screen, maximized. False when none was parked."""
+    hs = offscreen_windows()
+    if not hs:
+        return False
+    try:
+        ctypes, _, u32, _ = _win32()
+        k32 = ctypes.windll.kernel32
+        for h in hs:
+            if u32.IsIconic(h):
+                u32.ShowWindow(h, 4 if not activate else 9)  # restore
+            # back on the screen first, so un-maximizing it later doesn't send it away again
+            u32.SetWindowPos(h, 0, 80, 40, 1400, 900, 0x0004 | (0x0010 if not activate else 0))  # NOZORDER (|NOACTIVATE)
+            u32.ShowWindow(h, 3 if activate else 4)  # SW_MAXIMIZE / SW_SHOWNOACTIVATE
+            if activate:  # Windows only lets the window you're using hand the focus over
+                fg = u32.GetForegroundWindow()
+                them, me = u32.GetWindowThreadProcessId(fg, None), k32.GetCurrentThreadId()
+                joined = them and them != me and u32.AttachThreadInput(me, them, True)
+                u32.BringWindowToTop(h)
+                u32.SetForegroundWindow(h)
+                if joined:
+                    u32.AttachThreadInput(me, them, False)
+        return True
+    except (AttributeError, OSError):
+        return False
+
+
+def watch_taskbar():
+    """Clicked in the taskbar while it's parked: it comes up maximized."""
+    last = None
+    while True:
+        try:
+            _, _, u32, _ = _win32()
+            h = u32.GetForegroundWindow()
+            h = h if h and h in offscreen_windows(iconic=False) else None
+            if h and h == last:  # twice in a row: not just the moment it's being parked
+                show_window()
+                h = None
+            last = h
+        except Exception:
+            pass
+        time.sleep(0.4)
+
+
+def start_chrome(port, profile, url="https://www.ultimate-guitar.com/", hidden=True):
     exe = next((c for c in CHROME if c.exists()), None)
     if not exe:
         return False
-    subprocess.Popen([str(exe), f"--remote-debugging-port={port}", f"--user-data-dir={profile}", url], close_fds=True)
+    if time.time() - state.get("launched", 0) < 40:
+        return True  # it's starting already: a second start would open another window
+    state["launched"] = time.time()
+    subprocess.Popen([str(exe), f"--remote-debugging-port={port}", f"--user-data-dir={profile}", *CHROME_FLAGS, url], close_fds=True)
+    if hidden:
+        threading.Thread(target=_hide_when_up, args=(port,), daemon=True).start()
     return True
+
+
+def _connect(port):
+    from playwright.sync_api import sync_playwright
+    for _ in range(80):  # Chrome may still be starting
+        if song_tabs(port) is not None:
+            break
+        time.sleep(0.5)
+    return sync_playwright()
+
+
+def _hide_when_up(port):
+    try:
+        with _connect(port) as p:
+            ctx = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000).contexts[0]
+            for _ in range(20):
+                if ctx.pages:
+                    break
+                time.sleep(0.5)
+            time.sleep(1)
+            for pg in ctx.pages:  # a page in a normal window (not chrome:// pages of their own)
+                try:
+                    return hide_window(ctx.new_cdp_session(pg))
+                except Exception:
+                    continue
+    except Exception as e:
+        print(f"(Couldn't move the Chrome window out of sight: {str(e).splitlines()[0][:100]})")
+
+
+# The best result on a UG search page: the closest name, then official, Pro, chords, tab, then votes.
+BEST_JS = r"""(q) => {
+  const r = window.UGAPP?.store?.page?.data?.results;
+  if (!Array.isArray(r)) return null;
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const words = norm(q).split(' ').filter(Boolean);
+  if (!words.length) return '';
+  const rank = (x) => x.marketing_type === 'official' ? 4 : (x.marketing_type === 'TabPro' || x.type === 'Pro') ? 3
+    : x.type === 'Chords' ? 2 : x.type === 'Tabs' ? 1 : 0;
+  let best = null, top = -1;
+  for (const x of r) {
+    if (!x || !/^https:\/\/tabs\.ultimate-guitar\.com\/tab\//.test(x.tab_url || '')) continue; // a tab page (not a sales page)
+    const hay = ' ' + norm(`${x.artist_name} ${x.song_name}`) + ' ';
+    const m = words.filter((w) => hay.includes(` ${w} `)).length / words.length;
+    const score = m * 100 + rank(x) * 10 + Math.min(9, Math.log10(1 + (x.votes || 0)) * 2);
+    if (score > top) { top = score; best = { url: x.tab_url, m }; }
+  }
+  return best && best.m >= 0.6 ? best.url : '';
+}"""
+
+
+def open_tab(url):
+    """Opens url in a background tab of the collector Chrome; a search goes on to its best song."""
+    port = state["chrome_port"]
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("value", [""])[0]
+    try:
+        with _connect(port) as p:
+            br = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000)
+            ctx = br.contexts[0]
+            with ctx.expect_page(timeout=15000) as new:  # a background tab: the window stays where it is
+                br.new_browser_cdp_session().send("Target.createTarget", {"url": "about:blank", "background": True})
+            pg = new.value
+            pg.goto(url, wait_until="domcontentloaded", timeout=30000)
+            if "/search.php" not in url or not q:
+                return
+            best = None
+            for _ in range(20):
+                best = pg.evaluate(BEST_JS, q)
+                if best is not None:
+                    break
+                pg.wait_for_timeout(500)
+            if best and is_ug(best):
+                print(f"Best match: {best}")
+                pg.goto(best, wait_until="domcontentloaded", timeout=30000)
+            else:
+                print("No close match: the search results are open in the UG window.")
+    except Exception as e:
+        print(f"(Opening that page: {str(e).splitlines()[0][:100]})")
 
 
 # ---------- the helper Fretboard talks to ----------
 HELPER_PORT = 9231
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io", "http://localhost:8420", "http://127.0.0.1:8420"}
-state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": ""}  # set from the command line in main()
+state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0}  # set from the command line in main()
 
 
 def is_ug(url):
@@ -61,18 +257,12 @@ def is_ug(url):
 
 
 def open_in_chrome(url):
-    """Opens url as a new tab of the collector Chrome (starting it if it isn't running)."""
+    """Opens url in the collector Chrome, out of sight (starting it if it isn't running)."""
     port = state["chrome_port"]
-    if song_tabs(port) is None:
-        return start_chrome(port, state["profile"], url)
-    try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?{urllib.parse.quote(url, safe=':/?&=%')}", method="PUT")
-        with urllib.request.urlopen(req, timeout=5) as r:
-            tab = json.load(r)
-        urllib.request.urlopen(f"http://127.0.0.1:{port}/json/activate/{tab['id']}", timeout=5).close()
-        return True
-    except (OSError, ValueError, KeyError):
+    if song_tabs(port) is None and not start_chrome(port, state["profile"]):
         return False
+    threading.Thread(target=open_tab, args=(url,), daemon=True).start()
+    return True
 
 
 class Helper(BaseHTTPRequestHandler):
@@ -105,12 +295,17 @@ class Helper(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/status":
-            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 1,
+            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 2,
                                     "chrome": state["chrome"], "busy": state["busy"]})
         self._send(404, {"ok": False})
 
     def do_POST(self):
-        if not self._allowed() or self.headers.get("Origin") is None:
+        if not self._allowed():
+            return self._send(403, {"ok": False})
+        if self.path.split("?")[0] == "/show":  # the collector window asks too (no Origin: not a web page)
+            ok = show_window()
+            return self._send(200, {"ok": ok})
+        if self.headers.get("Origin") is None:
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] != "/open":
             return self._send(404, {"ok": False})
@@ -138,6 +333,7 @@ def start_helper():
     except OSError:
         return False  # another copy of the helper is running
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=watch_taskbar, daemon=True).start()
     print(f"Fretboard link on: Find tabs online opens Ultimate Guitar here, and Official / Pro songs are added by themselves.")
     return True
 
@@ -172,7 +368,8 @@ def main():
             if not started:
                 started = True
                 if start_chrome(a.port, a.profile):
-                    print("Opened the collector Chrome. Log in to UG Pro there (once), then open an official song.")
+                    print("Opened the collector Chrome, out of sight: click it in the taskbar to use it. Log in to UG Pro\n"
+                          "there (once), then open an official song, or search from Fretboard.")
                     time.sleep(5)
                     continue
             if not warned:
