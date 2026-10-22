@@ -8,7 +8,7 @@ import { createPracticeTimer, formatClock } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
 import { initAmp, ampSongOpened, playAlongState } from './amp.js';
-import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
+import { scoreHasChords, guessChords, injectChords, fileChords, sheetKeyShift } from './chords.js';
 import { sheetChords, sungWords, barSpans } from './chordsheet.js';
 import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
 import { buildMelody } from './singcore.js';
@@ -508,6 +508,9 @@ function prepareChords(sc) {
     const bars = song?.chordSheet ? barSpans(sc) : null;
     const fromSheet = bars ? sheetChords(song.chordSheet, sungWords(sc, bars), bars) : null;
     if (fromSheet?.some((b) => b.all.length)) {
+      // a sheet in another key, or written for a capo, is moved to the key the song plays in (as shapes for its capo)
+      const move = sheetKeyShift(sc, fromSheet) - (sc.tracks[trackIndex]?.staves[0]?.capo || 0);
+      if (move % 12) for (const b of fromSheet) for (const c of new Set([...b.all, ...b.shown])) c.name = shiftChordName(c.name, move, shiftFlats);
       for (const t of sc.tracks) for (const st of t.staves) for (const b of st.bars) for (const v of b.voices) for (const bt of v.beats) bt.chordId = null;
       injectChords(sc, fromSheet, AT.model.Chord);
       chordSource = 'sheet';

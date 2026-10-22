@@ -1,7 +1,7 @@
 // Chords for the player: the file's own chord names when it has them, otherwise a guess
 // per bar (or half bar) from the notes of every pitched track. Works on alphaTab's score
 // model but has no browser dependencies.
-import { noteName } from './theory.js';
+import { noteName, pitchClass } from './theory.js';
 
 // [suffix, intervals above the root, complexity penalty]
 const TEMPLATES = [
@@ -153,6 +153,45 @@ export function injectChords(score, guessed, Chord) {
       }
     });
   }
+}
+
+// The notes a chord name spells, as pitch classes above its root ('Asus2/C#' -> root 9, [0, 2, 7], bass 1).
+function chordTones(name) {
+  const m = /^([A-G][#b]?)([^/]*)(?:\/([A-G][#b]?))?$/.exec(String(name).trim());
+  if (!m) return null;
+  const q = m[2];
+  const third = /sus2/.test(q) ? 2 : /sus/.test(q) ? 5 : /^(m(?!aj)|min|dim|°)/.test(q) ? 3 : 4;
+  const fifth = /dim|°|b5/.test(q) ? 6 : /aug|\+|#5/.test(q) ? 8 : 7;
+  const tones = q === '5' ? [0, 7] : [0, third, fifth];
+  if (/maj7|M7/.test(q)) tones.push(11); else if (/7/.test(q)) tones.push(10);
+  return { root: pitchClass(m[1]), tones, bass: m[3] ? pitchClass(m[3]) : null };
+}
+
+/**
+ * Semitones to move a chord sheet's names so they fit the notes the song plays (0..11). A sheet from
+ * another page may be in another key or written for a capo (D shapes for a song in E: +2).
+ * chordBars: per master bar, { all: [{ offset, name }] }. 0 when nothing fits clearly better.
+ */
+export function sheetKeyShift(score, chordBars) {
+  const fit = new Array(12).fill(0);
+  chordBars.forEach(({ all }, i) => {
+    const mb = score.masterBars[i];
+    const len = mb?.calculateDuration ? mb.calculateDuration() : 3840;
+    all.forEach((c, k) => {
+      const t = chordTones(c.name);
+      if (!t || t.root === null) return;
+      const notes = notesIn(score, i, c.offset, k + 1 < all.length ? all[k + 1].offset : len);
+      const total = notes.reduce((a, n) => a + n.weight, 0);
+      if (!total) return;
+      for (let s = 0; s < 12; s++) {
+        const pcs = new Set(t.tones.map((x) => (t.root + s + x) % 12));
+        if (t.bass !== null) pcs.add((t.bass + s) % 12);
+        fit[s] += notes.reduce((a, n) => a + (pcs.has(((n.midi % 12) + 12) % 12) ? n.weight : 0), 0) / total;
+      }
+    });
+  });
+  const best = fit.indexOf(Math.max(...fit));
+  return fit[best] > 1.25 * fit[0] ? best : 0;
 }
 
 /** File chords per master bar (from the shown track, else the first track that has any): same shape as guessChords. */

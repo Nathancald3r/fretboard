@@ -20,6 +20,8 @@ assert.equal(line(word('vic—-to—-ry', 28), word('You'), word('are'), word('m
 // "I" misread as "1" or "[I"; a stray capital in front of a word.
 assert.equal(line(word('When'), word('1'), word('lift'), word('my'), word('[I', 68), word('have'), word('KE-very', 50)),
   'When I lift my I have E- very');
+// "O" read as a zero ("dark-ness O-pened").
+assert.equal(line(word('dark'), word('-ness'), word('0', 63), word('-', 70), word('pened'), word('my')), 'dark- ness O- pened my');
 // A strip without lyrics (bar numbers, beams, staff bits) gives nothing.
 assert.equal(line(word('5', 56), word('LF]', 28), word('1', 87), word('|', 44), word('28', 84), word('xT', 91), word('1', 34),
   word('i1', 62), word('A', 84), word('hl', 32), word('a1', 26), word('i', 91), word('1', 96), word('xT', 90), word('a', 64)), '');

@@ -586,12 +586,15 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   // The vocal part carries the words itself: each syllable sits on the sung note nearest its time
   // (a bar with no notes keeps them on rests).
   const sungBeats = (b, ws) => {
-    if (!b.cols.length) return wordedBeats(b, ws);
+    // words go on sung notes only, never on a rest
+    const sung = b.cols.map((c, j) => j).filter((j) => b.cols[j].notes.length);
+    if (!sung.length) return wordedBeats(b, ws);
     const fx = b.cols.map(() => []);
     for (const w of ws) {
-      let k = 0;
-      b.times.forEach((t, j) => { if (Math.abs(t - w.t) < Math.abs(b.times[k] - w.t)) k = j; });
-      while (fx[k].length && k + 1 < fx.length && b.times[k] < w.t) k++; // the note is taken: the next one
+      let i = 0;
+      sung.forEach((j, n) => { if (Math.abs(b.times[j] - w.t) < Math.abs(b.times[sung[i]] - w.t)) i = n; });
+      while (fx[sung[i]].length && i + 1 < sung.length && b.times[sung[i]] < w.t) i++; // the note is taken: the next one
+      const k = sung[i];
       fx[k].push(w.text);
     }
     return b.cols.map((c, k) => {

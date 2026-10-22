@@ -64,6 +64,11 @@ function fixWord(w) {
   if (w.confidence < 70 && sym.length > 3 && /^[A-Z]{2}[-‐-―a-z]/.test(sym.map((s) => s.text).join(''))) {
     return { ...w, text: w.text.slice(1), symbols: sym.slice(1) };
   }
+  // "O" read as a zero ("0-pened")
+  if (sym.some((s) => s.text === '0') && !/[1-9]/.test(w.text)) {
+    const fixed = sym.map((s) => (s.text === '0' ? { ...s, text: 'O' } : s));
+    return { ...w, text: fixed.map((s) => s.text).join(''), symbols: fixed };
+  }
   return sym.length === (w.symbols || []).length ? w : { ...w, text: sym.map((s) => s.text).join(''), symbols: sym };
 }
 

@@ -1,6 +1,6 @@
 // Run: node tests/chords.test.mjs
 import assert from 'node:assert/strict';
-import { detectChord, chordName, guessChords } from '../js/chords.js';
+import { detectChord, chordName, guessChords, sheetKeyShift } from '../js/chords.js';
 
 const notes = (...midis) => midis.map((midi) => ({ midi, weight: 1 }));
 const name = (n, flats) => { const c = detectChord(n); return c && chordName(c, flats); };
@@ -34,5 +34,10 @@ const score = {
 };
 const g = guessChords(score);
 assert.deepEqual(g.map((b) => b.all.map((c) => `${c.offset}:${c.name}`)), [['0:C'], ['0:G', '1920:Am']]);
+
+// A sheet written 2 semitones low (Bb F Gm over a song playing C G Am) is moved up 2; a matching sheet stays.
+const sheet = [{ all: [{ offset: 0, name: 'Bb' }] }, { all: [{ offset: 0, name: 'F' }, { offset: 1920, name: 'Gm' }] }];
+assert.equal(sheetKeyShift(score, sheet), 2);
+assert.equal(sheetKeyShift(score, [{ all: [{ offset: 0, name: 'C' }] }, { all: [{ offset: 0, name: 'G' }, { offset: 1920, name: 'Am' }] }]), 0);
 
 console.log('chords tests passed');
