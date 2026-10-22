@@ -2,7 +2,7 @@
 // Run: node tests/ugtab.test.mjs
 import assert from 'node:assert/strict';
 import * as alphaTab from '@coderline/alphatab';
-import { ugToAlphaTex, parseTuning } from '../js/ugtab.js';
+import { ugToAlphaTex, parseTuning, readRests } from '../js/ugtab.js';
 
 const col = (cx, len, ...notes) => ({ cx, len, beamed: len < 4, notes: notes.map(([s, t]) => ({ s, t })) });
 const bar = (x0, x1, cols) => ({ x0, x1, cols });
@@ -95,3 +95,23 @@ assert.equal(parseTuning('Tuning: C C C C C C'), null, 'drum parts');
   assert.equal(sc.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].realValue, 26, 'open low string is D1');
 }
 console.log('ugtab tuning ok');
+
+// Half and whole rests: a flat block on a line (half) or hanging from one (whole); a dot beside makes it 1.5x.
+{
+  const st = { u: 18, ys: [728, 746, 765, 783] };
+  const box = (x0, y0, w, h, area = w * h) => ({ x0, x1: x0 + w, y0, y1: y0 + h, w, h, area });
+  const lens = (comps) => readRests(comps, st).map((r) => r.len);
+  assert.deepEqual(lens([box(424, 759, 16, 6, 95), box(446, 757, 5, 4, 17)]), [12], 'dotted half rest');
+  assert.deepEqual(lens([box(424, 746, 16, 6)]), [16], 'whole rest');
+  assert.deepEqual(lens([box(424, 756, 16, 6)]), [], 'a block off the lines is not a rest');
+  assert.deepEqual(lens([box(424, 764, 14, 1)]), [], 'a thin stroke is not a rest');
+}
+
+// A part of held chords (one a bar, as a rhythm guitar part) still makes a song, in 4/4, each chord ringing to the bar end.
+{
+  const chord = (x0) => bar(x0, x0 + 200, [col(x0 + 20, 4, [0, '0'], [1, '0'], [2, '4'])]);
+  const held = ugToAlphaTex([{ bars: [chord(0), chord(200), bar(400, 600, [])] }], { title: 'Held', tempo: 76 });
+  assert.ok(held, 'a part with only held chords is kept');
+  assert.match(held.tex, /\\ts 4 4/);
+  assert.match(held.tex, /\(0\.1 0\.2 4\.3\)\.1/);
+}

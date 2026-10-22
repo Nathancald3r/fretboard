@@ -165,9 +165,10 @@ function readNotes(ink, w, st, bars, comps = components(ink, w, st, bars)) {
 }
 
 // Rests inside the staff: a quarter rest is a tall narrow zigzag, a sixteenth as tall but wider
-// (two flags), an eighth about half as tall. A dot just after one makes it half as long again.
+// (two flags), an eighth about half as tall; a half rest is a flat block sitting on a line, a whole
+// rest the same block hanging from one. A dot just after one makes it half as long again.
 // Lengths in sixteenths.
-function readRests(comps, st) {
+export function readRests(comps, st) { // exported for tests
   const u = st.u, top = st.ys[0], bot = st.ys[st.ys.length - 1];
   const rests = [];
   for (const c of comps) {
@@ -176,8 +177,13 @@ function readRests(comps, st) {
     let len = 0;
     if (c.h >= 1.7 * u && c.h <= 2.2 * u) len = c.w <= 0.7 * u ? 4 : 1;
     else if (c.h >= 1.0 * u && c.h <= 1.4 * u && c.w >= 0.55 * u) len = 2;
+    else if (c.h >= 0.25 * u && c.h <= 0.45 * u && c.w >= 0.6 * u && c.area >= 0.8 * c.w * c.h) {
+      const line = (y) => st.ys.some((ly) => Math.abs(ly - y) <= 2);
+      len = line(c.y1) ? 8 : line(c.y0) ? 16 : 0;
+    }
     if (!len) continue;
-    const dot = comps.some((d) => d.w <= 0.4 * u && d.h <= 0.4 * u && d.area >= 6 && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.8 * u && d.y0 >= c.y0 && d.y1 <= c.y1);
+    const dot = comps.some((d) => d.w <= 0.4 * u && d.h <= 0.4 * u && d.area >= 6 && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.8 * u
+      && ((d.y0 >= c.y0 && d.y1 <= c.y1) || Math.abs((d.y0 + d.y1) / 2 - cy) < 0.5 * u));
     rests.push({ cx: (c.x0 + c.x1) / 2, len: dot ? len * 1.5 : len, rest: true, notes: [] });
   }
   return rests;
@@ -342,6 +348,7 @@ export function readStrip(ink, light, w, h, st) {
       if (s.x < bl[i] + 0.5 * st.u || s.x > bl[i + 1] - 0.5 * st.u || s.top > lastLine + 1.2 * st.u || cols.some((c) => Math.abs(c.cx - s.x) < 1.0 * st.u)) continue; // a flag curl sits within 1u of its stem
       const r = stemLength(ink, w, s, st.u);
       const prev = [...cols].reverse().find((c) => c.cx < s.x) || (cols.some((c) => c.cx < s.x) ? null : last);
+      if (!prev?.notes.length) continue; // no chord yet to repeat or hold: a letter of the words below, not a stem
       cols.push({ cx: s.x, len: r.len, beamed: r.beamed, notes: prev ? prev.notes.map((n) => ({ ...n, tied: true })) : [] });
       cols.sort((a, b) => a.cx - b.cx);
     }
@@ -406,7 +413,7 @@ function tuningTex(strips) {
 
 /* ---------- alphaTex ---------- */
 
-const UNITS = [[12, 2, true], [8, 2, false], [6, 4, true], [4, 4, false], [3, 8, true], [2, 8, false], [1.5, 16, true], [1, 16, false], [0.5, 32, false]];
+const UNITS = [[16, 1, false], [12, 2, true], [8, 2, false], [6, 4, true], [4, 4, false], [3, 8, true], [2, 8, false], [1.5, 16, true], [1, 16, false], [0.5, 32, false]];
 const dur = (len) => {
   const u = UNITS.find(([n]) => n === len);
   return u ? `${u[1]}${u[2] ? '{d}' : ''}` : null;
@@ -527,8 +534,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
   const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
-  if (!top) return null;
-  const T = Math.round(Number(top[0]));
+  const T = top ? Math.round(Number(top[0])) : 16; // only long notes and chords (one or two a bar): 4/4
   const grouped3 = bars.some((b) => b.cols.filter((c) => c.beamed).length === 6) && T === 12;
   const num = T % 4 === 0 && !grouped3 ? T / 4 : T / 2;
   const den = T % 4 === 0 && !grouped3 ? 4 : 8;
