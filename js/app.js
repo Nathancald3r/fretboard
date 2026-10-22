@@ -672,6 +672,7 @@ function initFind() {
         watchRuns();
         watchDownloads({ query, url: all });
         showHelper(up);
+        toast('Next step: pick your song in the Ultimate Guitar window that just opened. Click the version you want; it’s added here by itself.', 9000);
         return;
       }
       if (tried) return; // too late for a new tab (the browser would block it); the line under the search says what to do

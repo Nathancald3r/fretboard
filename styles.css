@@ -1355,3 +1355,15 @@ body.edit-mode .ed-close { display: none; }
   .sheet-btns > button:hover { background: var(--panel-2); }
   .menu-toggles { display: flex; gap: .3rem; padding: .2rem .2rem .45rem; margin-bottom: .2rem; border-bottom: 1px solid var(--line); }
 }
+
+/* Tracks: a clean card in the middle of the screen, in front of everything, every track in view */
+.sheet[data-sheet="mixer"] { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 60;
+  width: min(640px, calc(100% - 1rem)); max-height: 86vh; border: 1px solid var(--line); border-radius: 14px; padding: .9rem 1.1rem 1rem;
+  box-shadow: 0 0 0 100vmax #000a, 0 20px 50px #000c; animation: pop .15s var(--ease); }
+.sheet[data-sheet="mixer"] .sheet-head { top: -.9rem; }
+.mixer-up .lyrics-pane, .mixer-up .fret-pane { visibility: hidden; }
+@media (min-width: 641px) {
+  .sheet[data-sheet="mixer"] .mixer-row { grid-template-columns: minmax(0, 1fr) 170px auto auto; padding: .15rem .4rem; }
+  .sheet[data-sheet="mixer"] .mixer-row .track-name { padding: .3rem; }
+}
+@keyframes pop { from { transform: translate(-50%, -48%); opacity: 0; } }

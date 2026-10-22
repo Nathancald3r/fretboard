@@ -190,6 +190,29 @@ def _hide_when_up(port):
         print(f"(Couldn't move the Chrome window out of sight: {str(e).splitlines()[0][:100]})")
 
 
+# A note across the top of the search results (only in this window, nothing is sent anywhere):
+# what to do next, and what happens for each kind of version.
+GUIDE_JS = r"""() => {
+  if (document.getElementById('fretboard-guide')) return;
+  const d = document.createElement('div');
+  d.id = 'fretboard-guide';
+  d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;background:#f6a935;color:#1a1206;' +
+    'font:15px/1.4 system-ui,Segoe UI,sans-serif;padding:12px 48px 12px 18px;box-shadow:0 -4px 18px #0006';
+  d.innerHTML = '<div style="font-size:20px;font-weight:800;margin-bottom:4px">Fretboard: now click the song you want in the list above ↑</div>' +
+    '<div>Pick one version. Fretboard saves it and adds it to your library by itself:</div>' +
+    '<div style="margin-top:4px"><b>Official</b>: every instrument, plus the chords. &nbsp;·&nbsp; ' +
+    '<b>Tab Pro / Guitar Pro</b>: its Download (gp) file, plus the chords. &nbsp;·&nbsp; <b>Chords / Tab</b>: the text.</div>' +
+    '<div style="margin-top:4px;opacity:.8">Keep this window open until the little Fretboard window says it’s done.</div>';
+  const x = document.createElement('button');
+  x.textContent = '×';
+  x.title = 'Hide this note';
+  x.style.cssText = 'position:absolute;top:8px;right:12px;border:0;background:transparent;font-size:26px;cursor:pointer;color:#1a1206';
+  x.onclick = () => d.remove();
+  d.append(x);
+  document.body.append(d);
+}"""
+
+
 def open_tab(url):
     """Opens url in the collector Chrome; a search shows its results up front so you pick the song."""
     port = state["chrome_port"]
@@ -208,6 +231,10 @@ def open_tab(url):
             # you pick the song: the results come up in front, and the song you open is saved the
             # right way for its kind (official: every track; Pro / Guitar Pro: the file; chords: the text)
             state["picking"] = time.time()
+            try:
+                pg.evaluate(GUIDE_JS)
+            except Exception:
+                pass  # the guide only helps; the results work without it
             pg.bring_to_front()
             show_window()
             print("Pick the song in the UG window: it's saved and added to Fretboard by itself.")
