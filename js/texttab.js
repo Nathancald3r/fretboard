@@ -35,11 +35,11 @@ function songChords(text) {
 
 // Rewrites a chord line, keeping each chord at its original column where possible
 // so chords stay above the right lyric.
-function chordLine(line, key) {
+function chordLine(line, rename) {
   let html = '';
   let col = 0;
   for (const m of line.matchAll(/\S+/g)) {
-    const shown = key ? m[0].replace(/[^()]+/, (c) => toNashville(c, key)) : m[0];
+    const shown = rename ? m[0].replace(/[^()]+/, rename) : m[0];
     const gap = Math.max(col ? 1 : 0, m.index - col);
     html += ' '.repeat(gap) + `<span class="chord" title="${escape(m[0])}">${escape(shown)}</span>`;
     col += gap + shown.length;
@@ -47,11 +47,12 @@ function chordLine(line, key) {
   return html;
 }
 
-function highlight(text, key) {
+// rename: optional, a chord name -> the name to show (Nashville numbers, or moved to another key)
+export function highlight(text, rename) {
   return cleanTabText(text).split('\n').map((line) => {
     if (/^\s*\[[^\]]+\]\s*$/.test(line)) return `<span class="section">${escape(line)}</span>`;
     if (TAB_LINE.test(line)) return `<span class="tab-line">${escape(line)}</span>`;
-    if (chordTokens(line)) return chordLine(line, key);
+    if (chordTokens(line)) return chordLine(line, rename);
     return escape(line);
   }).join('\n');
 }
@@ -72,7 +73,7 @@ function render() {
     : detected;
   const nashville = song.chordMode === 'nashville';
   keySelect.disabled = !nashville;
-  $('tx-body').innerHTML = highlight(song.data, nashville ? key : null);
+  $('tx-body').innerHTML = highlight(song.data, nashville && key ? (c) => toNashville(c, key) : null);
 }
 
 function frame(now) {

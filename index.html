@@ -166,6 +166,7 @@
       <div id="alphatab"></div>
       <div id="sec-labels" class="sec-labels" aria-hidden="true"></div>
     </div>
+    <pre id="pl-chordsheet" class="text-tab chord-view" hidden></pre>
     <div id="count-overlay" class="count-overlay" hidden aria-live="polite"></div>
     <div id="pa-video" class="pa-video" hidden>
       <div class="pa-video-bar">
@@ -635,7 +636,7 @@
             <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
             <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
             <span id="qk-stave" class="seg" role="group" aria-label="Notation" title="What to show: the tab, the music notation, or both">
-              <button data-stave="tab">Tab</button><button data-stave="default">Both</button><button data-stave="score">Notes</button>
+              <button data-stave="tab">Tab</button><button data-stave="default">Both</button><button data-stave="score">Notes</button><button data-stave="chords" title="The song's chord sheet: chords over the words" hidden>Chords</button>
             </span>
             <span class="stepper qk-key" title="Transpose the whole song up or down (synth, tab and chord names)">Key
               <button id="qk-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="qk-val" class="mono">0</b><button id="qk-up" class="icon-btn small" aria-label="Transpose up">+</button></span>

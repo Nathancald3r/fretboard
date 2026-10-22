@@ -108,7 +108,9 @@ async function renderLibrary() {
       <div class="title">${escape(s.title)}</div>
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
-        <span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>
+        ${s.chordSheet && (type === 'pro' || type === 'tab') // the song has its chord sheet too: open either one
+          ? `<button class="badge open type-${type}" data-act="open-tab" title="Open the tab">${escape(CHART_LABEL[type])}</button><button class="badge open type-chords" data-act="open-chords" title="Open the chord sheet: chords over the words">Chords</button>`
+          : `<span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>`}
         ${versionLabel(s) ? `<span class="badge ver-${s.version.type}" title="The recording this tab follows">${escape(versionLabel(s))}</span>` : ''}
         ${type === 'pro' || type === 'tab' ? (() => { const y = syncState(s); return `<span class="badge sync-${y.state}" title="Play-along video">${y.state === 'synced' ? '✓ Synced' : y.state === 'none' ? '○ No video' : '◐ ' + escape(y.label)}</span>`; })() : ''}
         ${s.folder ? `<span class="badge folder">📁 ${escape(s.folder)}</span>` : ''}
@@ -204,6 +206,8 @@ async function cardAct(act, id) {
   if (!song) return;
   if (act === 'edit') { location.hash = `edit/${id}`; return; }
   if (act === 'practice') { location.hash = `song/${id}`; return; }
+  if (act === 'open-tab') { location.hash = `song/${id}/tab`; return; }
+  if (act === 'open-chords') { location.hash = `song/${id}/chords`; return; }
   if (act === 'version') { await askVersion(song); renderLibrary(); return; }
   if (act === 'delete') {
     const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
@@ -522,8 +526,12 @@ async function importFiles(files, { quietIfEmpty = false, auto = null, replace =
   let open = 0;
   if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
     files = files.filter((f) => !pdfs.includes(f)); // cancelling adds none of them
+    // the chord sheet saved with the parts ("Song - Artist - Chords.txt") belongs to the same song
+    const sheet = files.find((f) => /\bchords\.txt$/i.test(f.name));
+    if (sheet) files = files.filter((f) => f !== sheet);
     try {
       const id = await importPdfParts(pdfs, auto, replace);
+      if (id && sheet) await updateSong(id, { chordSheet: await sheet.text() });
       if (id) { ids.push(id); added++; if (!files.length) open = id; }
     } catch (err) { console.error(err); failed.push(...pdfs.map((f) => f.name)); }
   }

@@ -1029,6 +1029,11 @@ body.focus .head-tools { order: 1; }
 .badge.type-pro { color: #7fd3a0; }
 .badge.type-tab { color: #e0b25a; }
 .badge.type-chords { color: #8fb8ff; }
+/* a song with its chord sheet: the type badges open the tab or the chords */
+.badge.open { border: 1px solid currentColor; cursor: pointer; font: inherit; font-size: .7rem; min-height: 0; line-height: 1.5; }
+.badge.open:hover { background: var(--panel-2); }
+/* the chord sheet in the player, in place of the tab */
+.chord-view { flex: 1 1 auto; min-height: 100px; overflow: auto; }
 .badge.folder { color: var(--muted); text-transform: none; letter-spacing: 0; }
 .rate { display: flex; gap: 0; }
 .rate .star { background: transparent; border: 0; color: var(--line); font-size: 1.15rem; padding: 0 .15rem; min-height: 0; line-height: 1.4; }

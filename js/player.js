@@ -31,7 +31,8 @@ import { initShakerView, setShaker, showShake, SHAKEN } from './shakerview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
-import { humanize, liftCymbals, sustainPads } from './humanize.js';
+import { humanize, liftCymbals, sustainPads, ownDrumChannels } from './humanize.js';
+import { highlight } from './texttab.js';
 import { autoLevels } from './mixlevels.js';
 
 const $ = (id) => document.getElementById(id);
@@ -511,6 +512,7 @@ let chordTimeline = { bars: null, list: [] };
 function prepareChords(sc) {
   chordBars = null;
   chordSource = 'none';
+  sheetMove = (song?.transpose || 0) - (sc.tracks[trackIndex]?.staves[0]?.capo || 0);
   try {
     // a chord sheet saved with the song (Ultimate Guitar's chords), lined up with the sung words
     const bars = song?.chordSheet ? barSpans(sc) : null;
@@ -523,6 +525,7 @@ function prepareChords(sc) {
       injectChords(sc, fromSheet, AT.model.Chord);
       chordSource = 'sheet';
       chordBars = fromSheet;
+      sheetMove = move;
     } else if (scoreHasChords(sc)) {
       chordSource = 'file';
       chordBars = fileChords(sc, trackIndex);
@@ -544,6 +547,27 @@ function prepareChords(sc) {
 }
 
 const chordsOn = () => $('pl-chords').checked;
+
+// The chord sheet view: the song's chord sheet (chords over the words) in place of the tab, in the
+// key the tab plays in. Chosen with Chords beside Tab / Both / Notes, or the Chords badge in the library.
+let chordView = false;
+let sheetMove = 0; // semitones from the sheet's chord names to the song's
+
+function showChordView() {
+  const has = !!song?.chordSheet;
+  const on = chordView && has;
+  $('score-scroll').hidden = on;
+  $('pl-chordsheet').hidden = !on;
+  if (on) $('pl-loading').hidden = true; // the tab is drawn when it's shown again
+  document.querySelector('#qk-stave [data-stave=chords]').hidden = !has;
+  if (on) $('pl-chordsheet').innerHTML = highlight(song.chordSheet, sheetMove % 12 ? (c) => shiftChordName(c, sheetMove, shiftFlats) : null);
+  showStave();
+}
+
+function showStave() {
+  const shown = chordView && song?.chordSheet ? 'chords' : $('pl-stave').value;
+  document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.classList.toggle('on', b.dataset.stave === shown));
+}
 
 function showChordSettings() {
   $('pl-chords-src').textContent = {
@@ -1054,6 +1078,12 @@ function songKey() {
 }
 
 function readScore(s) {
+  const score = parseScore(s);
+  ownDrumChannels(score.tracks); // a shaker beside the drums gets its own volume and mute
+  return score;
+}
+
+function parseScore(s) {
   if (s.kind === 'text' || s.kind === 'tex') {
     let tex = s.data;
     if (s.kind === 'text') {
@@ -1125,6 +1155,8 @@ function nextInSetlistHint() {
 
 export async function openPlayer(s) {
   song = s;
+  chordView = location.hash.split('/')[2] === 'chords'; // the library's Chords badge
+  showChordView();
   holdScroll = false;
   pinnedBar = null;
   $('pin-marker')?.remove();
@@ -1177,6 +1209,7 @@ function showParsed(parsed) {
   judgeSongChanged();
   applyChordVisibility();
   applyStaveProfile();
+  showChordView();
   api.renderScore(parsed, [trackIndex]);
 }
 
@@ -2263,8 +2296,10 @@ export function initPlayer() {
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
   $('pl-metro').addEventListener('click', toggleClick);
   // Quick switches on the play bar: notation (tab / both / notes) and transpose
-  const showStave = () => document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.classList.toggle('on', b.dataset.stave === $('pl-stave').value));
   document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.addEventListener('click', () => {
+    chordView = b.dataset.stave === 'chords';
+    showChordView();
+    if (chordView) return;
     $('pl-stave').value = b.dataset.stave;
     $('pl-stave').dispatchEvent(new Event('change'));
   }));
