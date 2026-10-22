@@ -1,7 +1,6 @@
 """Save an official Ultimate Guitar song into Downloads\\UG Songs\\<Song> - <Artist> (Key X):
-its Guitar Pro version ("<Song> - <Artist> - Guitar Pro.gp", every track as a real score) when UG
-has one, else every instrument/vocal track as a PDF, named "<Song> - <Artist> - <Instrument>.pdf"
-(--pdfs: the PDFs always). Tabs runs leave behind in the collector Chrome are closed afterwards.
+every instrument/vocal track as a PDF, named "<Song> - <Artist> - <Instrument>.pdf", which
+Fretboard reads into playable tracks (--gp: its Guitar Pro version instead, when UG has one). Tabs runs leave behind in the collector Chrome are closed afterwards.
 
 Other UG pages work too, one file each into the same song folder:
   chords and plain tabs   the text shown on the page -> "<Song> - <Artist> - Chords.txt" (or Tab, Bass Tab...)
@@ -1393,9 +1392,8 @@ def work(ui, a, result):
             # original key from the "Tuning: ... · Key: Bb · Capo: ..." line
             km = re.search(r"Key:\s*([A-G][#b♭♯]?m?)", pg.evaluate("document.body.innerText"))
             key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
-            # its Guitar Pro version first: a real score (every note, rhythm and track as written),
-            # where PDFs of the official player come out as pictures to read back
-            if not a.only.strip() and not a.pdfs:
+            # --gp: its Guitar Pro version instead of the PDFs, when UG has one
+            if not a.only.strip() and a.gp:
                 gp_url = official_gp(pg) or search_gp(ctx, song, artist)
                 if gp_url:
                     done = official_as_gp(ui, a, result, ctx, pg, gp_url, song, key, len(names))
@@ -1545,7 +1543,7 @@ def main():
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
     ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
-    ap.add_argument("--pdfs", action="store_true", help="official songs: the PDFs of the official player, even when a Guitar Pro version exists")
+    ap.add_argument("--gp", action="store_true", help="official songs: their Guitar Pro version instead of the PDFs, when UG has one")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
