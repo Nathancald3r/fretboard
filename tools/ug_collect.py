@@ -24,14 +24,14 @@ lyrics off the last line of each page.)
 Then in Fretboard: Import files (it opens in this song's folder), select all, check, Create song.
 Exit codes: 0 done, 1 failed, 2 skipped, 3 cancelled.
 """
-import argparse, base64, ctypes, json, queue, re, subprocess, sys, threading, time, urllib.request
+import argparse, base64, ctypes, json, os, queue, re, subprocess, sys, threading, time, urllib.request
 from datetime import datetime
 from pathlib import Path
 
 PORT = 9222
 DIALOG = Path(__file__).with_name("ug_save_dialog.ps1")
 DONE, FAILED, SKIPPED, CANCELLED = 0, 1, 2, 3
-SECONDS_PER_TRACK = 22  # first guess for the time left; then measured
+SECONDS_PER_TRACK = 14  # first guess for the time left; then measured
 
 
 class Cancelled(Exception):
@@ -41,7 +41,9 @@ class Cancelled(Exception):
 def hold(ui):
     """Waits here while the run is paused; stops the run when it's cancelled."""
     paused = getattr(ui, "paused", None)
+    ui.beat = time.time()  # still going (the window's watchdog looks at this)
     while paused is not None and paused.is_set() and not ui.cancel.is_set():
+        ui.beat = time.time()
         time.sleep(0.25)
     if ui.cancel.is_set():
         raise Cancelled
@@ -98,7 +100,15 @@ def print_open():
 
 def close_prints(ctx=None):
     """Shut any Print window with its own Cancel button: that frees the song's tab again
-    (just closing it would leave the tab stuck). A Save As dialog left open is cancelled too."""
+    (just closing it would leave the tab stuck). A Save As dialog left open is cancelled too.
+    Never fails: with Chrome closed there's nothing to shut, and a Cancel still tidies up."""
+    try:
+        _close_prints()
+    except Exception:
+        pass
+
+
+def _close_prints():
     if DIALOG.exists():
         subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(DIALOG), "-CancelAll"],
                        capture_output=True, text=True)
@@ -152,12 +162,25 @@ def song_page(ctx, url):
         if pg.url.split("?")[0] == url.split("?")[0] and not pg.is_closed():
             pg.set_default_timeout(15000)
             if responsive(pg):
+                front(pg)
                 return pg
     pg = ctx.new_page()  # the open tab is stuck (or gone): work in a fresh one, leave the user's tab be
     pg.set_viewport_size({"width": 1500, "height": 1000})
     pg.goto(url, wait_until="domcontentloaded")
     pg.wait_for_timeout(4000)
+    front(pg)
     return pg
+
+
+def front(pg):
+    """The song's tab to the front of its window: Chrome only draws (and so only takes pictures of)
+    the tab in front; a picture of a tab behind others never arrives. The window is parked out of
+    sight again straight after (park_chrome)."""
+    try:
+        pg.bring_to_front()
+        pg.wait_for_timeout(500)
+    except Exception:
+        pass
 
 
 def open_instruments(pg):
@@ -328,6 +351,7 @@ class TkUI:
         self.cancel = threading.Event()
         self.paused = threading.Event()
         self.closed = False
+        self.aborted, self.working, self.beat, self.code = False, False, time.time(), FAILED
         self.q = queue.Queue()
         self.root = tk.Tk()
         self.root.title("UG song collector")
@@ -339,6 +363,7 @@ class TkUI:
         self.body.pack(fill="both", expand=True)
         self._label("Looking at the song…", 12, bold=True)
         self.root.after(100, self._pump)
+        self.root.after(1000, self._watch)
 
     # --- called from the worker thread ---
     def _wait(self, ev):
@@ -352,20 +377,66 @@ class TkUI:
         return box.get("names")
 
     def progress(self, i, n, name, eta=None, note=""):
+        self.working, self.beat = True, time.time()
         self.q.put(("progress", i, n, name, eta, note))
 
     def finish(self, text, folder=None):
+        self.working = False
         ev = threading.Event()
         self.q.put(("finish", text, folder, ev))
         self._wait(ev)
 
     # --- Tk side ---
     def run(self, work):
-        t = threading.Thread(target=work, daemon=True)
+        t = self.thread = threading.Thread(target=work, daemon=True)
         t.start()
         self.root.mainloop()
         self.cancel.set()  # window closed: stop the work if it's still going
-        t.join(timeout=120)
+        if not self.aborted:
+            t.join(timeout=120)
+
+    # --- the watchdog: Chrome can stop answering in the middle of a step, and the work then waits forever ---
+    STALL = 240  # seconds without a sign of life (the slowest step, the first picture, takes under a minute)
+
+    def _watch(self):
+        if self.closed:
+            return
+        t = getattr(self, "thread", None)
+        if t is not None and not t.is_alive() and self.working and not self.aborted:
+            self._abort(self.cancel.is_set())  # the work ended without a word (an error it didn't expect)
+        elif t is not None and t.is_alive() and self.working and not self.aborted:
+            if self.cancel.is_set():
+                if time.time() - getattr(self, "cancel_at", time.time()) > 15:
+                    self._abort(True)  # Cancel pressed, but the work is stuck in a step
+            elif not self.paused.is_set() and time.time() - self.beat > self.STALL:
+                self._abort(False)
+        self.root.after(1000, self._watch)
+
+    def _abort(self, cancelled):
+        """The work is stuck waiting on Chrome: tidied up from here instead, then the run ends."""
+        self.aborted = True
+        self.cancel.set()  # should the work ever wake up, it stops at its next step
+        self.code = CANCELLED if cancelled else FAILED
+        run = getattr(self, "run_obj", None)
+        if run:
+            p = getattr(run, "pending", None)
+            if p:
+                try:
+                    p.with_name(p.name + ".part").unlink(missing_ok=True)
+                except OSError:
+                    pass
+                if cancelled and p.exists() and p not in run.files:
+                    run.files.append(p)
+            if cancelled:
+                run.undo()
+        if cancelled:
+            text = "Cancelled. Everything this run saved was removed; your other files weren't touched."
+        else:
+            text = ("Chrome stopped answering, so it stopped.\nThe tracks already saved were kept"
+                    + (" (your earlier files weren't replaced)" if getattr(self, "mode", "") == "replace" else "")
+                    + ".\n\nOpen the song again to try once more.")
+        print(text, flush=True)
+        self._finish(text, run.out if run and not cancelled else None, threading.Event())
 
     def _pump(self):
         try:
@@ -492,6 +563,7 @@ class TkUI:
         if self.cancel.is_set():
             return
         self.cancel.set()
+        self.cancel_at = time.time()
         self.paused.clear()
         self._now["text"] = "Cancelling: finishing this step, then removing what this run saved…"
         self._cancel_btn.configure(state="disabled")
@@ -732,7 +804,7 @@ def shoot(cdp, pg):
         pg.wait_for_timeout(300)
         z = v["dpr"] / SHOT_DSF  # the site's own zoom in this Chrome
         shot = cdp.send("Page.captureScreenshot", {"format": "png", "clip": {
-            "x": v["x"] * z, "y": v["y"] * z, "width": v["w"] * z, "height": v["h"] * z, "scale": 1}})
+            "x": v["x"] * z, "y": v["y"] * z, "width": v["w"] * z, "height": v["h"] * z, "scale": 1}, "optimizeForSpeed": True})  # same pixels, quicker to pack
     finally:
         pg.evaluate(SHOW_JS)
     return "data:image/png;base64," + shot["data"]
@@ -758,6 +830,37 @@ PRESS_JS = r"""([n, k]) => {
 }"""
 
 
+# Which track the player shows: its row in Instruments is the one with a shaded background.
+# [[name, k], ...] (k: the k-th track of that name); [] when it can't be told.
+SHOWN_JS = r"""() => {
+  const h = [...document.querySelectorAll('h2')].find((e) => e.innerText.trim() == 'Instruments');
+  if (!h) return [];
+  const root = h.closest('[class*=ivABo]') || h.parentElement.parentElement;
+  const seen = {}, shown = [];
+  for (const b of root.querySelectorAll('button')) {
+    const t = b.textContent.trim();
+    if (!t || ['Pin', 'Unpin', 'C', 'L', 'R', 'S', 'M'].includes(t) || /^\d+%$/.test(t)) continue;
+    const k = seen[t] = (seen[t] ?? -1) + 1;
+    for (let e = b, i = 0; e && e !== root && i < 4; e = e.parentElement, i++) {
+      const bg = getComputedStyle(e).backgroundColor;
+      if (bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg)) { shown.push([t, k]); break; }
+    }
+  }
+  return shown;
+}"""
+
+
+def showing(pg, n, k=0):
+    """True: the player shows track n; False: another one; None: it can't be told (the check is then skipped)."""
+    try:
+        shown = pg.evaluate(SHOWN_JS)
+    except Exception:
+        return None
+    if len(shown) != 1:
+        return None
+    return shown[0] == [n, k]
+
+
 def pick_track(pg, n, k=0):
     """Show track n (the k-th of that name) in the player, as clicking its name in Instruments does."""
     b = pg.get_by_text(n, exact=True)
@@ -772,6 +875,11 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
     """One track: show it, take the score once it has stopped changing, write the PDF."""
     pick_track(pg, n, k)
     pg.wait_for_timeout(2500)
+    if showing(pg, n, k) is False:  # something else switched the track: the right one is picked again
+        pick_track(pg, n, k)
+        pg.wait_for_timeout(2500)
+        if showing(pg, n, k) is False:
+            raise RuntimeError(f"The player wouldn't show {n}.")
     # the track's tuning, as text under its name: Fretboard reads it to find a bass's 4-line staff
     tuning = pg.evaluate(r"((document.body.innerText.match(/Tuning:\s*([A-G][^\n]*?)\s*(?=Key:|Capo:|\n|$)/) || [])[1] || '').trim()")
     shot, last = None, None
@@ -782,6 +890,8 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
             break
         last = shot
         pg.wait_for_timeout(1000)
+    if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
+        raise RuntimeError(f"The track changed while {n} was being saved.")
     out = ctx.new_page()
     try:
         res = out.evaluate(PAGES_JS, {"shot": shot, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
@@ -858,7 +968,7 @@ def save_single(ui, a, result, pg, kind, label):
         ui.finish(f"Skipped {song}. Nothing was saved.")
         return
     stem = " - ".join(x for x in (song, artist, label) if x)
-    run = Run(out, a.root, set_latest=not a.out)
+    run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
     try:
         run.start()
         ui.progress(0, 1, label)
@@ -886,12 +996,17 @@ def save_single(ui, a, result, pg, kind, label):
                                        "tracks": [{"name": label, "file": dest.name}], "missing": [], **({"replace": True} if replace else {})})
         run.files.append(man)
     except Cancelled:
+        if getattr(ui, "aborted", False):  # the window's watchdog already tidied up
+            if ui.code == CANCELLED:
+                run.undo()
+            return
         run.undo()
         result["code"] = CANCELLED
         ui.finish("Cancelled. Nothing from this run was kept.")
         return
     except Exception:
-        run.undo()
+        if not getattr(ui, "aborted", False) or ui.code == CANCELLED:
+            run.undo()
         raise
     ui.progress(1, 1, "done", 0)
     result["code"] = DONE
@@ -933,7 +1048,7 @@ def work(ui, a, result):
             result["code"] = SKIPPED
             ui.finish(f"Skipped {song}. Nothing was saved.")
             return
-        run = Run(out, a.root, set_latest=not a.out)
+        run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
         run.start()
         saved, missing, took = [], [], []
         sizes = [(SHOT_H, SHOT_DSF), (11000, 1.4)]  # a song longer than the screen: a taller one
@@ -986,6 +1101,7 @@ def work(ui, a, result):
                             time.sleep(0.25)
             finally:
                 normal_screen(cdp)  # the song's tab back as it was
+        hold(ui)
         ui.progress(len(names), len(names), "done", 0)
         if replace:  # everything saved: only now do the new files take the old ones' place
             placed = set()
@@ -1006,6 +1122,10 @@ def work(ui, a, result):
         print(text)
         ui.finish(text, out)
     except Cancelled:
+        if getattr(ui, "aborted", False):  # the window's watchdog already tidied up
+            if run and ui.code == CANCELLED:
+                run.undo()
+            return
         close_prints()
         if run:
             p = getattr(run, "pending", None)  # the track being saved: its half-written copy goes too
@@ -1020,6 +1140,10 @@ def work(ui, a, result):
         print("Cancelled: everything this run saved was removed.")
         ui.finish("Cancelled. Everything this run saved was removed; your other files weren't touched.")
     except Exception as err:
+        if getattr(ui, "aborted", False):
+            if run and ui.code == CANCELLED:
+                run.undo()
+            return
         result["code"] = FAILED
         print(f"Failed: {err}")
         try:
@@ -1037,7 +1161,7 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--out", default="", help="exact folder to save into")
     ap.add_argument("--root", default=str(Path.home() / "Downloads" / "UG Songs"), help="parent of the per-song folders")
-    ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
+    ap.add_argument("--gap", type=float, default=0, help="extra seconds between tracks (switching tracks asks nothing of UG's servers, and each track already takes several seconds)")
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
     ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
@@ -1053,6 +1177,9 @@ def main():
             print(f"(no windows: {err})")
     if ui:
         ui.run(lambda: work(ui, a, result))
+        if ui.aborted:  # the work is still stuck on Chrome: end here (Chrome drops this run's screen size itself)
+            sys.stdout.flush()
+            os._exit(ui.code)
     else:
         work(ConsoleUI(), a, result)
     sys.exit(result["code"])

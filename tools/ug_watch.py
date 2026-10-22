@@ -86,9 +86,7 @@ def hide_window(cdp):
     """Parks the window of this CDP session's tab off the screen without taking the focus from
     what you're using. True when it's out of sight."""
     w = cdp.send("Browser.getWindowForTarget")["windowId"]
-    b = cdp.send("Browser.getWindowBounds", {"windowId": w})["bounds"]
-    if b.get("windowState") == "normal" and b.get("left", 0) < OFF_LEFT // 2:
-        return True
+    # parked already or not, it's parked again: bringing a tab to the front may have given it the focus
     cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "normal"}})
     cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"left": OFF_LEFT, "top": 0, "width": 1500, "height": 1000}})
     # minimizing hands the focus back to the window you were using; then it's restored, still off
