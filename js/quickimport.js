@@ -432,7 +432,7 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   ctx = { importFiles, toast, openSong };
   showAuto();
   showHelper();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); if (!helperState) showHelper(); } });
   window.addEventListener('focus', () => { autoImport(); checkRuns(); });
   window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector
   $('btn-clip').hidden = !navigator.clipboard?.readText;

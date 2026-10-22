@@ -919,7 +919,7 @@ function onMixerInput(e) {
   }
   if (e.type === 'change' && act === 'volume') { saveMix(); e.target.blur(); return; }
   if (e.type !== 'click') return;
-  if (act === 'show') selectTrack(i);
+  if (act === 'show') { selectTrack(i); closeSheets(); } // picked: the menu goes away
   else if (act === 'mute') setMute(i);
   else if (act === 'solo') setSolo(i);
 }
