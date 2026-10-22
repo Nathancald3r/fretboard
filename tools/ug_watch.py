@@ -11,8 +11,10 @@ asking which tracks; Fretboard then adds its PDFs as one song by itself.
 
 The collector Chrome works out of sight (moved off the screen, where it keeps drawing at full
 speed), so it never jumps in front of what you're doing. Click it in the taskbar, or Show UG
-window in Fretboard or the collector, and it comes up maximized. A search from Fretboard opens
-the best match straight away (official first, then Pro), not the list of results.
+window in Fretboard or the collector, and it comes up maximized. A search from Fretboard brings
+the results up in front: pick the song, and it's saved the right way for its kind (official: every
+track's PDF and its chords; Pro / Guitar Pro: the file and the song's chords; chords: the text)
+and added to Fretboard, without asking.
 
 Songs already collected are remembered (Downloads\\UG Songs\\collected.txt) and not asked
 again. A song you Skip or Cancel isn't asked again while its tab stays open.
@@ -188,27 +190,6 @@ def _hide_when_up(port):
         print(f"(Couldn't move the Chrome window out of sight: {str(e).splitlines()[0][:100]})")
 
 
-# The best result on a UG search page: the closest name, then official, Pro, chords, tab, then votes.
-BEST_JS = r"""(q) => {
-  const r = window.UGAPP?.store?.page?.data?.results;
-  if (!Array.isArray(r)) return null;
-  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-  const words = norm(q).split(' ').filter(Boolean);
-  if (!words.length) return '';
-  const rank = (x) => x.marketing_type === 'official' ? 4 : (x.marketing_type === 'TabPro' || x.type === 'Pro') ? 3
-    : x.type === 'Chords' ? 2 : x.type === 'Tabs' ? 1 : 0;
-  let best = null, top = -1;
-  for (const x of r) {
-    if (!x || !/^https:\/\/tabs\.ultimate-guitar\.com\/tab\//.test(x.tab_url || '')) continue; // a tab page (not a sales page)
-    const hay = ' ' + norm(`${x.artist_name} ${x.song_name}`) + ' ';
-    const m = words.filter((w) => hay.includes(` ${w} `)).length / words.length;
-    const score = m * 100 + rank(x) * 10 + Math.min(9, Math.log10(1 + (x.votes || 0)) * 2);
-    if (score > top) { top = score; best = { url: x.tab_url, m }; }
-  }
-  return best && best.m >= 0.6 ? best.url : '';
-}"""
-
-
 def open_tab(url):
     """Opens url in a background tab of the collector Chrome; a search goes on to its best song."""
     port = state["chrome_port"]
@@ -224,18 +205,12 @@ def open_tab(url):
             pg.goto(url, wait_until="domcontentloaded", timeout=30000)
             if "/search.php" not in url or not q:
                 return
-            best = None
-            for _ in range(20):
-                best = pg.evaluate(BEST_JS, q)
-                if best is not None:
-                    break
-                pg.wait_for_timeout(500)
-            if best and is_ug(best):
-                print(f"Best match: {best}")
-                state["asked"][best.split("?")[0]] = time.time()
-                pg.goto(best, wait_until="domcontentloaded", timeout=30000)
-            else:
-                print("No close match: the search results are open in the UG window.")
+            # you pick the song: the results come up in front, and the song you open is saved the
+            # right way for its kind (official: every track; Pro / Guitar Pro: the file; chords: the text)
+            state["picking"] = time.time()
+            pg.bring_to_front()
+            show_window()
+            print("Pick the song in the UG window: it's saved and added to Fretboard by itself.")
     except Exception as e:
         print(f"(Opening that page: {str(e).splitlines()[0][:100]})")
 
@@ -244,7 +219,7 @@ def open_tab(url):
 HELPER_PORT = 9231
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io", "http://localhost:8420", "http://127.0.0.1:8420"}
-state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}}  # set from the command line in main()
+state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
 
 
 def is_ug(url):
@@ -381,6 +356,10 @@ def main():
             continue
         warned = False
         now = time.time()
+        if now - state["picking"] < 900:  # a song opened after a search from Fretboard: you picked it
+            for u in urls:
+                if u not in seen:
+                    state["asked"][u.split("?")[0]] = now
         seen = {u: seen.get(u, now) for u in urls}
         passed &= set(urls)  # a song closed and opened again is asked again
         for u in urls:

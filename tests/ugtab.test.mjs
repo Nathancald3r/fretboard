@@ -37,7 +37,7 @@ assert.ok(bars[4].voices[0].beats[0].isRest, 'an empty bar is a rest');
 const length = (b) => b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
 assert.ok(bars.every((b) => length(b) === length(bars[0])), 'every bar is the same length');
 
-// lyrics ride on a rests-only track and come out in order, split at the hyphens
+// lyrics sit on the sung part's own notes (no separate Lyrics track) and come out in order, split at the hyphens
 import { lyricsTrack, buildLyrics } from '../js/lyrics.js';
 const sung = strips.map((s, i) => (i ? s : { ...s, lyr: [{ x: 40, x1: 60, text: 'Hel-' }, { x: 90, x1: 120, text: 'lo' }, { x: 300, x1: 330, text: 'my' }, { x: 500, x1: 540, text: "friend's" }] }));
 const withWords = ugToAlphaTex(sung, { title: 'Test', artist: 'Me', tempo: 72 });
@@ -45,13 +45,23 @@ assert.equal(withWords.lyrics, true);
 const imp2 = new alphaTab.importer.AlphaTexImporter();
 imp2.initFromString(withWords.tex, new alphaTab.Settings());
 const sc2 = imp2.readScore();
-assert.equal(sc2.tracks.length, 2);
+assert.equal(sc2.tracks.length, 1);
 const vt = lyricsTrack(sc2);
-assert.equal(vt, 1);
+assert.equal(vt, 0);
 const lines = buildLyrics(sc2, vt, sc2.masterBars.map((mb, i) => ({ start: mb.start, masterIndex: mb.index })));
 assert.equal(lines.flatMap((l) => l.words.map((w) => w.text + (w.joined ? '-' : ''))).join(' '), "Hel- lo my friend's");
 const total = (b) => b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
-assert.ok(sc2.tracks[1].staves[0].bars.every((b) => total(b) === total(bars[0])), 'lyric bars are as long as the tab bars');
+assert.ok(sc2.tracks[0].staves[0].bars.every((b) => total(b) === total(bars[0])), 'bars with words are as long as the others');
+assert.ok(sc2.tracks[0].staves[0].bars[0].voices[0].beats.filter((b) => b.lyrics?.length).every((b) => !b.isRest), 'words sit on notes');
+
+// keys: a chord held on (tied) is one note, and chords start on the grid
+const held = [{ bars: [bar(0, 220, [col(20, 2, [0, '3'], [1, '2']), { ...col(60, 2, [0, '3'], [1, '2']), notes: [{ s: 0, t: '3', tied: true }, { s: 1, t: '2', tied: true }] }, col(100, 2, [0, '5']), col(140, 2, [0, '5']), col(180, 4, [0, '7'])])] }];
+const pad = ugToAlphaTex(strips, { title: 'T', name: 'Guitar', extra: [{ name: 'Synth Pad', program: 88, strips: held }] });
+const imp4 = new alphaTab.importer.AlphaTexImporter();
+imp4.initFromString(pad.tex, new alphaTab.Settings());
+const padBeats = imp4.readScore().tracks[1].staves[0].bars[0].voices[0].beats;
+assert.ok(padBeats.every((b) => b.playbackStart % 960 === 0), 'pad chords start on the beat');
+assert.ok(!padBeats.some((b) => b.notes.some((n) => n.isTieDestination)), 'no ties inside a pad bar');
 
 // another instrument's PDF becomes a track of its own, as long as the first
 const multi = ugToAlphaTex(strips, { title: 'Test', tempo: 72, name: 'Lead Guitar', program: 29, extra: [{ name: 'Rhythm Guitar', program: 26, strips: [strips[0]] }] });

@@ -452,7 +452,6 @@ const tiedTex = (notes, len, fx = '') => {
   return [head, ...tail].join(' ');
 };
 
-// The lyrics ride on a track of their own (rests carrying the syllables), so the tablature stays clean.
 // A syllable's time in the bar comes from where it sits between the notes above it.
 function lyricTimes(b, T) {
   const anchors = [[b.x0, 0], ...b.cols.map((c, k) => [c.cx, b.times[k]]), [b.x1, T]];
@@ -469,22 +468,37 @@ function lyricTimes(b, T) {
   for (let i = q.length - 1; i >= 0; i--) q[i] = Math.min(q[i], T - (q.length - i));
   return sy.map((l, i) => ({ t: q[i], text: l.text }));
 }
-function lyricBar(b, T) {
-  if (!b.lyr.length) return restTex(T);
-  const words = lyricTimes(b, T);
-  const sy = words, q = words.map((w) => w.t);
-  const beats = [];
-  if (q[0] > 0) beats.push(restTex(q[0]));
-  sy.forEach((l, i) => {
-    const gap = (i + 1 < q.length ? q[i + 1] : T) - q[i];
-    const len = Math.min(gap, 4); // a long gap stays quiet, so a new line can start after it
-    const [first, ...rest] = pieces(len);
-    const d = dur(first);
-    const word = JSON.stringify(l.text);
-    beats.push((d.endsWith('}') ? `r.${d.slice(0, -1)} lyrics ${word}}` : `r.${d} {lyrics ${word}}`) + (rest.length ? ' ' + restTex(len - first) : ''));
-    if (gap > len) beats.push(restTex(gap - len));
-  });
-  return beats.join(' ');
+
+// Keys and pads are written simply: a chord held on (tied into the next note value) is one note, and
+// every chord starts on the beat (pads, organ, strings) or the half beat (piano, keys). Returns the
+// grid in sixteenths, or 0 for parts written as they are.
+function keysGrid(part) {
+  const n = part?.name || '';
+  if (/bass|lead|drum|vocal|guitar|shaker|percussion/i.test(n)) return 0;
+  if (/pad|organ|string/i.test(n) || (part.program >= 88 && part.program <= 95)) return 4;
+  if (/piano|keys|keyboard|rhodes|wurl|synth/i.test(n)) return 2;
+  return 0;
+}
+function simplifyKeys(b, grid, T) {
+  if (!b.cols.length) return;
+  let cols = b.cols.map((c, k) => ({ c, t: b.times[k], len: b.lens[k] }));
+  // a chord that only continues the one before it (all its notes tied, on the same strings) joins it
+  cols = cols.reduce((out, x) => {
+    const prev = out[out.length - 1];
+    const held = prev && x.c.notes.length && x.c.notes.every((n) => n.tied && prev.c.notes.some((q) => q.s === n.s));
+    if (held) prev.len += x.len; else out.push({ ...x });
+    return out;
+  }, []);
+  // onto the grid; two chords landing on the same spot keep the first
+  const kept = [];
+  for (const x of cols) {
+    const t = Math.min(T - grid, Math.round(x.t / grid) * grid);
+    if (kept.length && t <= kept[kept.length - 1].t) continue;
+    kept.push({ ...x, t: kept.length ? t : 0 });
+  }
+  b.cols = kept.map((x) => x.c);
+  b.times = kept.map((x) => x.t);
+  b.lens = kept.map((x, k) => (k + 1 < kept.length ? kept[k + 1].t : T) - x.t);
 }
 
 // A drum or percussion part's track: General MIDI drums, with its kit pieces named for the notes.
@@ -569,7 +583,23 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       return pieces(len).length === 1 ? beatTex(c >= 0 ? b.cols[c].notes : [], len, fx) : tiedTex(c >= 0 ? b.cols[c].notes : [], len, fx);
     }).join(' ');
   };
-  const render = (barList, first, words = []) => {
+  // The vocal part carries the words itself: each syllable sits on the sung note nearest its time
+  // (a bar with no notes keeps them on rests).
+  const sungBeats = (b, ws) => {
+    if (!b.cols.length) return wordedBeats(b, ws);
+    const fx = b.cols.map(() => []);
+    for (const w of ws) {
+      let k = 0;
+      b.times.forEach((t, j) => { if (Math.abs(t - w.t) < Math.abs(b.times[k] - w.t)) k = j; });
+      while (fx[k].length && k + 1 < fx.length && b.times[k] < w.t) k++; // the note is taken: the next one
+      fx[k].push(w.text);
+    }
+    return b.cols.map((c, k) => {
+      const f = fx[k].length ? `lyrics ${JSON.stringify(fx[k].join(' '))}` : '';
+      return pieces(b.lens[k]).length === 1 ? beatTex(c.notes, b.lens[k], f) : tiedTex(c.notes, b.lens[k], f);
+    }).join(' ');
+  };
+  const render = (barList, first, words = [], sungPart = false) => {
   let prevStrings = new Set();
   return barList.map((b, i) => {
     const lens = b.lens;
@@ -578,7 +608,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       prevStrings = new Set(c.notes.map((n) => n.s));
     }
     if (!b.cols.length) prevStrings = new Set();
-    const beats = words[i]?.length ? [wordedBeats(b, words[i])]
+    const beats = words[i]?.length ? [sungPart ? sungBeats(b, words[i]) : wordedBeats(b, words[i])]
       : b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
     if (!beats.length) beats.push(restTex(T));
     const head = [];
@@ -596,12 +626,15 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     return list;
   })];
   lists.forEach((list, k) => list.forEach((b) => layout(b, k === 0)));
+  const parts = [{ name, program, strips }, ...extra];
+  lists.forEach((list, k) => { const g = keysGrid(parts[k]); if (g) list.forEach((b) => simplifyKeys(b, g, T)); });
   // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order);
   // drum and percussion parts show them under their notes too, as their own PDFs do
   const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
   const sung = !!sungBars;
   const words = sung ? sungBars.map((b) => (b.lyr.length ? lyricTimes(b, T) : [])) : [];
-  const out = render(bars, true, isDrums(strips) ? words : []);
+  const sungAt = lists.indexOf(sungBars);
+  const out = render(bars, true, isDrums(strips) || sungAt === 0 ? words : [], sungAt === 0);
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
@@ -613,8 +646,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const others = extra.map((part, k) => {
     const drums = isDrums(part.strips);
     const head = drums ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
-    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums ? words : []).join(' |\n')}`;
+    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums || sungAt === k + 1 ? words : [], sungAt === k + 1).join(' |\n')}`;
   }).join('');
-  const voice = sung ? `\n\\track "Lyrics"\n\\staff {score}\n\\instrument 54\n${sungBars.map((b) => lyricBar(b, T)).join(' |\n')}` : '';
-  return { tex: `${header}\n${out.join(' |\n')}${others}${voice}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
+  return { tex: `${header}\n${out.join(' |\n')}${others}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }

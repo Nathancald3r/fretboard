@@ -257,6 +257,108 @@ def page_text(pg):
         key:m(/Key:\\s*([A-G][#b\u266d\u266f]?m?)/),capo:m(/Capo:\\s*(?:\\n\\s*)?([^\\n]*)/)}}""")
 
 
+# ---------- the song's chords (over the words) and its linked video ----------
+
+def page_video(pg):
+    """The YouTube video UG links to this song (its recording), or ""."""
+    try:
+        v = pg.evaluate("()=>JSON.stringify(window.UGAPP?.store?.page?.data?.tab?.recording?.video_urls||'')")
+    except Exception:
+        return ""
+    m = re.search(r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|^\W*)([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])", v or "")
+    return m.group(1) if m else ""
+
+
+def official_chords(pg):
+    """An official song's Chords view: its chords over the words, in the song's own order. "" when it has none."""
+    try:
+        b = pg.get_by_role("button", name="Chords", exact=True)
+        if not b.count():
+            return ""
+        b.first.click(timeout=5000)
+        text = ""
+        for _ in range(16):
+            pg.wait_for_timeout(500)
+            text = pg.evaluate("()=>[...document.querySelectorAll('pre')].filter(p=>p.offsetParent!==null).map(p=>p.innerText).join('\n').trim()")
+            if text:
+                break
+        return text.replace("\r\n", "\n")
+    except Exception:
+        return ""
+    finally:
+        try:
+            pg.get_by_role("button", name="Tab", exact=True).first.click(timeout=5000)
+            pg.wait_for_timeout(800)
+        except Exception:
+            pass
+
+
+# The best Chords page in UG's search results for a song: the closest name, then rating and votes.
+CHORDS_JS = r"""(q) => {
+  const r = window.UGAPP?.store?.page?.data?.results;
+  if (!Array.isArray(r)) return null;
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const words = norm(q).split(' ').filter(Boolean);
+  let best = null, top = -1;
+  for (const x of r) {
+    if (!x || x.type !== 'Chords' || !/^https:\/\/tabs\.ultimate-guitar\.com\/tab\//.test(x.tab_url || '')) continue;
+    const hay = ' ' + norm(`${x.artist_name} ${x.song_name}`) + ' ';
+    const m = words.filter((w) => hay.includes(` ${w} `)).length / Math.max(1, words.length);
+    const score = m * 100 + (x.rating || 0) * 4 + Math.min(9, Math.log10(1 + (x.votes || 0)) * 2);
+    if (score > top) { top = score; best = { url: x.tab_url, m }; }
+  }
+  return best && best.m >= 0.6 ? best.url : '';
+}"""
+
+
+def search_chords(ctx, song, artist):
+    """The song's best Chords page on UG: (text, video id). ("", "") when there's none. Opened in a
+    tab of its own, which is closed again."""
+    import urllib.parse
+    pg = None
+    try:
+        pg = ctx.new_page()
+        q = f"{artist} {song}".strip()
+        pg.goto("https://www.ultimate-guitar.com/search.php?" + urllib.parse.urlencode({"search_type": "title", "value": q, "type": 300}),
+                wait_until="domcontentloaded", timeout=30000)
+        url = None
+        for _ in range(20):
+            url = pg.evaluate(CHORDS_JS, q)
+            if url is not None:
+                break
+            pg.wait_for_timeout(500)
+        if not url:
+            return "", ""
+        pg.goto(url, wait_until="domcontentloaded", timeout=30000)
+        info = {}
+        for _ in range(20):
+            pg.wait_for_timeout(500)
+            info = page_text(pg)
+            if info.get("text", "").strip():
+                break
+        return info.get("text", "").strip(), page_video(pg)
+    except Exception as e:
+        print(f"  (No chords page: {str(e).splitlines()[0][:100]})")
+        return "", ""
+    finally:
+        if pg:
+            try:
+                pg.close()
+            except Exception:
+                pass
+
+
+def save_chords(out, song, artist, text, run, replace=False):
+    """The chord sheet next to the song's other files. Returns its file name, or ""."""
+    if not text.strip():
+        return ""
+    stem = " - ".join(x for x in (song, artist, "Chords") if x)
+    dest = free_name(out, stem, ".txt")
+    dest.write_text(text.rstrip() + "\n", encoding="utf-8")
+    run.files.append(dest)
+    return take_place(dest, out / f"{stem}.txt") if replace else dest.name
+
+
 def song_folder(root, song, artist, key):
     """Downloads\\UG Songs\\<Song> - <Artist> (Key X). A folder already made for this song (under any
     key, e.g. by its official PDFs) is used again, so a song's files stay together."""
@@ -960,7 +1062,7 @@ def save_single(ui, a, result, pg, kind, label):
     out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
     what = (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
             else "Save this Guitar Pro tab with the page's Download button?")
-    names = [label] if a.yes or (a.auto_official and kind == "gp") else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
+    names = [label] if a.yes or a.auto_official else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
                                           **({"again": True} if a.again else {}),
                                           "note": "One file, saved in a few seconds. Then Fretboard's library offers it (Review & create)."})
     if not names:
@@ -987,13 +1089,25 @@ def save_single(ui, a, result, pg, kind, label):
             run.files.append(dest)
         hold(ui)
         replace = a.again and getattr(ui, "mode", "") == "replace"
+        extra = {}
+        video = page_video(pg)
+        if kind == "gp":  # its chords over the words, from the song's Chords page
+            ui.progress(0, 1, "chords")
+            text, v2 = search_chords(pg.context, song, artist)
+            hold(ui)
+            name = save_chords(out, song, artist, text, run, replace)
+            if name:
+                extra["chords"] = name
+            video = video or v2
+        if video:
+            extra["video"] = video
         man = free_name(out, "fretboard-run-" + label.lower().replace(" ", "-"), ".json")
         if replace:
             name = take_place(dest, out / f"{stem}{dest.suffix}")
             dest = out / name
             man = out / ("fretboard-run-" + label.lower().replace(" ", "-") + ".json")
         write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": a.url, "kind": kind,
-                                       "tracks": [{"name": label, "file": dest.name}], "missing": [], **({"replace": True} if replace else {})})
+                                       "tracks": [{"name": label, "file": dest.name}], "missing": [], **extra, **({"replace": True} if replace else {})})
         run.files.append(man)
     except Cancelled:
         if getattr(ui, "aborted", False):  # the window's watchdog already tidied up
@@ -1101,6 +1215,13 @@ def work(ui, a, result):
                             time.sleep(0.25)
             finally:
                 normal_screen(cdp)  # the song's tab back as it was
+            hold(ui)
+            ui.progress(len(names), len(names), "chords", 0)
+            chords_text = official_chords(pg)
+            video = page_video(pg)
+            if not chords_text:
+                chords_text, v2 = search_chords(ctx, song, artist)
+                video = video or v2
         hold(ui)
         ui.progress(len(names), len(names), "done", 0)
         if replace:  # everything saved: only now do the new files take the old ones' place
@@ -1113,8 +1234,17 @@ def work(ui, a, result):
             # the tracks not saved again stay in the song as they were
             saved += [{"name": n, "file": base_pdf(out, song, artist, n).name} for n in dict.fromkeys(every)
                       if n not in placed and base_pdf(out, song, artist, n).exists()]
+        extra = {}
+        try:
+            name = save_chords(out, song, artist, chords_text, run, replace)
+            if name:
+                extra["chords"] = name
+        except OSError as err:
+            print(f"  (Chords not saved: {err})")
+        if video:
+            extra["video"] = video
         write_manifest(out, "fretboard-run.json", {"song": song, "artist": artist, "key": key, "url": a.url,
-                                                    "tracks": saved, "missing": missing, **({"replace": True} if replace else {})})
+                                                    "tracks": saved, "missing": missing, **extra, **({"replace": True} if replace else {})})
         result["code"] = DONE if saved else FAILED
         text = (f"Done: saved {len(saved)} of {len(names)} tracks of {song} into\n{out}"
                 + (f"\n\nNot saved: {', '.join(missing)} (open the song again later to fetch them)." if missing else "")

@@ -57,6 +57,7 @@ def copyWeb = tasks.register('copyWeb', Copy) {
         include 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/**', 'js/**', 'vendor/**'
         exclude '**/*.md', '**/*.map'
         exclude '**/font/Bravura.otf', '**/font/Bravura.woff' // WebView loads the woff2
+        exclude 'vendor/soundfont/MuseScore_General.sf3' // fetched once by the app (see MainActivity), so updates stay small
     }
     into layout.buildDirectory.dir('generated/web')
 }

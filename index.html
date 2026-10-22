@@ -232,6 +232,10 @@
           <div class="row"><span id="ed-sel" class="muted small-text"></span>
             <button id="ed-bar-dup" class="small ghost" disabled title="Ctrl+D">⧉ Copy selected bars</button>
             <button id="ed-bar-del" class="small ghost danger" disabled title="Delete">✕ Remove selected bars</button></div>
+          <h3>Chord sheet</h3>
+          <p class="muted small-text">Chords written over the words, as on Ultimate Guitar. They are lined up with the sung words, so they follow the song when you change the section order.</p>
+          <textarea id="ed-chords" class="ed-chords" rows="8" spellcheck="false" aria-label="Chord sheet" placeholder="[Verse 1]&#10;G              D&#10;Words of the song here"></textarea>
+          <div class="row"><button id="ed-chords-save" class="small">Save chords</button> <span id="ed-chords-msg" class="muted small-text"></span></div>
           <h3>Original file</h3>
           <p id="ed-original" class="small-text"></p>
           <div class="row"><button id="ed-export" class="small ghost" title="Opens in Guitar Pro, TuxGuitar, MuseScore…">Download as .gp</button></div>
@@ -592,7 +596,7 @@
       </div>
 
       <div class="playbar">
-        <div id="pl-lyrics" class="lyrics-pane" hidden aria-live="off"><p id="ly-now" class="ly-now"></p><p id="ly-next" class="ly-next"></p></div>
+        <div id="pl-lyrics" class="lyrics-pane" hidden aria-live="off"><button id="ly-hide" class="ly-hide" title="Hide the lyrics (View › Lyrics brings them back)" aria-label="Hide the lyrics">×</button><p id="ly-now" class="ly-now"></p><p id="ly-next" class="ly-next"></p></div>
         <div id="pl-fretview" class="fret-pane" hidden><div id="pl-neck"></div><div id="pl-keys"></div><div id="pl-drums" class="drum-pane"></div><p class="fret-hint">Hover over a note in the music, or tap it, to see how to play it.</p></div>
         <input id="pl-seek" class="seek" type="range" min="0" max="1000" value="0" step="1" title="Song position (click to jump)">
         <div class="playbar-row">
@@ -630,13 +634,11 @@
           <div class="toggles">
             <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
             <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
-            <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
             <span id="qk-stave" class="seg" role="group" aria-label="Notation" title="What to show: the tab, the music notation, or both">
               <button data-stave="tab">Tab</button><button data-stave="default">Both</button><button data-stave="score">Notes</button>
             </span>
             <span class="stepper qk-key" title="Transpose the whole song up or down (synth, tab and chord names)">Key
               <button id="qk-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="qk-val" class="mono">0</b><button id="qk-up" class="icon-btn small" aria-label="Transpose up">+</button></span>
-            <span class="tog-group"><button id="pl-bt" class="tog" title="Bluetooth headphones: hold the tab back by their delay so the cursor matches what you hear. Press to turn on or off; ⚙ sets the delay.">Bluetooth</button><button class="tog gear" data-sheet-btn="bt" title="Set the Bluetooth delay" aria-label="Set the Bluetooth delay">⚙</button></span>
             <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
             <span class="tog-group vid-group"><button id="pa-toggle" class="tog rec" title="Linked video (R): on = this song plays with its linked YouTube video; off = the built-in guitar sound. The first press lets you find a video.">Video</button><button id="pa-gear" class="tog gear" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙</button></span>
           </div>
@@ -647,7 +649,12 @@
               <button id="pl-mute" class="ms" title="Mute this track (M)">M</button>
               <button id="pl-solo" class="ms solo" title="Solo this track (S)">S</button>
             </div>
+            <button id="pl-menu" class="icon-btn menu-btn" title="Settings and more" aria-label="Settings and more" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm8.6-2.1l1.9 1.5-2 3.4-2.3-.9a7.5 7.5 0 0 1-2.1 1.2l-.4 2.4h-3.9l-.4-2.4a7.5 7.5 0 0 1-2.1-1.2l-2.3.9-2-3.4 1.9-1.5a7.6 7.6 0 0 1 0-2.8L1.6 9.1l2-3.4 2.3.9a7.5 7.5 0 0 1 2.1-1.2L8.4 3h3.9l.4 2.4a7.5 7.5 0 0 1 2.1 1.2l2.3-.9 2 3.4-1.9 1.5a7.6 7.6 0 0 1 0 2.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
             <div class="sheet-btns">
+              <div class="menu-toggles">
+                <button id="pl-countin" class="tog" title="Count-in (C)">Count-in</button>
+                <span class="tog-group"><button id="pl-bt" class="tog" title="Bluetooth headphones: hold the tab back by their delay so the cursor matches what you hear. Press to turn on or off; ⚙ sets the delay.">Bluetooth</button><button class="tog gear" data-sheet-btn="bt" title="Set the Bluetooth delay" aria-label="Set the Bluetooth delay">⚙</button></span>
+              </div>
               <button class="ghost small" data-sheet-btn="playalong" title="Pick or change this song's linked YouTube video">Linked video</button>
               <button class="ghost small" data-sheet-btn="edit" title="Arrange sections, copy or remove bars, undo (Ctrl+E)">Edit tab</button>
               <button class="ghost small" data-sheet-btn="info" title="Where this tab is from and which version it is">Tab info</button>

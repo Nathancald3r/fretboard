@@ -101,7 +101,7 @@ function write(score) {
 
 /* ---------- applying and undoing ---------- */
 
-const FIELDS = ['kind', 'data', 'syncPoints', 'syncDone', 'loops', 'skips', 'transpose', 'capo'];
+const FIELDS = ['kind', 'data', 'syncPoints', 'syncDone', 'loops', 'skips', 'transpose', 'capo', 'edited', 'onOriginal'];
 const snapshot = (song) => Object.fromEntries(FIELDS.map((k) => [k, song[k]]));
 
 async function restore(snap) {
@@ -133,6 +133,7 @@ async function apply(label, make, merge = '', keep = undefined) {
     data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     // Bar numbers moved, so what was tied to them starts over (Undo brings it back)
     syncPoints: [], syncDone: false, loops: [], skips: [],
+    edited: null, onOriginal: false,
   };
   if (!song.original) {
     const ext = song.kind === 'xml' ? 'musicxml' : song.kind === 'gp' ? 'gp' : song.kind === 'text' ? 'txt' : 'tex';
@@ -171,14 +172,18 @@ export async function redoEdit() {
   toast('Redid: ' + step.label);
 }
 
-async function goBackToOriginal() {
+// "Your order" and "Original" switch places: the version not shown is kept with its sync and loops.
+async function goBackToOriginal(toOriginal = true) {
   const song = hooks.song();
-  if (!song?.original) return;
-  if (!confirm('Go back to the original file? Your edits are kept in Undo until you leave this song.')) return;
-  undo.push({ label: 'Back to the original', snap: snapshot(song) });
+  if (!song?.original || !!song.onOriginal === toOriginal) return;
+  if (!toOriginal && !song.edited) return;
+  undo.push({ label: toOriginal ? 'Back to the original' : 'Back to your order', snap: snapshot(song) });
   redo = [];
-  const o = song.original;
-  const changes = { kind: o.kind, data: o.data, syncPoints: [], syncDone: false, loops: [], skips: [] };
+  const keep = { kind: song.kind, data: song.data, syncPoints: song.syncPoints || [], syncDone: !!song.syncDone, loops: song.loops || [], skips: song.skips || [] };
+  const o = toOriginal ? song.original : song.edited;
+  const changes = toOriginal
+    ? { kind: o.kind, data: o.data, syncPoints: [], syncDone: false, loops: [], skips: [], edited: keep, onOriginal: true }
+    : { ...o, edited: null, onOriginal: false };
   Object.assign(song, changes);
   await updateSong(song.id, changes);
   hooks.clearSelection(); // a range left over from before can point at bars that no longer exist
@@ -223,9 +228,14 @@ function paint() {
         <button class="ghost small danger" data-act="del" ${list.length < 2 ? 'disabled' : ''} title="Remove this section" aria-label="Remove ${esc(r.name)}">✕</button>
       </span></li>`).join('');
   const orig = song?.original;
+  const mine = !song?.onOriginal || song?.edited;
   $('ed-original').innerHTML = orig
-    ? `Original kept: <b>${esc(orig.name)}</b> (${new Date(orig.savedAt).toLocaleDateString()}). <button class="small ghost" data-act="dl-original">Download original</button> <button class="small ghost" data-act="restore-original">Go back to original</button>`
+    ? `<span class="seg" role="group" aria-label="Which version plays">
+        <button class="small ${song.onOriginal ? "" : "on"}" data-act="restore-edited" aria-pressed="${!song.onOriginal}" ${mine ? '' : 'disabled'}>Your order</button>
+        <button class="small ${song.onOriginal ? "on" : ""}" data-act="restore-original" aria-pressed="${!!song.onOriginal}">Original</button></span>
+      Original kept: <b>${esc(orig.name)}</b> (${new Date(orig.savedAt).toLocaleDateString()}). <button class="small ghost" data-act="dl-original">Download original</button>`
     : 'Nothing edited yet. The first change keeps a copy of the file you have now as the original.';
+  if (document.activeElement !== $('ed-chords')) $('ed-chords').value = song?.chordSheet || '';
   $('ed-note').hidden = song?.kind !== 'text';
   paintSelection();
   paintBeat();
@@ -737,6 +747,15 @@ export function initEditor(h) {
     if (!r || name === r.name) return;
     apply(`Rename “${r.name}”`, (score) => rearrange(score, range(0, score.masterBars.length - 1), { bar: r.first, name }));
   });
+  $('ed-chords-save').addEventListener('click', async () => {
+    const song = hooks.song();
+    if (!song) return;
+    const chordSheet = $('ed-chords').value.replace(/\s+$/, '');
+    song.chordSheet = chordSheet;
+    await updateSong(song.id, { chordSheet });
+    hooks.reload();
+    $('ed-chords-msg').textContent = chordSheet ? 'Saved. The chords are lined up with the words again.' : 'Saved: no chord sheet, so chords come from the tab.';
+  });
   $('ed-undo').addEventListener('click', undoEdit);
   $('ed-redo').addEventListener('click', redoEdit);
   $('ed-bar-dup').addEventListener('click', () => doBars('dup'));
@@ -745,7 +764,8 @@ export function initEditor(h) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     const song = hooks.song();
     if (act === 'dl-original' && song?.original) download(song.original.name, song.original.kind === 'text' || song.original.kind === 'tex' ? new TextEncoder().encode(song.original.data) : song.original.data);
-    if (act === 'restore-original') goBackToOriginal();
+    if (act === 'restore-original') goBackToOriginal(true);
+    if (act === 'restore-edited') goBackToOriginal(false);
   });
   $('ed-export').addEventListener('click', () => {
     const song = hooks.song();

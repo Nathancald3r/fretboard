@@ -1,6 +1,6 @@
 // One-click imports: paste a text tab straight from the clipboard, and pick up new
 // tab files from the Downloads folder (Chrome / Edge on desktop).
-import { getValue, setValue } from './db.js';
+import { getValue, setValue, getSong, updateSong } from './db.js';
 import { bestMatch, matchScore } from './tabsources.js';
 
 const $ = (id) => document.getElementById(id);
@@ -136,7 +136,8 @@ export async function readyRuns(dir) {
       if (done.has(key) || !tracks.length) continue;
       const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
       runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
-        title: String(m.song || ''), artist: String(m.artist || ''), replace: m.replace === true });
+        title: String(m.song || ''), artist: String(m.artist || ''), replace: m.replace === true,
+        chords: typeof m.chords === 'string' ? m.chords : '', video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
     }
   }
   return runs.sort((a, b) => b.finished.localeCompare(a.finished));
@@ -200,8 +201,24 @@ async function importRun(r, auto = false) {
   // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
   const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
   if (ids?.length && !auto) await markRun(r.key); // cancelled: it stays offered
+  if (ids?.length) await addExtras(r, ids[0]);
   showReady();
   return ids?.[0] ?? null;
+}
+
+// The song's chord sheet (lined up with the words in the player) and UG's linked video.
+async function addExtras(r, id) {
+  try {
+    const changes = {};
+    if (r.chords) {
+      try { changes.chordSheet = await (await (await r.dir.getFileHandle(r.chords)).getFile()).text(); } catch { /* not there: chords are guessed */ }
+    }
+    const song = r.video ? await getSong(id) : null;
+    if (song && !song.recording) changes.recording = { kind: 'youtube', id: r.video, title: '', author: '' };
+    if (Object.keys(changes).length) await updateSong(id, changes);
+  } catch (err) {
+    console.warn('Chords or video not added', err);
+  }
 }
 
 /* ---------- the UG helper (tools/ug_watch.py) ---------- */
@@ -264,7 +281,7 @@ export async function showHelper(status) {
   if (s) {
     const on = document.createElement('span');
     on.className = 'find-auto-on';
-    on.textContent = '● UG helper running: a search opens the best match in its Chrome, out of sight, and Official and Pro songs are saved and added here by themselves. ';
+    on.textContent = '● UG helper running: a search shows the results in its Chrome: pick the song and it’s saved (with its chords) and added here by itself. ';
     const show = document.createElement('button');
     show.type = 'button';
     show.className = 'ghost small';

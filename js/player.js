@@ -9,6 +9,7 @@ import { asciiTabToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
 import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 import { scoreHasChords, guessChords, injectChords, fileChords } from './chords.js';
+import { sheetChords, sungWords, barSpans } from './chordsheet.js';
 import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
 import { buildMelody } from './singcore.js';
 import { initJudge, judgePosition, judgeFinished, judgeStopped, judgeSongChanged, judgeTrackChanged, judgeWantsTrackMuted } from './judge.js';
@@ -496,14 +497,22 @@ function toggleButton(id, on) {
 
 // Per master bar: { all: [{ offset, name }] } from the file, or guessed from the notes.
 let chordBars = null;
-let chordSource = 'none'; // 'file' | 'guess' | 'none'
+let chordSource = 'none'; // 'sheet' | 'file' | 'guess' | 'none'
 let chordTimeline = { bars: null, list: [] };
 
 function prepareChords(sc) {
   chordBars = null;
   chordSource = 'none';
   try {
-    if (scoreHasChords(sc)) {
+    // a chord sheet saved with the song (Ultimate Guitar's chords), lined up with the sung words
+    const bars = song?.chordSheet ? barSpans(sc) : null;
+    const fromSheet = bars ? sheetChords(song.chordSheet, sungWords(sc, bars), bars) : null;
+    if (fromSheet?.some((b) => b.all.length)) {
+      for (const t of sc.tracks) for (const st of t.staves) for (const b of st.bars) for (const v of b.voices) for (const bt of v.beats) bt.chordId = null;
+      injectChords(sc, fromSheet, AT.model.Chord);
+      chordSource = 'sheet';
+      chordBars = fromSheet;
+    } else if (scoreHasChords(sc)) {
       chordSource = 'file';
       chordBars = fileChords(sc, trackIndex);
     } else {
@@ -527,6 +536,7 @@ const chordsOn = () => $('pl-chords').checked;
 
 function showChordSettings() {
   $('pl-chords-src').textContent = {
+    sheet: 'Chord names come from the song’s chord sheet, lined up with the words. Edit them under Edit › Chord sheet.',
     file: 'Chord names come from the file.',
     guess: 'This file has no chord names, so they are guessed from the notes of all tracks. Treat them as a hint.',
     none: 'No chords found in this song.',
@@ -2026,6 +2036,13 @@ function initCompact() {
     flip('more-open', $('pl-more'), false);
     flip('tempo-open', $('pl-tempo-open'), false);
   }));
+  // Wide screens: the sheets, count-in and Bluetooth sit in one settings menu (like Ultimate Guitar's).
+  $('pl-menu').addEventListener('click', () => flip('menu-open', $('pl-menu')));
+  document.addEventListener('pointerdown', (e) => {
+    if (body.classList.contains('menu-open') && !e.target.closest('.sheet-btns, #pl-menu')) flip('menu-open', $('pl-menu'), false);
+  });
+  document.querySelectorAll('.sheet-btns [data-sheet-btn]').forEach((b) => b.addEventListener('click', () => flip('menu-open', $('pl-menu'), false)));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') flip('menu-open', $('pl-menu'), false); });
   $('pl-focus').addEventListener('click', () => {
     const on = body.classList.toggle('focus');
     $('pl-focus').setAttribute('aria-pressed', String(on));
@@ -2270,6 +2287,7 @@ export function initPlayer() {
   initDrumView($('pl-drums'));
   initShakerView($('pl-drums'));
   hoverNotes($('alphatab'));
+  $('ly-hide').addEventListener('click', () => { $('pl-lyrics-on').checked = false; $('pl-lyrics-on').dispatchEvent(new Event('change')); });
   for (const [id, key, def] of [['pl-fretboard', 'fretboard-fretview', '0'], ['pl-lyrics-on', 'fretboard-lyrics', '1']]) {
     let v = def;
     try { v = localStorage.getItem(key) ?? def; } catch { /* ignore */ }

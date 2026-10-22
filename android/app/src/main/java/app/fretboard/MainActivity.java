@@ -43,7 +43,13 @@ import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Collections;
 import java.util.Set;
 
@@ -146,6 +152,9 @@ public class MainActivity extends ComponentActivity {
         // Practice app: the screen stays on while it's in front.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // The big soundfont isn't in the APK (it keeps the app small): fetch it once, in the background.
+        new Thread(this::soundFontFile).start();
+
         assets = new WebViewAssetLoader.Builder()
                 .setDomain(HOST)
                 .addPathHandler("/www/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -231,10 +240,57 @@ public class MainActivity extends ComponentActivity {
         return w;
     }
 
+    // The guitar sounds (MuseScore General, 38 MB) come from the app's web site once and are kept on
+    // the phone; until then (offline on the first start) the small built-in sounds play.
+    private static final String SOUND_PATH = "/www/vendor/soundfont/MuseScore_General.sf3";
+    private static final String SOUND_URL = "https://nathancald3r.github.io/fretboard/vendor/soundfont/MuseScore_General.sf3";
+    private static final long SOUND_SIZE = 39900972L;
+    private final Object soundLock = new Object();
+
+    private File soundFontFile() {
+        File file = new File(getFilesDir(), "MuseScore_General.sf3");
+        synchronized (soundLock) {
+            if (file.length() == SOUND_SIZE) return file;
+            File part = new File(getFilesDir(), "MuseScore_General.sf3.part");
+            for (int attempt = 0; attempt < 3; attempt++) {
+                HttpURLConnection c = null;
+                try {
+                    c = (HttpURLConnection) new URL(SOUND_URL).openConnection();
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(30000);
+                    try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(part)) {
+                        byte[] buf = new byte[1 << 16];
+                        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                    }
+                    if (part.length() == SOUND_SIZE && part.renameTo(file)) return file;
+                } catch (Exception ignored) {
+                } finally {
+                    if (c != null) c.disconnect();
+                    part.delete();
+                }
+            }
+            return null;
+        }
+    }
+
+    private WebResourceResponse soundFont() {
+        try {
+            File file = soundFontFile();
+            InputStream in = file != null ? new FileInputStream(file) : getAssets().open("vendor/alphatab/soundfont/sonivox.sf2");
+            WebResourceResponse r = new WebResourceResponse("application/octet-stream", null, in);
+            r.setResponseHeaders(Collections.singletonMap("Access-Control-Allow-Origin", "*"));
+            return r;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private class AppClient extends WebViewClientCompat {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            return assets.shouldInterceptRequest(request.getUrl());
+            Uri url = request.getUrl();
+            if (HOST.equals(url.getHost()) && SOUND_PATH.equals(url.getPath())) return soundFont();
+            return assets.shouldInterceptRequest(url);
         }
 
         @Override

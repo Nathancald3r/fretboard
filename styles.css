@@ -619,7 +619,9 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .stepper b { min-width: 1.8rem; text-align: center; }
 
 /* Lyrics and fretboard panes sit in the play bar, above the seek bar. */
-.lyrics-pane { text-align: center; padding: .4rem 0 .2rem; line-height: 1.3; }
+.lyrics-pane { position: relative; text-align: center; padding: .4rem 1.6rem .2rem; line-height: 1.3; }
+.ly-hide { position: absolute; top: .2rem; right: .2rem; border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; line-height: 1; padding: .2rem .4rem; cursor: pointer; opacity: .6; }
+.ly-hide:hover { opacity: 1; }
 .lyrics-pane[hidden], .fret-pane[hidden] { display: none; }
 .lyrics-pane p { margin: 0; min-height: 1.3em; }
 .ly-now { font-size: 1.2rem; font-weight: 600; color: var(--muted); }
@@ -641,7 +643,7 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .fret-pane [hidden] { display: none; }
 .fret-hint { margin: .15rem 0 0; text-align: center; font-size: .75rem; color: var(--muted); opacity: .75; }
 /* Keys */
-.kv-keys { display: block; width: 100%; max-height: 130px; }
+.kv-keys { display: block; width: 100%; max-width: 760px; margin: 0 auto; max-height: 84px; }
 .kv-white { fill: #f4f1ea; stroke: #6d6a64; stroke-width: 1; }
 .kv-black { fill: #1d1d20; stroke: #000; stroke-width: 1; }
 .kv-c { fill: #6d6a64; font-size: 11px; text-anchor: middle; }
@@ -687,7 +689,7 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 @media (max-width: 640px) {
   .ly-now { font-size: 1rem; }
   .fv-neck { max-height: 90px; }
-  .kv-keys { max-height: 100px; }
+  .kv-keys { max-height: 80px; }
   .dk-kit { max-height: 220px; }
 }
 
@@ -1334,3 +1336,22 @@ body.edit-mode .ed-close { display: none; }
 .sheet-parts a.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .sheet-pages { display: flex; flex-direction: column; align-items: center; gap: .8rem; margin-top: .8rem; }
 .sheet-page { width: 100%; max-width: 1100px; height: auto; background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+
+.ed-chords { width: 100%; font: .85rem/1.35 ui-monospace, Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: .5rem; box-sizing: border-box; }
+#ed-original .seg { margin-right: .4rem; vertical-align: middle; }
+
+/* Settings menu (wide screens): one gear button opens a small card with the toggles and sheets */
+.menu-toggles { display: contents; }
+.menu-btn { display: none; }
+@media (min-width: 641px) {
+  #pl-stop { display: none; } /* Back and Play cover it, as on Ultimate Guitar */
+  .playbar-end { position: relative; }
+  .menu-btn { display: inline-flex; }
+  .menu-open .menu-btn { color: var(--accent); }
+  .sheet-btns { display: none; position: absolute; right: 0; bottom: calc(100% + .5rem); z-index: 30; flex-direction: column; align-items: stretch; gap: .1rem;
+    min-width: 230px; padding: .4rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px #0008; }
+  .menu-open .sheet-btns { display: flex; }
+  .sheet-btns > button { text-align: left; border: 0; border-radius: 8px; padding: .5rem .7rem; font-size: .9rem; }
+  .sheet-btns > button:hover { background: var(--panel-2); }
+  .menu-toggles { display: flex; gap: .3rem; padding: .2rem .2rem .45rem; margin-bottom: .2rem; border-bottom: 1px solid var(--line); }
+}
