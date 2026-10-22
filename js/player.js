@@ -24,6 +24,8 @@ import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
+import { initKeyView, keyRange, setKeys, showKeys } from './keyview.js';
+import { initDrumView, setKit, showDrums, drumMidi } from './drumview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
@@ -143,7 +145,7 @@ function ensureApi() {
   });
   api.playerPositionChanged.on(onPosition);
   api.playedBeatChanged.on(() => keepPlayheadInView());
-  api.playedBeatChanged.on(onBeat);
+  api.playedBeatChanged.on((beat) => { playedBeat = beat; onBeat(beat); });
   // While looping, alphaTab reports "finished" each time it wraps back to the start.
   api.playerFinished.on(() => {
     singFinished(api.isLooping);
@@ -167,6 +169,7 @@ function ensureApi() {
   });
   api.beatMouseUp.on((beat) => {
     pickBeat(beat);
+    onBeat(beat);
     if (clickResume !== 'pending') return;
     clickResume = null;
     const range = api.playbackRange;
@@ -1393,36 +1396,102 @@ function initLoops() {
   });
 }
 
-/* ---------- fretboard ---------- */
+/* ---------- instrument view (learning mode) ---------- */
 
+// Under the score: how to play the beat under the cursor (or under the mouse / a tapped note)
+// on the track's own instrument. A neck for guitar and bass, keys for every other pitched
+// part, a drum kit for drums.
 const fretboardOn = () => $('pl-fretboard').checked;
+let viewKind = null; // 'neck' | 'keys' | 'drums'
+let playedBeat = null;
+
+const trackNotes = (staff) => {
+  const out = [];
+  for (const bar of staff.bars) for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes) out.push(n);
+  return out;
+};
+const octaveName = (m) => noteName(m % 12, shiftFlats) + (Math.floor(m / 12) - 1);
 
 function showNeck() {
-  const staff = score?.tracks[trackIndex]?.staves[0];
-  const ok = fretboardOn() && staff && staff.tuning.length > 0 && !staff.isPercussion;
-  $('pl-fretview').hidden = !ok;
-  if (!ok) { setNeck(null); return; }
-  let high = 0;
-  for (const bar of staff.bars) for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes) if (n.fret > high) high = n.fret;
-  const capo = staff.capo || 0;
-  const strings = staff.tuning.length;
-  setNeck({
-    strings,
-    frets: high + capo > 15 ? Math.min(24, Math.max(19, high + capo + 1)) : 15,
-    names: [...staff.tuning].reverse().map((m) => noteName(m % 12, shiftFlats)),
-    capo,
-  });
-  showNotes([], []);
+  const track = score?.tracks[trackIndex];
+  const staff = track?.staves[0];
+  const on = fretboardOn() && !!staff;
+  $('pl-fretview').hidden = !on;
+  setNeck(null); setKeys(null); setKit(false);
+  viewKind = null;
+  if (on) {
+    if (staff.isPercussion) {
+      viewKind = 'drums';
+      setKit(true);
+    } else if (staff.tuning.length > 0 && isFretted(track)) {
+      viewKind = 'neck';
+      let high = 0;
+      for (const n of trackNotes(staff)) if (n.fret > high) high = n.fret;
+      const capo = staff.capo || 0;
+      setNeck({
+        strings: staff.tuning.length,
+        frets: high + capo > 15 ? Math.min(24, Math.max(19, high + capo + 1)) : 15,
+        names: [...staff.tuning].reverse().map((m) => noteName(m % 12, shiftFlats)),
+        capo,
+      });
+    } else {
+      viewKind = 'keys';
+      setKeys(keyRange(trackNotes(staff).map((n) => n.realValue).filter((m) => m > 0)), octaveName);
+    }
+  }
+  for (const [id, kind] of [['pl-neck', 'neck'], ['pl-keys', 'keys'], ['pl-drums', 'drums']]) $(id).hidden = viewKind !== kind;
+  onBeat(playedBeat?.voice?.bar?.staff?.track?.index === trackIndex ? playedBeat : null);
 }
 
-const fretNotes = (beat) => (beat?.notes || []).filter((n) => n.fret >= 0 && n.string >= 1).map((n) => ({ string: n.string, fret: n.fret }));
+// The MIDI drum note of a drum note: the track's own articulation list, else the Guitar Pro id.
+const drumNote = (n) => {
+  const list = n.beat?.voice?.bar?.staff?.track?.percussionArticulations || [];
+  const a = list[n.percussionArticulation];
+  return a?.outputMidiNumber > 0 ? a.outputMidiNumber : drumMidi(n.percussionArticulation);
+};
+// A tied drum note isn't hit again.
+const sounding = (beat) => (beat?.notes || []).filter((n) => !(n.isTieDestination && viewKind === 'drums'));
 
 function onBeat(beat) {
-  if (!beat || $('pl-fretview').hidden) return;
-  if (beat.voice?.bar?.staff?.track?.index !== trackIndex) return;
-  let next = beat.nextBeat;
+  if ($('pl-fretview').hidden || !viewKind) return;
+  if (beat && beat.voice?.bar?.staff?.track?.index !== trackIndex) return;
+  let next = beat?.nextBeat;
   while (next && !next.notes.length && next.nextBeat) next = next.nextBeat;
-  showNotes(fretNotes(beat), fretNotes(next));
+  if (viewKind === 'neck') {
+    const frets = (b) => sounding(b).filter((n) => n.fret >= 0 && n.string >= 1).map((n) => ({ string: n.string, fret: n.fret }));
+    showNotes(frets(beat), frets(next));
+  } else if (viewKind === 'keys') {
+    const keys = (b) => sounding(b).map((n) => n.realValue).filter((m) => m > 0);
+    showKeys(keys(beat), keys(next));
+  } else {
+    const hits = (b) => sounding(b).map(drumNote);
+    showDrums(hits(beat), hits(next));
+  }
+}
+
+// Hovering a note (while stopped or paused) shows it; leaving the score goes back to the cursor.
+function hoverNotes(surface) {
+  let frame = 0;
+  let hovered = null;
+  let last = null;
+  surface.addEventListener('mousemove', (e) => {
+    last = e;
+    if (frame || $('pl-fretview').hidden || api?.playerState === PLAYING) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const at = surface.querySelector('.at-surface') || surface;
+      const r = at.getBoundingClientRect();
+      const beat = api?.renderer?.boundsLookup?.getBeatAtPos(last.clientX - r.left, last.clientY - r.top);
+      if (!beat || beat === hovered) return;
+      hovered = beat;
+      onBeat(beat);
+    });
+  });
+  surface.addEventListener('mouseleave', () => {
+    if (!hovered) return;
+    hovered = null;
+    if (api?.playerState !== PLAYING) onBeat(playedBeat);
+  });
 }
 
 /* ---------- lyrics ---------- */
@@ -2093,7 +2162,10 @@ export function initPlayer() {
   $('tp-reset').addEventListener('click', () => setShift({ transpose: 0, capo: null }));
 
   // Fretboard and lyrics panes.
-  initFretView($('pl-fretview'));
+  initFretView($('pl-neck'));
+  initKeyView($('pl-keys'));
+  initDrumView($('pl-drums'));
+  hoverNotes($('alphatab'));
   for (const [id, key, def] of [['pl-fretboard', 'fretboard-fretview', '0'], ['pl-lyrics-on', 'fretboard-lyrics', '1']]) {
     let v = def;
     try { v = localStorage.getItem(key) ?? def; } catch { /* ignore */ }

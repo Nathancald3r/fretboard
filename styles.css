@@ -631,9 +631,34 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .fv-now text { fill: var(--accent-ink); font-size: 12px; font-weight: 700; text-anchor: middle; }
 .fv-next circle { fill: none; stroke: var(--accent); stroke-width: 2; opacity: .6; }
 .fv-next text { fill: var(--accent); font-size: 11px; text-anchor: middle; opacity: .7; }
+.fret-pane [hidden] { display: none; }
+.fret-hint { margin: .15rem 0 0; text-align: center; font-size: .75rem; color: var(--muted); opacity: .75; }
+/* Keys */
+.kv-keys { display: block; width: 100%; max-height: 130px; }
+.kv-white { fill: #f4f1ea; stroke: #6d6a64; stroke-width: 1; }
+.kv-black { fill: #1d1d20; stroke: #000; stroke-width: 1; }
+.kv-c { fill: #6d6a64; font-size: 11px; text-anchor: middle; }
+.kv-now rect { fill: var(--accent); }
+.kv-now text { fill: var(--accent-ink); font-size: 13px; font-weight: 700; text-anchor: middle; }
+.kv-next rect { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 5 3; }
+.kv-next text { fill: var(--accent); font-size: 11px; text-anchor: middle; }
+.kv-next.kv-on-black text { fill: #fff; }
+/* Drum kit, seen from the drummer's seat */
+.drum-pane { display: flex; justify-content: center; }
+.dk-kit { display: block; width: 100%; max-width: 640px; max-height: min(300px, 40vh); }
+.dk-stand { stroke: #8e949d; stroke-width: 4; stroke-linecap: round; }
+.dk-glow { fill: var(--accent); opacity: 0; transition: opacity .08s; pointer-events: none; }
+.dk-ring { fill: none; stroke: var(--accent); stroke-width: 4; stroke-dasharray: 9 6; opacity: 0; pointer-events: none; }
+.dk-now .dk-glow { opacity: .55; }
+.dk-now .dk-ring { opacity: 1; stroke-dasharray: none; }
+.dk-next .dk-ring { opacity: .7; }
+.dk-tag { fill: var(--accent); }
+.dk-tag-text { fill: var(--accent-ink); font-size: 22px; font-weight: 700; text-anchor: middle; }
 @media (max-width: 640px) {
   .ly-now { font-size: 1rem; }
   .fv-neck { max-height: 90px; }
+  .kv-keys { max-height: 100px; }
+  .dk-kit { max-height: 220px; }
 }
 
 /* Sync and backup panel in the library. */
@@ -802,6 +827,9 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
   .in-player .toast { bottom: calc(var(--dock-h, 110px) + var(--vv-bottom, 0px) + .6rem); }
   .lyrics-pane { padding: .1rem 0; }
   .fv-neck { max-height: 60px; }
+  .kv-keys { max-height: 70px; }
+  .dk-kit { max-height: 130px; }
+  .fret-hint { display: none; }
 }
 
 input[type=password] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .45rem .6rem; }
