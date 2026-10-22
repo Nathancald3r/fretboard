@@ -645,6 +645,12 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .kv-next.kv-on-black text { fill: #fff; }
 /* Drum kit, seen from the drummer's seat */
 .drum-pane { display: flex; justify-content: center; }
+/* Drums: the kit floats over the bottom of the music with nothing behind it; the mouse
+   passes through it to the notes. */
+.fret-pane.over-music { position: absolute; left: 0; right: 0; bottom: 100%; padding: 0; pointer-events: none; }
+.fret-pane.over-music .dk-kit { max-height: min(190px, 26vh); }
+.fret-pane.over-music .fret-hint { display: none; }
+.kit-over #alphatab { padding-bottom: min(190px, 26vh); }
 .dk-kit { display: block; width: 100%; max-width: 640px; max-height: min(300px, 40vh); }
 .dk-stand { stroke: #8e949d; stroke-width: 4; stroke-linecap: round; }
 .dk-glow { fill: var(--accent); opacity: 0; transition: opacity .08s; pointer-events: none; }

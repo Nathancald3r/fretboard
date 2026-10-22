@@ -123,13 +123,13 @@ function pedal(id, cx, y, label) {
 
 function build() {
   pieces = new Map();
-  svg = el('svg', { viewBox: '0 0 1000 600', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
+  svg = el('svg', { viewBox: '20 135 960 470', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
   svg.append(defs());
   // stands behind everything
-  svg.append(stand(235, 150, 120, 600), stand(470, 108, 455, 330), stand(700, 112, 790, 330), stand(910, 118, 980, 600),
-    stand(830, 250, 900, 600), stand(165, 318, 175, 520));
-  svg.append(cymbal('crash', 235, 150, 140, 46), cymbal('splash', 470, 108, 62, 20), cymbal('crash2', 700, 112, 118, 38),
-    cymbal('china', 912, 120, 82, 27), cymbal('ride', 830, 250, 158, 52));
+  svg.append(stand(235, 215, 140, 600), stand(470, 192, 458, 300), stand(705, 200, 780, 300), stand(905, 212, 960, 600),
+    stand(835, 292, 890, 600), stand(165, 330, 175, 520));
+  svg.append(cymbal('crash', 235, 215, 135, 44), cymbal('splash', 470, 192, 60, 19), cymbal('crash2', 705, 200, 112, 36),
+    cymbal('china', 905, 212, 76, 25), cymbal('ride', 835, 292, 150, 50));
 
   // the kick, seen along its top as it points away from you, with the toms on it
   const kick = el('g', { class: 'dk-piece', 'data-piece': 'kick', filter: 'url(#dk-soft)' });

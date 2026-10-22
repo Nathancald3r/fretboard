@@ -1,6 +1,6 @@
 // Run: node tests/humanize.test.mjs
 import assert from 'node:assert/strict';
-import { humanize, NOTE_ON, NOTE_OFF, PROGRAM, TEMPO } from '../js/humanize.js';
+import { humanize, liftCymbals, NOTE_ON, NOTE_OFF, PROGRAM, TEMPO } from '../js/humanize.js';
 
 const on = (tick, ch, key, vel = 100) => ({ type: NOTE_ON, tick, channel: ch, noteKey: key, noteVelocity: vel });
 const off = (tick, ch, key) => ({ type: NOTE_OFF, tick, channel: ch, noteKey: key, noteVelocity: 0 });
@@ -58,5 +58,11 @@ assert.deepEqual(a, b);
 // Single notes keep their timing; only their touch varies a little.
 const single = a.find((e) => e.type === NOTE_ON && e.tick === 960);
 assert.ok(Math.abs(single.noteVelocity - 100) <= 4);
+
+// Hi-hats and cymbals on the drum channel play louder; the snare and other channels don't.
+const drums = [{ type: NOTE_ON, tick: 0, channel: 9, noteKey: 42, noteVelocity: 80 }, { type: NOTE_ON, tick: 0, channel: 9, noteKey: 38, noteVelocity: 80 },
+  { type: NOTE_ON, tick: 0, channel: 0, noteKey: 42, noteVelocity: 80 }, { type: NOTE_ON, tick: 0, channel: 9, noteKey: 49, noteVelocity: 120 }];
+assert.equal(liftCymbals(drums), 2);
+assert.deepEqual(drums.map((e) => e.noteVelocity), [114, 80, 80, 127]);
 
 console.log('humanize tests passed');

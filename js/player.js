@@ -29,7 +29,7 @@ import { initDrumView, setKit, showDrums, drumMidi } from './drumview.js';
 import { bindBtControls, delayPositionEvents } from './btdelay.js';
 import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
-import { humanize } from './humanize.js';
+import { humanize, liftCymbals } from './humanize.js';
 import { autoLevels } from './mixlevels.js';
 
 const $ = (id) => document.getElementById(id);
@@ -118,7 +118,7 @@ function ensureApi() {
     if (!readyForPlayback) $('pl-play').title = `Loading sounds ${Math.round((e.loaded / e.total) * 100)}%`;
   });
   // Guitar chords are strummed, and the click is written into the song's MIDI on a channel of its own.
-  api.midiLoad.on((midiFile) => { strumGuitars(midiFile); addClickTrack(midiFile); });
+  api.midiLoad.on((midiFile) => { strumGuitars(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); addClickTrack(midiFile); });
   // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
   // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
   try {
@@ -1440,6 +1440,8 @@ function showNeck() {
     }
   }
   for (const [id, kind] of [['pl-neck', 'neck'], ['pl-keys', 'keys'], ['pl-drums', 'drums']]) $(id).hidden = viewKind !== kind;
+  $('pl-fretview').classList.toggle('over-music', viewKind === 'drums'); // the kit floats over the bottom of the music
+  document.body.classList.toggle('kit-over', viewKind === 'drums'); // room under the last line of music
   onBeat(playedBeat?.voice?.bar?.staff?.track?.index === trackIndex ? playedBeat : null);
 }
 
