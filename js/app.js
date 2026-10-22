@@ -338,6 +338,10 @@ const PARTS = [
   ['Drums', 0, /drum|shaker|percussion|tambourine|cajon|conga|bongo/i],
 ];
 
+// How a part's PDF is written when it's percussion: 'kit' for a drum staff, or the one instrument
+// on a one-line staff. null for everything else.
+const drumKind = (name) => (/shaker|maraca/i.test(name) ? 'shaker' : /tambourine/i.test(name) ? 'tambourine' : /drum|percussion|cajon|conga|bongo/i.test(name) ? 'kit' : null);
+
 // The instrument a PDF's name says it is: "Song - Artist - Synth Lead 2.pdf" (as ug_collect.py names them) -> "Synth Lead 2".
 function partFromName(fileName) {
   const d = fileName.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)$/, '').split(' - ');
@@ -385,7 +389,7 @@ async function readParts(files, title) {
       };
       say();
       try {
-        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name) });
+        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name), drums: drumKind(it.name) });
         if (r.strips?.length) {
           it.strips = r.strips;
           it.bars = ugToAlphaTex(r.strips, { title, name: it.name, program: it.program })?.bars || 0;
@@ -485,7 +489,7 @@ async function importPdfParts(files, auto = null, replace = false) {
   const items = await readParts(files, first.title);
   if (!items) { toast('Cancelled: nothing was added.'); return null; }
   // guitar parts with tab first, so the song opens on a guitar (the order can be changed in the review)
-  const guitar = (it) => (it.strips && /guitar|acoustic|electric|lead(?!\s*vocal)|rhythm/i.test(it.name) ? 0 : 1);
+  const guitar = (it) => (it.strips && /guitar|acoustic|electric|lead(?!\s*vocal)|rhythm/i.test(it.name) ? 0 : drumKind(it.name) ? 2 : 1);
   items.sort((x, y) => guitar(x) - guitar(y));
   const pick = auto ? { title: auto.title || first.title, artist: auto.artist ?? first.artist, items } : await reviewParts(items, first.title, first.artist);
   if (!pick) { toast('Cancelled: nothing was added.'); return null; }
@@ -539,7 +543,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null, replace =
         const { pdfToTab } = await import('./pdftab.js');
         toast('Reading the PDF…', 8000);
         const { title, artist } = namesFromPdf(base);
-        const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist, bass: /bass/i.test(base) });
+        const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist, bass: /bass/i.test(base), drums: drumKind(partFromName(file.name) || base) });
         if (!r.tex && !r.text.trim()) { // no tab in it (piano or vocal staff): keep the PDF to read as pages
           ids.push(await putSong({ kind: 'sheet', title, artist, data: await file.arrayBuffer(), fileName: file.name, added: Date.now() }));
           added++;

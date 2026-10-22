@@ -5,6 +5,7 @@
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
 import { readLyricLine, closeLyricReader } from './uglyrics.js';
+import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
 const PAGE_WIDTH = 1634; // the width the templates were made at
@@ -285,7 +286,7 @@ const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test
  * @param {ArrayBuffer} buf the PDF
  * @returns {Promise<{ text: string, how: 'text'|'image', systems: number, unknown: number }>}
  */
-export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true, bass = false } = {}) {
+export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true, bass = false, drums = null } = {}) {
   const lib = await loadPdfjs();
   const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
   const pages = [];
@@ -306,6 +307,26 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     }
     const base = PAGE_WIDTH / page.getViewport({ scale: 1 }).width;
     let r = await renderInk(page, base);
+    if (drums) { // drum notation (5-line staff) or a one-line percussion staff (shaker, tambourine...)
+      let one = drums !== 'kit';
+      let staves = findDrumStaves(r.light, r.w, r.h, one);
+      if (!staves.length && !one) staves = findDrumStaves(r.light, r.w, r.h, (one = true)); // percussion on one line
+      if (!staves.length) continue;
+      how = 'staff';
+      if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
+        r = await renderInk(page, base * UG_UNIT / staves[0].u);
+        staves = findDrumStaves(r.light, r.w, r.h, one);
+      }
+      const fl = flip(r.ink, r.w, r.h);
+      for (let i = 0; i < staves.length; i++) {
+        const strip = readDrumStrip(r.ink, r.light, r.w, r.h, staves[i], fl, { piece: drums === 'kit' ? 'shaker' : drums });
+        if (!strip) continue;
+        strip.lyr = [];
+        strips.push(strip);
+        onProgress(n, pdf.numPages, `line ${i + 1} of ${staves.length}`);
+      }
+      continue;
+    }
     // a staff with as many lines as the tuning has strings (bass: 4); six-line guitar staves always
     // (a bass part whose PDF doesn't say its tuning: four strings)
     const counts = [...new Set([6, tuning?.length || (bass ? 4 : 6)])];

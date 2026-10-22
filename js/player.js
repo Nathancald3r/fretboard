@@ -1041,7 +1041,12 @@ function readScore(s) {
     tex = tex.replace(/\\staff \{tabs\}/g, '\\staff {score tabs}'); // so Notation / Both work on songs saved before
     const importer = new AT.importer.AlphaTexImporter();
     importer.initFromString(tex, api.settings);
-    return importer.readScore();
+    const parsed = importer.readScore();
+    // a shaker or other hand percussion sits far above a drum staff in alphaTab: draw it on the middle line
+    for (const t of parsed.tracks) {
+      t.percussionArticulations = t.percussionArticulations.map((a) => (a.staffLine < -8 ? Object.assign(Object.create(Object.getPrototypeOf(a)), a, { staffLine: 4 }) : a));
+    }
+    return parsed;
   }
   return AT.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(s.data), api.settings);
 }

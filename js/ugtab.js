@@ -223,7 +223,7 @@ function bandCount(ink, w, xa, xb, ya, yb) {
 }
 
 // What a stem says about the length of its note, in sixteenths.
-function stemLength(ink, w, s, u) {
+export function stemLength(ink, w, s, u) {
   const x = s.x;
   const bottom = [s.bot - Math.round(1.0 * u), s.bot + 2]; // room for three beams (thirty-seconds)
   // Beams running from the stem at least 1.1 spaces to one side. Only the stem's own beams count: not the
@@ -430,18 +430,21 @@ const snap = (len) => {
 
 const restTex = (len) => pieces(len).map((p) => `r.${dur(p)}`).join(' ');
 const fretOf = (n) => (n.tie ? '-' : n.t === 'X' ? 'x' : n.t);
+// a drum hit is named by its kit piece (see drumHead), a tab note by fret and string
+const noteTex = (n) => (n.drum ? n.drum : `${fretOf(n)}.${n.s + 1}`);
 const beatTex = (notes, len) => {
   if (!notes.length) return restTex(len);
   const d = dur(len);
-  const one = notes.map((n) => `${fretOf(n)}.${n.s + 1}`);
+  const one = notes.map(noteTex);
   return notes.length === 1 ? `${one[0]}.${d}` : `(${one.join(' ')}).${d}`;
 };
 // A length with no single note value (e.g. 10 sixteenths) is written as tied notes.
 const tiedTex = (notes, len) => {
   if (!notes.length) return restTex(len);
   const [first, ...rest] = pieces(len);
-  const n = notes.map((x) => `${fretOf(x)}.${x.s + 1}`);
+  const n = notes.map(noteTex);
   const head = n.length === 1 ? `${n[0]}.${dur(first)}` : `(${n.join(' ')}).${dur(first)}`;
+  if (notes[0].drum) return `${head} ${restTex(len - first)}`; // a drum isn't held: the rest of its time is quiet
   const tail = rest.map((p) => (n.length === 1 ? `-.${notes[0].s + 1}.${dur(p)}` : `(${notes.map((x) => `-.${x.s + 1}`).join(' ')}).${dur(p)}`));
   return [head, ...tail].join(' ');
 };
@@ -475,6 +478,14 @@ function lyricBar(b, T) {
   });
   return beats.join(' ');
 }
+
+// A drum or percussion part's track: General MIDI drums, with its kit pieces named for the notes.
+const DRUM_NOTES = { kick: 36, lowfloortom: 41, floortom: 43, lowtom: 45, snare: 38, midtom: 47, hightom: 48, pedalhat: 44, sidestick: 37, ride: 51, ridebell: 53, hihat: 42, openhat: 46, crash: 49, crash2: 57, shaker: 82, tambourine: 54 };
+const isDrums = (strips) => strips.some((s) => s.drums);
+const drumHead = (strips) => {
+  const used = new Set(strips.flatMap((s) => s.bars.flatMap((b) => b.cols.flatMap((c) => c.notes.map((n) => n.drum)))).filter(Boolean));
+  return ['\\staff {score}', '\\instrument percussion', ...[...used].map((d) => `\\articulation ${d} ${DRUM_NOTES[d]}`), '\\clef neutral'].join('\n');
+};
 
 /**
  * @param strips parsed strips in reading order ({ bars, heading })
@@ -561,15 +572,14 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     `\\tempo ${Math.round(firstTempo || tempo)}`,
     '.',
     `\\track ${JSON.stringify(name || title || 'Guitar')}`,
-    '\\staff {score tabs}',
-    `\\tuning ${tuningTex(strips)}`,
-    `\\instrument ${program}`,
+    ...(isDrums(strips) ? [drumHead(strips)] : ['\\staff {score tabs}', `\\tuning ${tuningTex(strips)}`, `\\instrument ${program}`]),
   ].filter(Boolean).join('\n');
   const others = extra.map((part) => {
     const list = barsOf(part.strips).slice(0, bars.length);
     while (list.length < bars.length) list.push({ x0: 0, x1: 1, cols: [], lyr: [] });
     lists.push(list);
-    return `\n\\track ${JSON.stringify(part.name)}\n\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}\n${render(list, false).join(' |\n')}`;
+    const head = isDrums(part.strips) ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
+    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(list, false).join(' |\n')}`;
   }).join('');
   // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order)
   const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
