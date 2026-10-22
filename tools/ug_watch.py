@@ -200,7 +200,7 @@ GUIDE_JS = r"""() => {
     'font:15px/1.4 system-ui,Segoe UI,sans-serif;padding:12px 48px 12px 18px;box-shadow:0 -4px 18px #0006';
   d.innerHTML = '<div style="font-size:20px;font-weight:800;margin-bottom:4px">Fretboard: now click the song you want in the list above ↑</div>' +
     '<div>Pick one version. Fretboard saves it and adds it to your library by itself:</div>' +
-    '<div style="margin-top:4px"><b>Official</b>: every instrument, plus the chords. &nbsp;·&nbsp; ' +
+    '<div style="margin-top:4px"><b>Official</b>: its Guitar Pro file (every instrument), plus the chords. &nbsp;·&nbsp; ' +
     '<b>Tab Pro / Guitar Pro</b>: its Download (gp) file, plus the chords. &nbsp;·&nbsp; <b>Chords / Tab</b>: the text.</div>' +
     '<div style="margin-top:4px;opacity:.8">Keep this window open until the little Fretboard window says it’s done.</div>';
   const x = document.createElement('button');

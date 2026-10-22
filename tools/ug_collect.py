@@ -1,6 +1,7 @@
-"""Save every instrument/vocal track of an official Ultimate Guitar Tab Pro song as a PDF,
-one per track, named "<Song> - <Artist> - <Instrument>.pdf", into
-Downloads\\UG Songs\\<Song> - <Artist> (Key X).
+"""Save an official Ultimate Guitar song into Downloads\\UG Songs\\<Song> - <Artist> (Key X):
+its Guitar Pro version ("<Song> - <Artist> - Guitar Pro.gp", every track as a real score) when UG
+has one, else every instrument/vocal track as a PDF, named "<Song> - <Artist> - <Instrument>.pdf"
+(--pdfs: the PDFs always). Tabs runs leave behind in the collector Chrome are closed afterwards.
 
 Other UG pages work too, one file each into the same song folder:
   chords and plain tabs   the text shown on the page -> "<Song> - <Artist> - Chords.txt" (or Tab, Bass Tab...)
