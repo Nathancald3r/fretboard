@@ -15,8 +15,8 @@ android {
         applicationId 'app.fretboard'
         minSdk 29          // Android 10+: MediaStore downloads, a current WebView
         targetSdk 35
-        versionCode 27
-        versionName '1.26'
+        versionCode 28
+        versionName '1.27'
     }
 
     signingConfigs {
@@ -52,7 +52,7 @@ android {
     }
 }
 
-def copyWeb = tasks.register('copyWeb', Copy) {
+def copyWeb = tasks.register('copyWeb', Sync) { // Sync: files left out (or deleted) don't linger from an earlier build
     from(rootProject.projectDir.parentFile) {
         include 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/**', 'js/**', 'vendor/**'
         exclude '**/*.md', '**/*.map'
