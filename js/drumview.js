@@ -7,6 +7,7 @@ let host = null;
 let svg = null;
 let pieces = null; // id -> { g, glow, ring, label: [x, y] }
 let tags = null;
+let hhClosed = false; // the hi-hat pedal: down (closed) or up (open)
 
 const el = (name, attrs = {}, ...kids) => {
   const e = document.createElementNS(NS, name);
@@ -20,7 +21,7 @@ const KIT = {
   35: ['kick', 'Kick · right foot'], 36: ['kick', 'Kick · right foot'],
   37: ['snare', 'Snare · side stick'], 38: ['snare', 'Snare'], 40: ['snare', 'Snare'], 39: ['snare', 'Hand clap'],
   91: ['snare', 'Snare · rim shot'],
-  42: ['hihat', 'Hi-hat · closed'], 46: ['hihat', 'Hi-hat · open'], 44: ['hhpedal', 'Hi-hat pedal · left foot'],
+  42: ['hihat', 'Hi-hat · closed'], 46: ['hihat', 'Hi-hat · open'], 44: ['hihat', 'Hi-hat pedal · left foot'],
   41: ['floor', 'Floor tom'], 43: ['floor', 'Floor tom'], 45: ['tom2', 'Mid tom'], 47: ['tom2', 'Mid tom'],
   48: ['tom1', 'High tom'], 50: ['tom1', 'High tom'],
   49: ['crash', 'Crash'], 57: ['crash2', 'Crash 2'], 55: ['splash', 'Splash'], 52: ['china', 'China'],
@@ -58,8 +59,7 @@ const defs = () => el('defs', {},
   grad('dk-bronze', 'radial', [[0, '#f6dc8e'], [0.22, '#d9ab4c'], [0.6, '#b98428'], [0.92, '#8d5f19'], [1, '#6b4612']], { cx: '50%', cy: '50%', r: '50%' }),
   grad('dk-bell', 'radial', [[0, '#fff1c2'], [0.6, '#e2b65a'], [1, '#a7741f']], { cx: '40%', cy: '35%', r: '70%' }),
   grad('dk-shine', 'linear', [[0, '#ffffff00'], [0.5, '#ffffff8c'], [1, '#ffffff00']], { x1: 0, y1: 0, x2: 1, y2: 0 }),
-  grad('dk-pedal', 'linear', [[0, '#2b2e33'], [0.5, '#5b6069'], [1, '#24272b']], { x1: 0, y1: 0, x2: 1, y2: 0 }),
-  el('filter', { id: 'dk-soft', x: '-20%', y: '-20%', width: '140%', height: '160%' },
+    el('filter', { id: 'dk-soft', x: '-20%', y: '-20%', width: '140%', height: '160%' },
     el('feDropShadow', { dx: 0, dy: 6, stdDeviation: 5, 'flood-color': '#000', 'flood-opacity': 0.45 })),
 );
 
@@ -90,15 +90,18 @@ function drum(id, cx, cy, rx, ry, depth) {
   return finish(g, id, el('ellipse', { cx, cy, rx: rx - 3, ry: ry - 3 }), el('ellipse', { cx, cy, rx: rx + 9, ry: ry + 8 }), [cx, cy - ry - 12]);
 }
 
-// A cymbal: bronze with lathe rings, a bell and a streak of light; stands drawn separately.
-function cymbal(id, cx, cy, rx, ry, { lift = 0 } = {}) {
-  const g = el('g', { class: 'dk-piece', 'data-piece': id, filter: 'url(#dk-soft)' });
-  const y = cy - lift;
+// A cymbal: bronze with lathe rings, a bell and a streak of light (no stand drawn).
+function cymbalArt(g, cx, y, rx, ry) {
   g.append(el('ellipse', { cx, cy: y, rx, ry, fill: 'url(#dk-bronze)', stroke: '#5b3b0e', 'stroke-width': 1 }));
   for (let k = 0.28; k < 1; k += 0.07) g.append(el('ellipse', { cx, cy: y, rx: rx * k, ry: ry * k, fill: 'none', stroke: '#5a3a0a', 'stroke-opacity': 0.16, 'stroke-width': 1 }));
   g.append(el('ellipse', { cx, cy: y, rx: rx * 0.95, ry: ry * 0.25, fill: 'url(#dk-shine)', transform: `rotate(-12 ${cx} ${y})`, opacity: 0.7 }));
   g.append(el('ellipse', { cx, cy: y, rx: rx * 0.2, ry: ry * 0.24, fill: 'url(#dk-bell)', stroke: '#7a5418', 'stroke-width': 0.8 }));
   g.append(el('ellipse', { cx, cy: y - 1, rx: 4, ry: 3, fill: '#2a2a2a' })); // felt and wing nut
+}
+
+function cymbal(id, cx, y, rx, ry) {
+  const g = el('g', { class: 'dk-piece', 'data-piece': id, filter: 'url(#dk-soft)' });
+  cymbalArt(g, cx, y, rx, ry);
   return finish(g, id, el('ellipse', { cx, cy: y, rx, ry }), el('ellipse', { cx, cy: y, rx: rx + 9, ry: ry + 7 }), [cx, y - ry - 12]);
 }
 
@@ -110,39 +113,39 @@ function finish(g, id, glowShape, ringShape, label) {
   return g;
 }
 
-const stand = (x1, y1, x2, y2) => el('line', { x1, y1, x2, y2, class: 'dk-stand' });
-
-function pedal(id, cx, y, label) {
-  const g = el('g', { class: 'dk-piece', 'data-piece': id });
-  g.append(el('path', { d: `M${cx - 22},${y + 70} L${cx - 16},${y} L${cx + 16},${y} L${cx + 22},${y + 70} Z`, fill: 'url(#dk-pedal)', stroke: '#15171a', 'stroke-width': 1.5 }));
-  for (let i = 1; i < 6; i++) g.append(el('line', { x1: cx - 15 - i * 0.8, x2: cx + 15 + i * 0.8, y1: y + i * 11, y2: y + i * 11, stroke: '#ffffff22', 'stroke-width': 1.5 }));
-  g.append(el('rect', { x: cx - 26, y: y + 66, width: 52, height: 10, rx: 4, fill: '#33373d' }));
-  return finish(g, id, el('path', { d: `M${cx - 22},${y + 70} L${cx - 16},${y} L${cx + 16},${y} L${cx + 22},${y + 70} Z` }),
-    el('rect', { x: cx - 32, y: y - 8, width: 64, height: 92, rx: 10 }), label);
+// The hi-hat: a bottom cymbal and a top one on a rod. The top one sits up off the bottom
+// (open: the pedal is up) and drops onto it when the pedal is pressed (closed).
+function hihat(cx, cy, rx, ry) {
+  const g = el('g', { class: 'dk-piece dk-hh', 'data-piece': 'hihat', filter: 'url(#dk-soft)' });
+  const low = cy + 14;
+  cymbalArt(g, cx, low, rx * 0.97, ry * 0.97);
+  g.append(el('ellipse', { cx, cy: low, rx: rx * 0.97, ry: ry * 0.97, fill: '#000', opacity: 0.28 })); // in the top one's shade
+  g.append(el('line', { x1: cx, y1: low, x2: cx, y2: cy - 18, stroke: 'url(#dk-chrome)', 'stroke-width': 4, 'stroke-linecap': 'round' }));
+  const top = el('g', { class: 'dk-hh-top' });
+  cymbalArt(top, cx, cy, rx, ry);
+  g.append(top);
+  return finish(g, 'hihat', el('ellipse', { cx, cy: cy + 7, rx, ry: ry + 7 }), el('ellipse', { cx, cy: cy + 7, rx: rx + 9, ry: ry + 14 }), [cx, cy - ry - 12]);
 }
 
 function build() {
   pieces = new Map();
-  svg = el('svg', { viewBox: '55 150 900 455', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
+  hhClosed = false;
+  svg = el('svg', { viewBox: '95 150 830 415', class: 'dk-kit', role: 'img', 'aria-label': 'Drum kit, seen from the drummer’s seat' });
   svg.append(defs());
-  // the kick, seen along its top as it points away from you, with the toms on it
-  const kick = el('g', { class: 'dk-piece', 'data-piece': 'kick', filter: 'url(#dk-soft)' });
+  // the kick, seen along its top as it points away from you, tucked deep under the toms
+  const kick = el('g', { class: 'dk-piece', 'data-piece': 'kick', filter: 'url(#dk-soft)', transform: 'translate(0 -60)' });
   kick.append(el('path', { d: 'M352,520 L386,330 L614,330 L648,520 Z', fill: 'url(#dk-shell)' }));
   kick.append(el('path', { d: 'M386,330 L614,330', stroke: 'url(#dk-chrome)', 'stroke-width': 9, 'stroke-linecap': 'round' }));
   kick.append(el('ellipse', { cx: 500, cy: 520, rx: 152, ry: 26, fill: 'url(#dk-chrome)' }));
   kick.append(el('ellipse', { cx: 500, cy: 516, rx: 144, ry: 19, fill: 'url(#dk-head)' }));
   for (const x of [372, 628]) kick.append(el('rect', { x: x - 4, y: 400, width: 8, height: 60, rx: 4, fill: 'url(#dk-chrome)' }));
-  kick.append(el('rect', { x: 494, y: 470, width: 12, height: 50, rx: 3, fill: '#c9ccd2' })); // beater shaft
-  kick.append(el('ellipse', { cx: 500, cy: 470, rx: 16, ry: 10, fill: '#ece8de', stroke: '#555', 'stroke-width': 1 })); // beater
-  finish(kick, 'kick', el('path', { d: 'M352,520 L386,330 L614,330 L648,520 Z' }), el('path', { d: 'M340,532 L378,320 L622,320 L660,532 Z' }), [500, 470]);
+  finish(kick, 'kick', el('path', { d: 'M352,520 L386,330 L614,330 L648,520 Z' }), el('path', { d: 'M340,532 L378,320 L622,320 L660,532 Z' }), [500, 420]);
   svg.append(kick);
   svg.append(drum('tom1', 410, 278, 82, 40, 30), drum('tom2', 590, 278, 90, 43, 32));
-  svg.append(drum('snare', 320, 430, 118, 54, 26), drum('floor', 735, 438, 132, 62, 58));
-  svg.append(pedal('hhpedal', 160, 412, [160, 520]), pedal('kickpedal', 500, 525, [500, 513]));
+  svg.append(drum('snare', 355, 430, 118, 54, 26), drum('floor', 690, 438, 132, 62, 58));
   // cymbals hang over the drums (no stands drawn), which keeps the kit compact
-  svg.append(cymbal('hihat', 172, 372, 100, 32), cymbal('crash', 292, 262, 122, 40), cymbal('splash', 500, 222, 55, 18),
-    cymbal('crash2', 645, 235, 100, 33), cymbal('china', 862, 282, 70, 23), cymbal('ride', 805, 362, 140, 46));
-  pieces.get('kickpedal').joinsKick = true;
+  svg.append(hihat(205, 362, 100, 32), cymbal('crash', 320, 262, 122, 40), cymbal('splash', 500, 222, 55, 18),
+    cymbal('crash2', 645, 235, 100, 33), cymbal('china', 845, 282, 70, 23), cymbal('ride', 770, 362, 140, 46));
   tags = el('g', { class: 'dk-tags' });
   svg.append(tags);
 }
@@ -162,22 +165,27 @@ export function showDrums(now = [], next = []) {
   if (!svg) return;
   tags.textContent = '';
   for (const p of pieces.values()) p.g.classList.remove('dk-now', 'dk-next');
-  const light = (piece, cls) => {
-    pieces.get(piece)?.g.classList.add(cls);
-    if (piece === 'kick') pieces.get('kickpedal')?.g.classList.add(cls);
-    if (piece === 'hhpedal') pieces.get('hihat')?.g.classList.add(cls);
-  };
-  for (const m of next) { const h = drumHit(m); if (h.piece) light(h.piece, 'dk-next'); }
+  for (const m of next) { const h = drumHit(m); if (h.piece) pieces.get(h.piece)?.g.classList.add('dk-next'); }
   const extras = [];
   const named = new Map();
   for (const m of now) {
     const h = drumHit(m);
     if (!h.piece) { if (!extras.includes(h.name)) extras.push(h.name); continue; }
-    light(h.piece, 'dk-now');
+    if (m === 42 || m === 44) hhClosed = true; // foot down
+    if (m === 46) hhClosed = false; // foot up
     named.set(h.piece, h.name);
   }
-  for (const [piece, name] of named) tag(pieces.get(piece).label, name);
-  if (extras.length) tag([500, 30], extras.join(' · '));
+  pieces.get('hihat')?.g.classList.toggle('hh-closed', hhClosed);
+  const accent = getComputedStyle(svg).getPropertyValue('--accent').trim() || '#f0a640';
+  for (const [piece, name] of named) {
+    const p = pieces.get(piece);
+    p.g.classList.add('dk-now');
+    // every hit flashes red and fades to orange, so repeated hits on one piece are seen
+    p.g.querySelector('.dk-glow')?.animate?.([{ fill: '#ff1f1f', opacity: 0.9 }, { fill: accent, opacity: 0.55 }], { duration: 220, easing: 'ease-out' });
+    p.g.querySelector('.dk-ring')?.animate?.([{ stroke: '#ff1f1f' }, { stroke: accent }], { duration: 220, easing: 'ease-out' });
+    tag(p.label, name);
+  }
+  if (extras.length) tag([500, 195], extras.join(' · '));
 }
 
 function tag([x, y], text) {
