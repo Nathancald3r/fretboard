@@ -344,6 +344,7 @@
         <section class="sheet" data-sheet="mixer" hidden>
           <div class="sheet-head"><h2>Tracks</h2><span class="row"><button id="pl-mix-reset" class="ghost small" hidden>Reset mix</button><button class="ghost small" data-close>Close</button></span></div>
           <p id="pl-mixer-note" class="muted small-text"></p>
+          <div class="mixer-row master-row"><span class="track-name"><span class="ticon">🔊</span><span class="tname">Master</span><small>whole mix</small></span><input id="pl-master" type="range" min="0" max="150" step="1" value="100" list="pl-master-marks" title="Master volume: the whole song" aria-label="Master volume"><datalist id="pl-master-marks"><option value="100"></option></datalist><span id="pl-master-val" class="mono master-val"></span></div>
           <div id="mixer-list" class="mixer"></div>
           <p class="muted small-text"><kbd>M</kbd> mute and <kbd>S</kbd> solo the track you're looking at.</p>
         </section>
@@ -506,7 +507,7 @@
 
           <div class="row amp-playalong">
             <label class="toggle" title="Mutes the track shown in the tab so you play that part"><input id="amp-mute-track" type="checkbox"> Mute the tab's guitar while the amp is on (I'll play it)</label>
-            <label>Song volume <input id="amp-song-vol" type="range" min="0" max="100" step="1" value="100"> <span id="amp-song-vol-val" class="mono"></span></label>
+            <label>Song volume <input id="amp-song-vol" type="range" min="0" max="150" step="1" value="100"> <span id="amp-song-vol-val" class="mono"></span></label>
           </div>
 
           <dialog id="amp-dialog">

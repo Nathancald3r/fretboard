@@ -843,7 +843,14 @@ function buildTrackControls() {
   applyMix();
 }
 
+// The Tracks sheet's master slider shows the song volume (set here or in the Amp panel).
+function showMaster() {
+  $('pl-master').value = $('amp-song-vol').value;
+  $('pl-master-val').textContent = $('amp-song-vol').value + '%';
+}
+
 function showMix() {
+  showMaster();
   const rows = $('mixer-list').children;
   const anySolo = mix.some((m) => m.solo);
   mix.forEach((m, i) => {
@@ -1832,6 +1839,7 @@ function openSheet(name) {
   const opening = name && document.querySelector(`.sheet[data-sheet="${name}"]`).hidden;
   document.querySelectorAll('.sheet').forEach((el) => { el.hidden = !(opening && el.dataset.sheet === name); });
   document.querySelectorAll('[data-sheet-btn]').forEach((b) => b.classList.toggle('on', opening && b.dataset.sheetBtn === name));
+  document.body.classList.toggle('sheet-up', !!opening); // the floating drum kit steps aside
 }
 
 // Returns true if a sheet was open.
@@ -2164,6 +2172,12 @@ export function initPlayer() {
   $('tp-reset').addEventListener('click', () => setShift({ transpose: 0, capo: null }));
 
   // Fretboard and lyrics panes.
+  // Master volume (the Tracks sheet) and the Amp panel's song volume are one setting.
+  const master = $('pl-master');
+  const songVol = $('amp-song-vol');
+  master.addEventListener('input', () => { songVol.value = master.value; songVol.dispatchEvent(new Event('input')); });
+  songVol.addEventListener('input', showMaster);
+  showMaster();
   initFretView($('pl-neck'));
   initKeyView($('pl-keys'));
   initDrumView($('pl-drums'));

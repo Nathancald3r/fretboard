@@ -533,6 +533,9 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 
 /* Tracks sheet (mixer) */
 .mixer { display: grid; gap: 2px; }
+.master-row { margin-bottom: .3rem; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.master-row .tname { font-weight: 700; }
+.master-row .master-val { grid-column: span 2; min-width: 3.2rem; text-align: right; color: var(--muted); }
 .mixer-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 200px) auto auto; gap: .5rem; padding: .25rem .4rem; border: 0; border-radius: 8px; }
 .mixer-row:hover { background: var(--panel-2); }
 .mixer-row.current { background: #3a3326; }
@@ -651,6 +654,8 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .fret-pane.over-music .dk-kit { max-height: min(190px, 26vh); }
 .fret-pane.over-music .fret-hint { display: none; }
 .kit-over #alphatab { padding-bottom: min(190px, 26vh); }
+.sheet-up .fret-pane.over-music { visibility: hidden; }
+.master-row .master-val { width: calc(2 * 34px + .5rem); }
 .dk-kit { display: block; width: 100%; max-width: 640px; max-height: min(300px, 40vh); }
 .dk-stand { stroke: #8e949d; stroke-width: 4; stroke-linecap: round; }
 .dk-glow { fill: var(--accent); opacity: 0; transition: opacity .08s; pointer-events: none; }
