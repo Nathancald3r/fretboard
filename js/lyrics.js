@@ -17,6 +17,8 @@ export function lyricsTrack(score) {
 
 const BREAK_GAP = 1440; // a rest of a dotted quarter (or more) ends a line
 const LONG_LINE = 40; // characters
+const MAX_LINE = 56;
+const SHORT_LINE = 12;
 
 /**
  * Lines in playback order.
@@ -59,11 +61,21 @@ export function buildLyrics(score, trackIndex, bars) {
   for (const s of syllables) {
     const joined = s.raw.endsWith('-');
     const word = { tick: s.tick, end: s.end, text: joined ? s.raw.slice(0, -1) : s.raw, joined };
+    // A word goes on in lower case; a capital after a hyphen means the sheet jumped (a repeat
+    // ending, a cut) and the word before was left unfinished: keep its hyphen, don't glue them.
+    if (prev?.joined && /^[A-Z]/.test(word.text) && word.text !== 'I') {
+      prev.joined = false;
+      prev.text += '-';
+    }
     const length = line ? line.words.reduce((n, w) => n + w.text.length + 1, 0) : 0;
+    // Sung lines start with a capital, so a long line waits for one (up to a hard limit);
+    // a line of a word or two ("hey,") runs on into the next instead of standing alone.
+    const capital = /^[A-Z]/.test(word.text);
+    const short = length < SHORT_LINE && !capital;
     const breakHere = !line
       || s.section
-      || (s.tick - prev.end >= BREAK_GAP && !prev.joined)
-      || (length > LONG_LINE && !prev.joined)
+      || (s.tick - prev.end >= BREAK_GAP && !prev.joined && !short)
+      || (length > LONG_LINE && !prev.joined && (capital || length > MAX_LINE))
       || (length > LONG_LINE / 2 && /[.!?;]$/.test(prev.text));
     if (breakHere) {
       line = { start: s.tick, end: s.end, words: [] };

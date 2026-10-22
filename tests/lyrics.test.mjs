@@ -48,4 +48,15 @@ const twice = [{ start: 0, masterIndex: 0 }, { start: 3840, masterIndex: 0 }];
 const all = buildLyrics(sc2, 0, twice).flatMap((l) => l.words.map((w) => w.text));
 assert.deepEqual(all, ['one', 'two', 'three', 'four']);
 
+// A word cut by a jump in the sheet ("h-" then "Je-sus") keeps its hyphen; a lone "Hey," after a
+// rest runs on into the next line instead of standing alone.
+const sc3 = load(`\\title "c" .
+\\track "Voice" \\staff {score}
+\\lyrics "a b c d e f"
+C4.4 r.2 C4.4 | C4.4 C4.4 C4.4 C4.4 |`);
+const words3 = ['Hey,', 'let', 'it', 'h-', 'Je-', 'sus'];
+sc3.masterBars.forEach((mb, i) => sc3.tracks[0].staves[0].bars[i].voices[0].beats.filter((b) => !b.isRest)
+  .forEach((b) => { b.lyrics = [words3.shift()]; }));
+assert.deepEqual(buildLyrics(sc3, 0, straight(sc3)).map(text), ['Hey, let it h- Jesus']);
+
 console.log('lyrics: all tests passed');

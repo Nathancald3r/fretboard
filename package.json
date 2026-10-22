@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "node scripts/vendor.mjs",
     "start": "node server.mjs",
-    "test": "node tests/asciitab.test.mjs && node tests/theory.test.mjs && node tests/chordshapes.test.mjs && node tests/amp.test.mjs && node tests/chords.test.mjs && node tests/sing.test.mjs && node tests/judge.test.mjs && node tests/click.test.mjs && node tests/backing.test.mjs && node tests/transpose.test.mjs && node tests/lyrics.test.mjs && node tests/sync.test.mjs && node tests/ytsearch.test.mjs && node tests/tabsources.test.mjs && node tests/ugtab.test.mjs && node tests/songmeta.test.mjs && node tests/humanize.test.mjs && node tests/mixlevels.test.mjs"
+    "test": "node tests/asciitab.test.mjs && node tests/theory.test.mjs && node tests/chordshapes.test.mjs && node tests/amp.test.mjs && node tests/chords.test.mjs && node tests/sing.test.mjs && node tests/judge.test.mjs && node tests/click.test.mjs && node tests/backing.test.mjs && node tests/transpose.test.mjs && node tests/lyrics.test.mjs && node tests/sync.test.mjs && node tests/ytsearch.test.mjs && node tests/tabsources.test.mjs && node tests/ugtab.test.mjs && node tests/songmeta.test.mjs && node tests/humanize.test.mjs && node tests/mixlevels.test.mjs && node tests/uglyrics.test.mjs"
   },
   "dependencies": {
     "@coderline/alphatab": "1.8.4"
