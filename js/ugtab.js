@@ -551,7 +551,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const layout = (b, first) => {
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
-    if (Math.round(sum) === T && first) exact++;
+    if (Math.round(sum) === T) { if (first) exact++; } // every part keeps a rhythm row that adds up
     else if (b.cols.length > 1) {
       // the rhythm row didn't add up: spread the bar by how far apart the notes sit
       const ends = [...b.cols.map((c) => c.cx), b.x1];

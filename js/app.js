@@ -333,7 +333,7 @@ function namesFromPdf(base, plain = false) {
 // The instruments an Ultimate Guitar song is split into; each PDF becomes one track of a single song.
 const PARTS = [
   ['Vocal', 53, /vocal|voice|sing/i], ['Acoustic Guitar', 25, /acoustic|nylon/i], ['Rhythm Guitar', 27, /rhythm/i],
-  ['Lead Guitar', 29, /lead(?!\s*vocal)|electric/i], ['Piano', 0, /piano|keys|keyboard/i], ['Synth Pad', 88, /pad/i],
+  ['Lead Guitar', 29, /lead(?!\s*vocal)|electric/i], ['Piano', 0, /piano|keys|keyboard/i], ['Synth Pad', 89, /pad/i],
   ['Synth Bass', 38, /synth\s*bass/i], ['Synth Lead', 80, /synth/i], ['Bass', 33, /bass/i], ['Ukulele', 24, /uke/i],
   ['Drums', 0, /drum|shaker|percussion|tambourine|cajon|conga|bongo/i],
 ];

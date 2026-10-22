@@ -115,3 +115,11 @@ console.log('ugtab tuning ok');
   assert.match(held.tex, /\\ts 4 4/);
   assert.match(held.tex, /\(0\.1 0\.2 4\.3\)\.1/);
 }
+
+// A second part keeps its own rhythm row when it adds up, however the notes are spaced on the page.
+{
+  const four = (x0) => bar(x0, x0 + 400, [col(x0 + 20, 4, [2, '1']), col(x0 + 200, 2, [2, '1']), col(x0 + 230, 2, [2, '2']), col(x0 + 260, 8, [3, '4'])]);
+  const two = ugToAlphaTex([{ bars: [four(0), four(400)] }], { title: 'Two', extra: [{ name: 'Vocals', program: 53, strips: [{ bars: [four(0), four(400)] }] }] });
+  const vocal = two.tex.split('\\track "Vocals"')[1];
+  assert.match(vocal, /1\.3\.4 1\.3\.8 2\.3\.8 4\.4\.2/, 'the second part is not re-spaced');
+}

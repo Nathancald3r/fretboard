@@ -66,3 +66,23 @@ assert.equal(liftCymbals(drums), 2);
 assert.deepEqual(drums.map((e) => e.noteVelocity), [114, 80, 80, 127]);
 
 console.log('humanize tests passed');
+
+// Synth pads ring on: up to a beat past the chord, overlapping the next chord by a sixteenth.
+{
+  const { sustainPads } = await import('../js/humanize.js');
+  const pad = [
+    { type: PROGRAM, tick: 0, channel: 2, program: 89 },
+    ...chord(0, 2, [52, 56, 59], 1920), // half note, then a rest
+    ...chord(3840, 2, [52, 57, 61], 3600), // nearly a whole bar, then the next chord at 7680
+    ...chord(7680, 2, [52, 56, 59], 960),
+  ];
+  assert.equal(sustainPads(pad), 9);
+  const offs = (from, to) => pad.filter((e) => e.type === NOTE_OFF && e.tick >= from && e.tick < to).map((e) => e.tick);
+  assert.deepEqual(offs(0, 3840), [2880, 2880, 2880], 'a beat of ring after the first chord');
+  assert.ok(pad.filter((e) => e.type === NOTE_OFF && e.noteKey === 57).every((e) => e.tick === 7680 + 240), 'fades into the next chord');
+  const k52 = pad.filter((e) => e.noteKey === 52).sort((a, b) => a.tick - b.tick).map((e) => e.type === NOTE_ON ? 'on' : 'off');
+  assert.deepEqual(k52, ['on', 'off', 'on', 'off', 'on', 'off'], 'a repeated key stops before it is struck again');
+  const guitar = [{ type: PROGRAM, tick: 0, channel: 0, program: 25 }, ...chord(0, 0, E, 960)];
+  assert.equal(sustainPads(guitar), 0, 'guitars are left alone');
+  console.log('pad sustain ok');
+}

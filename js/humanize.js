@@ -88,6 +88,45 @@ export function humanize(events, { barStarts = [] } = {}) {
 
 const clampVel = (v) => Math.max(1, Math.min(127, Math.round(v)));
 
+// Synth pads: a held pad rings on after its chord and fades into the next one, the way a player
+// keeps the keys down, instead of stopping dead. Each note is held up to a beat longer, overlapping
+// the next chord by a sixteenth, and its touch varies a little.
+const isPad = (program) => program >= 88 && program <= 95;
+
+/** Lengthens synth pad notes in place; returns how many changed. */
+export function sustainPads(events, release = QUARTER, overlap = QUARTER / 4) {
+  const program = new Map();
+  for (const e of events) if (e.type === PROGRAM && !program.has(e.channel)) program.set(e.channel, e.program);
+  const open = new Map();
+  const notes = [];
+  const starts = new Map(); // channel -> sorted ticks where pad notes start
+  for (const e of [...events].sort((a, b) => a.tick - b.tick)) {
+    if (!isPad(program.get(e.channel) ?? -1)) continue;
+    const k = e.channel * 128 + e.noteKey;
+    if (e.type === NOTE_ON && e.noteVelocity > 0) {
+      const n = { on: e, off: null };
+      notes.push(n);
+      (open.get(k) || open.set(k, []).get(k)).push(n);
+      (starts.get(e.channel) || starts.set(e.channel, []).get(e.channel)).push(e.tick);
+    } else if (e.type === NOTE_OFF || (e.type === NOTE_ON && e.noteVelocity === 0)) {
+      const n = open.get(k)?.shift();
+      if (n) n.off = e;
+    }
+  }
+  let changed = 0;
+  for (const n of notes) {
+    n.on.noteVelocity = clampVel(n.on.noteVelocity + 4 * wobble(n.on.tick, n.on.noteKey));
+    if (!n.off) continue;
+    const end = n.off.tick;
+    const next = starts.get(n.on.channel).find((t) => t > n.on.tick && t >= end - overlap);
+    // the same key struck again: stop just before it, so the new note isn't cut off
+    const again = notes.find((m) => m !== n && m.on.channel === n.on.channel && m.on.noteKey === n.on.noteKey && m.on.tick >= end);
+    let to = Math.min(end + release, next === undefined ? Infinity : next + overlap, again ? again.on.tick - 1 : Infinity);
+    if (to > end) { n.off.tick = to; changed++; }
+  }
+  return changed;
+}
+
 // Hi-hats and cymbals: alphaTab's drum kit plays them quieter than the drums around them, so
 // they get lost under the kick and snare. Each hit on the drum channel is played louder.
 // The open hi-hat is loud enough as it is.
