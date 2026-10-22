@@ -726,6 +726,19 @@ function showTempoAt(tick) {
 
 const hasTab = (track) => track.staves.some((st) => st.showTablature && st.tuning.length > 0);
 const isDrums = (track) => track.staves.some((st) => st.isPercussion);
+// Tab is for fretted parts only: guitars and basses (by instrument or by name). Vocals, keys,
+// strings, synths and the rest are always shown as standard notation, even when the file
+// gives them a tab staff (UG PDFs and some Guitar Pro files do).
+const FRETTED_NAME = /guitar|gtr|bass|ukulele|banjo|mandolin/i;
+const NOT_FRETTED_NAME = /vocal|voice|sing|piano|key|synth(?!.*bass)|string|violin|cello|organ|pad|horn|sax|trumpet|flute|choir/i;
+function isFretted(track) {
+  if (!hasTab(track) || isDrums(track)) return false;
+  const name = track.name || '';
+  if (FRETTED_NAME.test(name)) return true;
+  if (NOT_FRETTED_NAME.test(name)) return false;
+  const program = track.playbackInfo?.program ?? -1;
+  return program >= 24 && program <= 39 || (program >= 104 && program <= 107); // guitars, basses, sitar/banjo/shamisen/koto
+}
 
 // What the track is, from its MIDI instrument, for tracks the file leaves unnamed.
 function instrumentOf(track) {
@@ -801,7 +814,7 @@ function buildTrackControls() {
       <button class="ms solo" data-act="solo" title="Solo">S</button>`;
     row.querySelector('.ticon').textContent = iconOf(track);
     row.querySelector('.tname').textContent = trackLabel(track, i);
-    row.querySelector('small').textContent = hasTab(track) ? '' : 'notation';
+    row.querySelector('small').textContent = isFretted(track) ? '' : 'notation';
     list.append(row);
   });
   // parts written as standard notation (piano, drums...) are kept as their PDF pages
@@ -932,26 +945,28 @@ function currentTargets() {
 
 // Prefer a guitar track that has tab; skip vocals, bass and drums. Used when nothing is saved.
 function defaultTrackIndex(sc) {
-  const playable = (t) => hasTab(t) && !isDrums(t) && instrumentOf(t) !== 'Bass'
+  const playable = (t) => isFretted(t) && instrumentOf(t) !== 'Bass'
     && !/bass|drum|vocal|voice|sing|percussion/i.test(t.name || '');
-  for (const ok of [(t) => playable(t) && instrumentOf(t) === 'Guitar', playable, hasTab]) {
+  for (const ok of [(t) => playable(t) && instrumentOf(t) === 'Guitar', playable, isFretted, hasTab]) {
     const i = sc.tracks.findIndex(ok);
     if (i !== -1) return i;
   }
   return 0;
 }
 
-// "Tab only" on a track without tablature (vocals, drums, piano) has nothing to draw and
-// makes alphaTab fail, so such tracks fall back to standard notation.
+// Guitar and bass parts follow the Notation setting (tab by default). Every other part
+// (vocals, keys, drums, strings...) is shown as standard notation.
 function applyStaveProfile() {
   const track = score?.tracks[trackIndex];
   const wanted = $('pl-stave').value;
-  const noTab = track && !hasTab(track);
+  const noTab = track && !isFretted(track);
   $('pl-notab').hidden = !noTab;
   const profile = noTab ? 'score' : wanted;
   api.settings.display.staveProfile = { tab: AT.StaveProfile.Tab, default: AT.StaveProfile.Default, score: AT.StaveProfile.Score }[profile];
   // Tab only: draw the rhythm (stems and beams) under the tab, like Songsterr.
   api.settings.notation.rhythmMode = profile === 'tab' ? AT.TabRhythmMode.ShowWithBars : AT.TabRhythmMode.Automatic;
+  // "Guitar Standard Tuning" above a synth or vocal part would be wrong.
+  api.settings.notation.elements.set(AT.NotationElement.GuitarTuning, !noTab);
   api.updateSettings();
   showTrackInfo();
 }
@@ -960,11 +975,12 @@ function applyStaveProfile() {
 function showTrackInfo() {
   const staff = score?.tracks[trackIndex]?.staves[0];
   const parts = [];
-  if (staff && staff.tuning.length && !staff.isPercussion) {
+  const fretted = score?.tracks[trackIndex] && isFretted(score.tracks[trackIndex]);
+  if (staff && fretted) {
     parts.push('Tuning: ' + [...staff.tuning].reverse().map((m) => noteName(m % 12, true)).join(' '));
   }
   if (songKey()) parts.push('Key: ' + keyLabel(songKey()));
-  if (staff && !staff.isPercussion) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
+  if (staff && fretted) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
   const semis = song?.transpose || 0;
   if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
