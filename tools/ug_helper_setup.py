@@ -4,9 +4,9 @@ Run by "Set up UG helper.cmd" (download it from Fretboard: Find tabs online). It
   - copies the helper (ug_watch.py, ug_collect.py) from the Fretboard site into
     %USERPROFILE%\\Fretboard UG helper,
   - installs Playwright for Python if it's missing (it drives the helper's own Chrome window),
-  - registers the fretboard-helper: link for this Windows user only, so the button can start
-    the helper. The link only ever runs start.cmd in that folder; anything after
-    "fretboard-helper:" is ignored.
+  - writes start.cmd there. The .cmd then registers the fretboard-helper: link (this Windows
+    user only), so the button can start the helper. The link only ever runs start.cmd; anything
+    after "fretboard-helper:" is ignored.
 Run it again any time; nothing else on the computer is changed.
 
   python ug_helper_setup.py            set up (or repair)
@@ -19,7 +19,6 @@ SITE = "https://nathancald3r.github.io/fretboard/tools/"
 FILES = ["ug_watch.py", "ug_collect.py", "ug_helper_setup.py"]
 # Not under AppData: the Microsoft Store's Python keeps its own private copy of that folder.
 HOME = Path.home() / "Fretboard UG helper"
-SCHEME = "fretboard-helper"
 CHROME = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
           Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
           Path.home() / r"AppData\Local\Google\Chrome\Application\chrome.exe"]
@@ -64,20 +63,7 @@ def write_start():
         'cd /d "%~dp0"\r\n'
         f'"{py}" ug_helper_setup.py --refresh\r\n'
         f'"{py}" ug_watch.py\r\n'
-        "if errorlevel 1 pause\r\n", encoding="utf-8")
-
-
-def register():
-    import winreg
-    comspec = os.environ.get("ComSpec") or r"C:\Windows\System32\cmd.exe"
-    start = HOME / "start.cmd"
-    cmd = f'"{comspec}" /c ""{start}""'
-    base = rf"Software\Classes\{SCHEME}"
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
-        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:Fretboard UG helper")
-        winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as k:
-        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cmd)
+        "if errorlevel 1 pause\r\n", encoding="utf-8", newline="")
 
 
 def main():
@@ -94,13 +80,8 @@ def main():
         return 1
     print("  Playwright: ok")
     write_start()
-    register()
-    print("  Start UG helper button: ok")
     if not any(c.exists() for c in CHROME):
         print("\nGoogle Chrome isn't installed. The helper uses its own Chrome window: install Chrome, then it's ready.")
-    print("\nDone. In Fretboard press Start UG helper (Chrome asks once whether to open it: tick Always allow).\n"
-          "The first time, log in to Ultimate Guitar in the helper's Chrome window (Official songs need your account;\n"
-          "Guitar Pro tabs don't).")
     return 0
 
 
