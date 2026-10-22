@@ -652,20 +652,20 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 /* Drums: the kit floats over the bottom of the music with nothing behind it; the mouse
    passes through it to the notes. */
 .fret-pane.over-music { position: absolute; left: 0; right: 0; bottom: 100%; padding: 0; pointer-events: none; }
-.fret-pane.over-music .dk-kit { max-height: min(210px, 28vh); }
+.fret-pane.over-music .dk-kit { max-height: min(190px, 26vh); }
 .fret-pane.over-music .fret-hint { display: none; }
-.kit-over #alphatab { padding-bottom: min(210px, 28vh); }
+.kit-over #alphatab { padding-bottom: min(190px, 26vh); }
 .sheet-up .fret-pane.over-music { visibility: hidden; }
 .master-row .master-val { width: calc(2 * 34px + .5rem); }
 .dk-kit { display: block; width: 100%; max-width: 640px; max-height: min(300px, 40vh); }
-.dk-stand { stroke: #a3a9b1; stroke-width: 5; stroke-linecap: round; }
+.dk-stand { stroke: #8e949d; stroke-width: 4; stroke-linecap: round; }
 .dk-glow { fill: var(--accent); opacity: 0; transition: opacity .08s; pointer-events: none; }
 .dk-ring { fill: none; stroke: var(--accent); stroke-width: 4; stroke-dasharray: 9 6; opacity: 0; pointer-events: none; }
 .dk-now .dk-glow { opacity: .55; }
 .dk-now .dk-ring { opacity: 1; stroke-dasharray: none; }
 .dk-next .dk-ring { opacity: .7; }
 .dk-tag { fill: var(--accent); }
-.dk-tag-text { fill: var(--accent-ink); font-size: 32px; font-weight: 700; text-anchor: middle; }
+.dk-tag-text { fill: var(--accent-ink); font-size: 22px; font-weight: 700; text-anchor: middle; }
 @media (max-width: 640px) {
   .ly-now { font-size: 1rem; }
   .fv-neck { max-height: 90px; }
