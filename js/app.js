@@ -15,7 +15,7 @@ import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport, watchDownloads, showReady } from './quickimport.js';
+import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns } from './quickimport.js';
 import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
@@ -462,14 +462,15 @@ function reviewParts(items, title, artist) {
 
 // Several PDFs of one song (one per instrument, as tools/ug_collect.py saves them): read, check, then one song.
 // Returns the new song's id, or null when cancelled or nothing could be made.
-async function importPdfParts(files) {
+// auto: { title, artist } of a song the UG helper saved: made as it is, without the review.
+async function importPdfParts(files, auto = null) {
   const first = namesFromPdf(files[0].name.replace(/\.[^.]+$/, ''), true);
   const items = await readParts(files, first.title);
   if (!items) { toast('Cancelled: nothing was added.'); return null; }
   // guitar parts with tab first, so the song opens on a guitar (the order can be changed in the review)
   const guitar = (it) => (it.strips && /guitar|acoustic|electric|lead(?!\s*vocal)|rhythm/i.test(it.name) ? 0 : 1);
   items.sort((x, y) => guitar(x) - guitar(y));
-  const pick = await reviewParts(items, first.title, first.artist);
+  const pick = auto ? { title: auto.title || first.title, artist: auto.artist ?? first.artist, items } : await reviewParts(items, first.title, first.artist);
   if (!pick) { toast('Cancelled: nothing was added.'); return null; }
   const { title, artist } = pick;
   const tabs = pick.items.filter((it) => it.strips);
@@ -491,7 +492,7 @@ async function importPdfParts(files) {
   return id;
 }
 
-async function importFiles(files, { quietIfEmpty = false } = {}) {
+async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
   let added = 0;
   const ids = [];
   const failed = [];
@@ -500,7 +501,7 @@ async function importFiles(files, { quietIfEmpty = false } = {}) {
   if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
     files = files.filter((f) => !pdfs.includes(f)); // cancelling adds none of them
     try {
-      const id = await importPdfParts(pdfs);
+      const id = await importPdfParts(pdfs, auto);
       if (id) { ids.push(id); added++; if (!files.length) open = id; }
     } catch (err) { console.error(err); failed.push(...pdfs.map((f) => f.name)); }
   }
@@ -630,11 +631,23 @@ function initFind() {
     if (!s.primary) b.className = 'ghost';
     box.append(b);
   }
-  $('find-form').addEventListener('submit', (e) => {
+  $('find-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const query = $('find-query').value;
     if (!query.trim()) { $('find-query').focus(); return; }
-    const url = sourceUrl(e.submitter?.dataset.site || 'ug-gp', query);
+    const site = e.submitter?.dataset.site || 'ug-gp';
+    const url = sourceUrl(site, query);
+    // Ultimate Guitar with the UG helper running (tools/ug_watch.py): the search opens in the helper's
+    // Chrome, every type listed. Open an Official or Pro song there and its PDFs are saved and added
+    // here as one song by themselves.
+    if (site === 'ug-gp' && (await ugHelper())) {
+      const all = url.replace(/&type=\d+/, '');
+      if (await openInCollector(all)) {
+        watchRuns();
+        watchDownloads({ query, url: all });
+        return;
+      }
+    }
     window.open(url, '_blank', 'noopener');
     watchDownloads({ query, url });
   });

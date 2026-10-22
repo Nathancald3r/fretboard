@@ -166,10 +166,12 @@ TEXT_KINDS = [("-chords-", "Chords"), ("-ukulele-", "Ukulele Chords"), ("-bass-"
 
 def page_kind(pg):
     url = pg.url.split("?")[0]
-    if "-official-" in url:
+    if "-official-" in url or "-pro-" in url:  # Official and Pro songs: a PDF per instrument
         return "official", ""
     if gp_button(pg) is not None:
         return "gp", "Guitar Pro"
+    if pg.evaluate("[...document.querySelectorAll('h2')].some(e=>e.innerText.trim()=='Instruments')"):
+        return "official", ""  # the song player with its Instruments list, whatever the URL says
     for part, label in TEXT_KINDS:
         if part in url:
             return "text", label
@@ -618,7 +620,7 @@ def work(ui, a, result):
         if only:
             names = [x for x in names if x.lower() in only]
         out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
-        names = names if a.yes else ui.ask({"song": song, "artist": artist, "key": key, "names": names, "out": str(out)})
+        names = names if a.yes or a.auto_official else ui.ask({"song": song, "artist": artist, "key": key, "names": names, "out": str(out)})
         if not names:
             result["code"] = SKIPPED
             ui.finish(f"Skipped {song}. Nothing was saved.")
@@ -701,6 +703,7 @@ def main():
     ap.add_argument("--gap", type=float, default=10, help="seconds to wait between tracks")
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
+    ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs: save every track without asking (other pages still ask)")
     a = ap.parse_args()
     PORT = a.port
     result = {"code": FAILED}

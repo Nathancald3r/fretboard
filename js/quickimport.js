@@ -135,7 +135,8 @@ export async function readyRuns(dir) {
       const tracks = Array.isArray(m?.tracks) ? m.tracks.filter((t) => typeof t?.file === 'string' && /\.(pdf|txt|gp\w*)$/i.test(t.file)) : [];
       if (done.has(key) || !tracks.length) continue;
       const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
-      runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || '') });
+      runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
+        title: String(m.song || ''), artist: String(m.artist || '') });
     }
   }
   return runs.sort((a, b) => b.finished.localeCompare(a.finished));
@@ -188,15 +189,72 @@ function button(label, cls, onClick) {
   return b;
 }
 
-async function importRun(r) {
+// auto: made into one song straight away (no review), as the UG helper's songs are.
+async function importRun(r, auto = false) {
   const files = [];
   for (const t of r.tracks) {
     try { files.push(await (await r.dir.getFileHandle(t.file)).getFile()); } catch { /* moved or deleted: left out */ }
   }
-  if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return; }
-  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true });
-  if (ids?.length) await markRun(r.key); // cancelled: it stays offered
+  if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return null; }
+  if (auto) await markRun(r.key); // taken now, so it's never added twice
+  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
+  if (ids?.length && !auto) await markRun(r.key); // cancelled: it stays offered
   showReady();
+  return ids?.[0] ?? null;
+}
+
+/* ---------- the UG helper (tools/ug_watch.py) ---------- */
+
+// The helper runs on this computer and answers on this port: it opens Ultimate Guitar in its own
+// Chrome (where you're logged in) and saves every PDF of an Official or Pro song you open there.
+const HELPER = 'http://127.0.0.1:9231';
+
+/** The helper's status, or null when it isn't running. */
+export async function ugHelper() {
+  if (!canWatch) return null;
+  try {
+    const r = await fetch(HELPER + '/status', { signal: AbortSignal.timeout(1500) });
+    const s = r.ok ? await r.json() : null;
+    return s?.app === 'fretboard-ug-helper' ? s : null;
+  } catch { return null; }
+}
+
+/** Opens a page in the helper's Chrome; false when that didn't work. */
+export async function openInCollector(url) {
+  try {
+    const r = await fetch(HELPER + '/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }), signal: AbortSignal.timeout(15000) });
+    return r.ok && (await r.json()).ok === true;
+  } catch { return false; }
+}
+
+// While you look for a song in the helper's Chrome, each song it finishes saving is made into one
+// song here and opened.
+const RUNS_MINUTES = 45;
+let runs = null; // { since, until, timer }
+let runsBusy = false;
+
+async function checkRuns() {
+  if (!runs || runsBusy) return;
+  if (Date.now() > runs.until) { clearInterval(runs.timer); runs = null; showAuto(); return; }
+  const dir = await grantedFolder();
+  if (!dir) return;
+  runsBusy = true;
+  try {
+    const fresh = (await readyRuns(dir)).filter((r) => new Date(r.finished).getTime() >= runs.since).reverse(); // oldest first
+    for (const r of fresh) {
+      ctx.toast(`Adding “${r.song}” from the UG helper…`, 6000);
+      const id = await importRun(r, true);
+      if (id && fresh.at(-1) === r) ctx.openSong(id, { playAlong: false });
+    }
+  } catch (err) { console.error(err); } finally { runsBusy = false; }
+}
+
+export async function watchRuns() {
+  if (!ctx || !canWatch) return;
+  const since = runs?.since ?? Date.now() - 60e3;
+  clearInterval(runs?.timer);
+  runs = { since, until: Date.now() + RUNS_MINUTES * 60e3, timer: setInterval(checkRuns, 4000) };
+  await showAuto();
 }
 
 async function changeFolder(toast) {
@@ -244,10 +302,11 @@ async function showAuto() {
   if (dir) {
     const on = document.createElement('span');
     on.className = 'find-auto-on';
-    on.textContent = watch ? '● Waiting for your download: save the Guitar Pro file on the site and it opens here, ready for play-along.' : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
+    on.textContent = runs ? '● UG helper on: open an Official or Pro song in its Chrome window. Its PDFs are saved and added here as one song by themselves (Guitar Pro files too, once you download them).'
+      : watch ? '● Waiting for your download: save the Guitar Pro file on the site and it opens here, ready for play-along.' : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
     el.append(on);
   } else {
-    el.append(watch ? 'One click, once, so the file you download opens here by itself: ' : 'Auto-import is off. ');
+    el.append(runs ? 'One click, once, so the songs the UG helper saves are added here by themselves: ' : watch ? 'One click, once, so the file you download opens here by itself: ' : 'Auto-import is off. ');
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'ghost small';
@@ -305,8 +364,8 @@ export async function watchDownloads({ query = '', url = '' } = {}) {
 export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   ctx = { importFiles, toast, openSong };
   showAuto();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) autoImport(); });
-  window.addEventListener('focus', autoImport);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); } });
+  window.addEventListener('focus', () => { autoImport(); checkRuns(); });
   window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector
   $('btn-clip').hidden = !navigator.clipboard?.readText;
   $('btn-clip').addEventListener('click', () => pasteFromClipboard(openEditor));
