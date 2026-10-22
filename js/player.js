@@ -882,7 +882,7 @@ function showMix() {
   $('pl-solo').classList.toggle('on', mix[trackIndex].solo);
   $('pl-track-btn').classList.toggle('silent', !isAudible(trackIndex));
   $('pl-mixer-note').textContent = mixChanged() ? '' : 'Vocals are set loudest, then lead guitar and drums. Click a name to show that track. M = mute, S = solo (you can solo several).';
-  $('pl-mix-reset').hidden = !mixChanged();
+  $('pl-mix-reset').hidden = !mixChanged() && $('amp-song-vol').value === '100' && othersVol === 1;
 }
 
 function setMute(i, on = !mix[i].mute) {
@@ -2218,7 +2218,7 @@ export function initPlayer() {
   const master = $('pl-master');
   const songVol = $('amp-song-vol');
   master.addEventListener('input', () => { songVol.value = master.value; songVol.dispatchEvent(new Event('input')); });
-  songVol.addEventListener('input', showMaster);
+  songVol.addEventListener('input', showMix);
   $('pl-others').addEventListener('input', () => {
     othersVol = Number($('pl-others').value) / 100;
     try { localStorage.setItem('fretboard-others', String(othersVol)); } catch { /* ignore */ }
@@ -2244,7 +2244,18 @@ export function initPlayer() {
   ['click', 'input', 'change'].forEach((t) => mixer.addEventListener(t, onMixerInput));
   $('pl-mute').addEventListener('click', () => score && setMute(trackIndex));
   $('pl-solo').addEventListener('click', () => score && setSolo(trackIndex));
-  $('pl-mix-reset').addEventListener('click', () => { if (!score) return; mix = defaultMix(score); applyMix(); saveMix(); });
+  // Reset mix: the song's own track levels, Master and Other parts back to 100%.
+  $('pl-mix-reset').addEventListener('click', () => {
+    if (!score) return;
+    mix = defaultMix(score);
+    othersVol = 1;
+    try { localStorage.setItem('fretboard-others', '1'); } catch { /* ignore */ }
+    const songVol = $('amp-song-vol');
+    songVol.value = '100';
+    songVol.dispatchEvent(new Event('input'));
+    applyMix();
+    saveMix();
+  });
 
   // Setlist: previous / next song.
   ['pl-prev-song', 'pl-next-song'].forEach((id) => $(id).addEventListener('click', (e) => { if (e.currentTarget.dataset.id) location.hash = `song/${e.currentTarget.dataset.id}`; }));
