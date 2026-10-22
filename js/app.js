@@ -385,7 +385,7 @@ async function readParts(files, title) {
       };
       say();
       try {
-        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer });
+        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name) });
         if (r.strips?.length) {
           it.strips = r.strips;
           it.bars = ugToAlphaTex(r.strips, { title, name: it.name, program: it.program })?.bars || 0;
@@ -493,6 +493,7 @@ async function importPdfParts(files, auto = null) {
 }
 
 async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
+  files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name)); // the UG helper's note for the library, not a song
   let added = 0;
   const ids = [];
   const failed = [];
@@ -521,7 +522,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null } = {}) {
         const { pdfToTab } = await import('./pdftab.js');
         toast('Reading the PDF…', 8000);
         const { title, artist } = namesFromPdf(base);
-        const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist });
+        const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist, bass: /bass/i.test(base) });
         if (!r.tex && !r.text.trim()) { // no tab in it (piano or vocal staff): keep the PDF to read as pages
           ids.push(await putSong({ kind: 'sheet', title, artist, data: await file.arrayBuffer(), fileName: file.name, added: Date.now() }));
           added++;

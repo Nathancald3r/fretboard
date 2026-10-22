@@ -258,7 +258,24 @@ def free_name(folder, stem, ext):
 def write_manifest(out, name, data):
     """What Fretboard reads to offer the song for import (fretboard-run*.json in the song folder)."""
     data = {"app": "fretboard-ug-collect", "version": 1, **data, "finished": datetime.now().isoformat(timespec="seconds")}
-    (out / name).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    f = out / name
+    hide_file(f, False)  # a hidden file can't be written over
+    f.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    hide_file(f)
+
+
+def hide_file(f, hidden=True):
+    """Windows' hidden mark, so the file stays out of the way when you pick the song's files
+    (Fretboard still finds it)."""
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        attrs = k.GetFileAttributesW(str(f))
+        if attrs == 0xFFFFFFFF:
+            return
+        k.SetFileAttributesW(str(f), (attrs | 0x2) if hidden else (attrs & ~0x2))
+    except Exception:
+        pass
 
 
 # ---------- windows ----------
@@ -726,6 +743,8 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
     """One track: show it, take the score once it has stopped changing, write the PDF."""
     pick_track(pg, n, k)
     pg.wait_for_timeout(2500)
+    # the track's tuning, as text under its name: Fretboard reads it to find a bass's 4-line staff
+    tuning = pg.evaluate(r"((document.body.innerText.match(/Tuning:\s*([A-G][^\n]*?)\s*(?=Key:|Capo:|\n|$)/) || [])[1] || '').trim()")
     shot, last = None, None
     for _ in range(8):  # drawn when two looks in a row agree
         hold(ui)
@@ -736,7 +755,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
         pg.wait_for_timeout(1000)
     out = ctx.new_page()
     try:
-        res = out.evaluate(PAGES_JS, {"shot": shot, "title": label, "lines": [lines[0], lines[1], n]})
+        res = out.evaluate(PAGES_JS, {"shot": shot, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
         if res.get("error"):
             return False, res["error"], res
         hold(ui)

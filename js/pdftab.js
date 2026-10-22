@@ -285,7 +285,7 @@ const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test
  * @param {ArrayBuffer} buf the PDF
  * @returns {Promise<{ text: string, how: 'text'|'image', systems: number, unknown: number }>}
  */
-export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true } = {}) {
+export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true, bass = false } = {}) {
   const lib = await loadPdfjs();
   const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
   const pages = [];
@@ -307,7 +307,8 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     const base = PAGE_WIDTH / page.getViewport({ scale: 1 }).width;
     let r = await renderInk(page, base);
     // a staff with as many lines as the tuning has strings (bass: 4); six-line guitar staves always
-    const counts = [...new Set([6, tuning?.length || 6])];
+    // (a bass part whose PDF doesn't say its tuning: four strings)
+    const counts = [...new Set([6, tuning?.length || (bass ? 4 : 6)])];
     let staves = findStaves(r.light, r.w, r.h, r.ink, counts);
     if (staves.length) { // a graphic TAB staff (Ultimate Guitar Tab Pro)
       how = 'staff';
