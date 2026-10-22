@@ -5,7 +5,8 @@ const BLACK = [1, 3, 6, 8, 10]; // pitch classes of the black keys
 
 let host = null;
 let geometry = null; // { lo, hi, key(m) -> { x, w, black } }
-let layer = null;
+let layer = null; // lit white keys: under the black keys
+let blackLayer = null; // lit black keys: on top
 let nameOf = (m) => String(m);
 
 const el = (name, attrs) => {
@@ -62,30 +63,49 @@ export function setKeys(range, names) {
       svg.append(t);
     }
   }
-  for (const [, k] of keys) if (k.black) svg.append(el('rect', { x: k.x, y: top, width: k.w, height: bh, rx: 2, class: 'kv-black' }));
   layer = el('g', {});
   svg.append(layer);
+  for (const [, k] of keys) if (k.black) svg.append(el('rect', { x: k.x, y: top, width: k.w, height: bh, rx: 2, class: 'kv-black' }));
+  blackLayer = el('g', {});
+  svg.append(blackLayer);
   host.append(svg);
   geometry = { lo, hi, keys, top, h, bh };
 }
 
-/** now / next: MIDI note numbers. */
+/**
+ * now / next: MIDI note numbers, or for now { m, level, to, ms }: how solid the key is lit
+ * (0..1, from how loud the note is played) and, while playing, what it turns to over ms
+ * (a held note stays solid, a note getting quieter fades).
+ */
 export function showKeys(now = [], next = []) {
   if (!geometry || !layer) return;
   const { keys, top, h, bh } = geometry;
   layer.textContent = '';
-  const mark = (m, cls) => {
+  blackLayer.textContent = '';
+  const mark = (m, cls, how) => {
     const k = keys.get(m);
     if (!k) return;
     const g = el('g', { class: cls + (k.black ? ' kv-on-black' : '') });
     const height = k.black ? bh : h - top - 2;
-    g.append(el('rect', { x: k.x + (k.black ? 0 : 0.5), y: top, width: k.black ? k.w : k.w - 1, height, rx: 3 }));
+    const rect = el('rect', { x: k.x + (k.black ? 0 : 0.5), y: top, width: k.black ? k.w : k.w - 1, height, rx: 3 });
+    g.append(rect);
     const t = el('text', { x: k.x + k.w / 2, y: top + height - 10 });
     t.textContent = nameOf(m).replace(/-?\d+$/, '');
     g.append(t);
-    layer.append(g);
+    (k.black ? blackLayer : layer).append(g);
+    if (how?.level != null) {
+      rect.style.fillOpacity = how.level;
+      if (how.ms > 0 && how.to != null && Math.abs(how.to - how.level) > 0.02) {
+        rect.animate?.([{ fillOpacity: how.level }, { fillOpacity: how.to }], { duration: how.ms, easing: 'linear', fill: 'forwards' });
+      }
+    }
   };
-  const nowSet = new Set(now);
-  for (const m of new Set(next)) if (!nowSet.has(m)) mark(m, 'kv-next');
-  for (const m of nowSet) mark(m, 'kv-now');
+  const lit = new Map();
+  for (const n of now) {
+    const how = typeof n === 'number' ? { m: n } : n;
+    const had = lit.get(how.m);
+    if (!had || (how.level ?? 1) > (had.level ?? 1)) lit.set(how.m, how);
+  }
+  for (const m of new Set(next)) if (!lit.has(m)) mark(m, 'kv-next');
+  for (const [m, how] of lit) mark(m, 'kv-now', how);
 }

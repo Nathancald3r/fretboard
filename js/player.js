@@ -1470,6 +1470,38 @@ const drumNote = (n) => {
 // A tied drum note isn't hit again.
 const sounding = (beat) => (beat?.notes || []).filter((n) => !(n.isTieDestination && viewKind === 'drums'));
 
+// How loud a note is played (MIDI velocity, as alphaTab plays it) shown as how solid its key
+// is lit: pianissimo is faint, fortissimo solid.
+const VELOCITY = [15, 31, 47, 63, 79, 95, 111, 127, 10, 5, 3, 127, 127, 127];
+function noteLevel(n) {
+  let v = VELOCITY[n.dynamics] ?? 111;
+  if (n.isGhost) v -= 16;
+  if (n.accentuated === 1) v += 16; else if (n.accentuated === 2) v += 32;
+  v = Math.max(1, Math.min(127, v));
+  return Math.round((0.25 + 0.75 * Math.sqrt(Math.max(0, v - 15) / 112)) * 100) / 100; // mf 0.82, p 0.65, ppp 0.25
+}
+// What the key turns to while the note sounds: a held note stays as solid as it started; a
+// diminuendo (or a fade out) fades it, a crescendo (or fade in) makes it more solid.
+function loudness(n, ms) {
+  const level = noteLevel(n);
+  const b = n.beat;
+  let to = level;
+  const after = b.nextBeat?.notes?.[0];
+  const nextLevel = after ? noteLevel(after) : null;
+  if (b.crescendo === 2 || b.fade === 2) to = nextLevel != null && nextLevel < level ? nextLevel : Math.max(0.15, level - 0.35);
+  else if (b.crescendo === 1 || b.fade === 1) to = nextLevel != null && nextLevel > level ? nextLevel : Math.min(1, level + 0.35);
+  return { level, to, ms };
+}
+// How long a beat lasts at the current tempo and speed (ms).
+function beatMs(beat) {
+  let tempo = score?.tempo || 120;
+  for (let i = beat.voice.bar.masterBar.index; i >= 0; i--) {
+    const t = score.masterBars[i]?.tempoAutomations;
+    if (t?.length) { tempo = t[t.length - 1].value; break; }
+  }
+  return (beat.playbackDuration / 960) * (60000 / tempo) / (api?.playbackSpeed || 1);
+}
+
 function onBeat(beat) {
   if ($('pl-fretview').hidden || !viewKind) return;
   if (beat && beat.voice?.bar?.staff?.track?.index !== trackIndex) return;
@@ -1480,7 +1512,8 @@ function onBeat(beat) {
     showNotes(frets(beat), frets(next));
   } else if (viewKind === 'keys') {
     const keys = (b) => sounding(b).map((n) => n.realValue).filter((m) => m > 0);
-    showKeys(keys(beat), keys(next));
+    const ms = api?.playerState === PLAYING && beat === playedBeat ? beatMs(beat) : 0;
+    showKeys(sounding(beat).filter((n) => n.realValue > 0).map((n) => ({ m: n.realValue, ...loudness(n, ms) })), keys(next));
   } else {
     const hits = (b) => sounding(b).map(drumNote);
     showDrums(hits(beat), hits(next));
