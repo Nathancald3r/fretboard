@@ -657,7 +657,7 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .kit-over #alphatab { padding-bottom: min(190px, 26vh); }
 .sheet-up .fret-pane.over-music { visibility: hidden; }
 .master-row .master-val { width: calc(2 * 34px + .5rem); }
-.dk-kit { display: block; width: 100%; max-width: 640px; max-height: min(300px, 40vh); }
+.dk-kit { display: block; width: 100%; max-width: 760px; max-height: min(300px, 40vh); }
 .dk-stand { stroke: #8e949d; stroke-width: 4; stroke-linecap: round; }
 .dk-glow { fill: var(--accent); opacity: 0; transition: opacity .08s; pointer-events: none; }
 .dk-ring { fill: none; stroke: var(--accent); stroke-width: 4; stroke-dasharray: 9 6; opacity: 0; pointer-events: none; }
