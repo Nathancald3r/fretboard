@@ -16,7 +16,7 @@ import os, subprocess, sys, urllib.request
 from pathlib import Path
 
 SITE = "https://nathancald3r.github.io/fretboard/tools/"
-FILES = ["ug_watch.py", "ug_collect.py", "ug_helper_setup.py"]
+FILES = ["ug_watch.py", "ug_collect.py", "ug_helper_setup.py", "ug_save_dialog.ps1"]
 # Not under AppData: the Microsoft Store's Python keeps its own private copy of that folder.
 HOME = Path.home() / "Fretboard UG helper"
 CHROME = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
