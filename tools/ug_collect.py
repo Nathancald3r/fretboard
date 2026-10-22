@@ -64,11 +64,52 @@ def park_chrome(cdp, pg):
 
 
 def show_chrome():
+    """Brings the parked Chrome up; returns its windows (to park again with back_from_chrome)."""
     try:
-        from ug_watch import show_window
+        from ug_watch import show_window, offscreen_windows
+        hs = offscreen_windows()
         show_window()
+        return hs
+    except Exception:
+        return []
+
+
+def back_from_chrome(hs, last):
+    """Parks Chrome off the screen again, without the focus, and brings back the window you were using."""
+    try:
+        from ug_watch import _win32, OFF_LEFT
+        _, _, u32, _ = _win32()
+        for h in hs:
+            if u32.IsWindow(h):
+                u32.ShowWindow(h, 4)  # SW_SHOWNOACTIVATE: out of maximized, without the focus
+                u32.SetWindowPos(h, 0, OFF_LEFT, 0, 1500, 1000, 0x0004 | 0x0010)  # NOZORDER | NOACTIVATE
+        if last and u32.IsWindow(last):
+            focus_window(last)
     except Exception:
         pass
+
+
+def focus_window(h):
+    """Windows only lets the window you're using hand the focus over: borrow its input for a moment."""
+    from ug_watch import _win32
+    ctypes_, _, u32, _ = _win32()
+    k32 = ctypes_.windll.kernel32
+    if u32.IsIconic(h):
+        u32.ShowWindow(h, 9)  # SW_RESTORE
+    fg = u32.GetForegroundWindow()
+    them, me = u32.GetWindowThreadProcessId(fg, None), k32.GetCurrentThreadId()
+    joined = them and them != me and u32.AttachThreadInput(me, them, True)
+    u32.BringWindowToTop(h)
+    u32.SetForegroundWindow(h)
+    if joined:
+        u32.AttachThreadInput(me, them, False)
+
+
+def foreground_window():
+    try:
+        return ctypes.windll.user32.GetForegroundWindow()
+    except Exception:
+        return 0
 
 
 # ---------- the computer: is someone using it? ----------
@@ -503,6 +544,10 @@ class TkUI:
     def _watch(self):
         if self.closed:
             return
+        # the window you're using (not this one, not the collector Chrome): where "Back to my window" goes
+        fg = foreground_window()
+        if fg and fg != self._own_hwnd() and fg not in getattr(self, "_chrome_hs", []):
+            self._last_fg = fg
         t = getattr(self, "thread", None)
         if t is not None and not t.is_alive() and self.working and not self.aborted:
             self._abort(self.cancel.is_set())  # the work ended without a word (an error it didn't expect)
@@ -605,6 +650,8 @@ class TkUI:
         def answer(names, mode=""):
             self.mode = mode
             box["names"] = names
+            if names:
+                self._starting(len(names))  # at once, so the press shows; the progress takes over when the first track starts
             ev.set()
 
         picked = lambda: [n for n, v in vars_ if v.get()] or None
@@ -619,6 +666,46 @@ class TkUI:
         self._place()
         self.root.lift()
         self.root.focus_force()
+
+    def _own_hwnd(self):
+        try:
+            return int(self.root.wm_frame(), 16)
+        except Exception:
+            return 0
+
+    def _starting(self, n):
+        """Shown the moment Start or Replace is pressed: Chrome takes a while to open the song."""
+        self._clear()
+        self.root.title("Saving PDFs")
+        self._label("Getting ready…", 11, bold=True, color=self.ACCENT)
+        self._label(f"Opening the song in Chrome to save {n} track{'s' if n > 1 else ''}. "
+                    "This takes a few seconds; the progress shows here.", 9, color=self.MUTED)
+        style = self.ttk.Style(self.root)
+        style.theme_use("default")
+        style.configure("fb.Horizontal.TProgressbar", background=self.ACCENT, troughcolor="#33363d", thickness=10)
+        busy = self.ttk.Progressbar(self.body, style="fb.Horizontal.TProgressbar", length=380, mode="indeterminate")
+        busy.pack(fill="x", pady=(2, 8))
+        busy.start(12)
+        self._place(corner=True)
+
+    def _toggle_chrome(self):
+        """Show UG window, and from there back to the window you were using."""
+        if getattr(self, "_chrome_hs", None):
+            hs, self._chrome_hs = self._chrome_hs, []
+            self._show_btn.configure(text="Show UG window")
+            threading.Thread(target=back_from_chrome, args=(hs, getattr(self, "_last_fg", 0)), daemon=True).start()
+            return
+        self._show_btn.configure(text="Back to my window")
+
+        def show():
+            self._chrome_hs = show_chrome()
+            if not self._chrome_hs:  # nothing was parked (a Chrome the helper didn't start): just a show
+                self.q.put(("show_btn_text", "Show UG window"))
+        threading.Thread(target=show, daemon=True).start()
+
+    def _show_btn_text(self, text):
+        if getattr(self, "_show_btn", None) and self._show_btn.winfo_exists():
+            self._show_btn.configure(text=text)
 
     def _progress(self, i, n, name, eta, note):
         ttk = self.ttk
@@ -638,7 +725,7 @@ class TkUI:
             row.pack(fill="x")
             self._pause_btn = self._button(row, "Pause", self._pause, primary=True)
             self._cancel_btn = self._button(row, "Cancel", self._cancel)
-            self._button(row, "Show UG window", lambda: threading.Thread(target=show_chrome, daemon=True).start())
+            self._show_btn = self._button(row, "Show UG window", self._toggle_chrome)
             self._on_close = self._cancel
             self._place(corner=True)
         self._bar["value"] = i
