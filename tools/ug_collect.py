@@ -224,6 +224,26 @@ def front(pg):
         pass
 
 
+FPS_JS = """()=>new Promise((res)=>{let n=0;const t0=performance.now();
+  const f=()=>{n++;if(performance.now()-t0<300)requestAnimationFrame(f);else res(n)};
+  requestAnimationFrame(f);setTimeout(()=>res(n),1000)})"""
+
+
+def keep_drawing(cdp, pg):
+    """Chrome draws only the tab in front of a window that isn't minimized, and every picture of the
+    score waits for a drawing: a tab clicked meanwhile or the window minimized slows each track to a
+    crawl. Behind other windows or off the screen it draws at full speed, so only those two are put right."""
+    try:
+        minimized = cdp.send("Browser.getWindowForTarget")["bounds"].get("windowState") == "minimized"
+        if not minimized and pg.evaluate(FPS_JS) >= 5:
+            return
+        front(pg)
+        if minimized:
+            park_chrome(cdp, pg)
+    except Exception:
+        pass
+
+
 def open_instruments(pg):
     """Show the player's Instruments panel (track list) if it's folded away."""
     for _ in range(3):
@@ -334,15 +354,16 @@ def official_chords(pg):
             pass
 
 
-# The best Chords page in UG's search results for a song: the closest name, then rating and votes.
-CHORDS_JS = r"""(q) => {
+# The best page of a kind ("Chords", or "Pro" for Guitar Pro) in UG's search results for a song:
+# the closest name, then rating and votes.
+CHORDS_JS = r"""([q, type]) => {
   const r = window.UGAPP?.store?.page?.data?.results;
   if (!Array.isArray(r)) return null;
   const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const words = norm(q).split(' ').filter(Boolean);
   let best = null, top = -1;
   for (const x of r) {
-    if (!x || x.type !== 'Chords' || !/^https:\/\/tabs\.ultimate-guitar\.com\/tab\//.test(x.tab_url || '')) continue;
+    if (!x || x.type !== type || !/^https:\/\/tabs\.ultimate-guitar\.com\/tab\//.test(x.tab_url || '')) continue;
     const hay = ' ' + norm(`${x.artist_name} ${x.song_name}`) + ' ';
     const m = words.filter((w) => hay.includes(` ${w} `)).length / Math.max(1, words.length);
     const score = m * 100 + (x.rating || 0) * 4 + Math.min(9, Math.log10(1 + (x.votes || 0)) * 2);
@@ -352,22 +373,109 @@ CHORDS_JS = r"""(q) => {
 }"""
 
 
-def search_chords(ctx, song, artist):
-    """The song's best Chords page on UG: (text, video id). ("", "") when there's none. Opened in a
-    tab of its own, which is closed again."""
+def search_url(pg, song, artist, type, code):
+    """The best result of a kind for the song on UG's search page, opened in pg; "" when there's none."""
     import urllib.parse
+    q = f"{artist} {song}".strip()
+    pg.goto("https://www.ultimate-guitar.com/search.php?" + urllib.parse.urlencode({"search_type": "title", "value": q, "type": code}),
+            wait_until="domcontentloaded", timeout=30000)
+    url = None
+    for _ in range(20):
+        url = pg.evaluate(CHORDS_JS, [q, type])
+        if url is not None:
+            break
+        pg.wait_for_timeout(500)
+    return url or ""
+
+
+def search_gp(ctx, song, artist):
+    """The song's best Guitar Pro page on UG, or "". Looked up in a tab of its own, closed again."""
     pg = None
     try:
         pg = ctx.new_page()
-        q = f"{artist} {song}".strip()
-        pg.goto("https://www.ultimate-guitar.com/search.php?" + urllib.parse.urlencode({"search_type": "title", "value": q, "type": 300}),
-                wait_until="domcontentloaded", timeout=30000)
-        url = None
+        return search_url(pg, song, artist, "Pro", 500)
+    except Exception as e:
+        print(f"  (No Guitar Pro version: {str(e).splitlines()[0][:100]})")
+        return ""
+    finally:
+        if pg:
+            try:
+                pg.close()
+            except Exception:
+                pass
+
+
+def official_gp(pg):
+    """The Guitar Pro version an official song's page links to ("best Pro tab"), or ""."""
+    try:
+        u = pg.evaluate("()=>window.UGAPP?.store?.page?.data?.tab?.best_pro_tab_url||''")
+    except Exception:
+        return ""
+    return u if re.match(r"^https://tabs\.ultimate-guitar\.com/tab/", u or "") else ""
+
+
+def official_as_gp(ui, a, result, ctx, pg, gp_url, song, key, n):
+    """An official song saved as its Guitar Pro file (plus the official chords). False when that
+    page has no Download button (then the PDFs are saved as before)."""
+    chords = official_chords(pg)
+    gpg = ctx.new_page()
+    try:
+        gpg.set_default_timeout(15000)
+        gpg.goto(gp_url, wait_until="domcontentloaded", timeout=30000)
         for _ in range(20):
-            url = pg.evaluate(CHORDS_JS, q)
-            if url is not None:
+            if gp_button(gpg) is not None:
                 break
-            pg.wait_for_timeout(500)
+            gpg.wait_for_timeout(500)
+        else:
+            return False
+        save_single(ui, a, result, gpg, "gp", "Guitar Pro", key=key, url=gp_url, chords=chords,
+                    what=f"UG has a Guitar Pro file of {song}: every track as a real score, which Fretboard "
+                         f"plays far more accurately than the {n} PDFs of the official player. Save it?")
+        return True
+    finally:
+        try:
+            gpg.close()
+        except Exception:
+            pass
+
+
+def tidy_tabs(keep_url=""):
+    """Closes the tabs runs leave behind in the collector Chrome: blank tabs, UG's home page and
+    second copies of a song. One tab of each song stays (this run's song first), as does any page
+    that isn't UG's and a search you may still be picking from; Chrome always keeps a tab."""
+    base = lambda u: u.split("?")[0].split("#")[0].rstrip("/")
+    try:
+        ts = [t for t in targets() if t["type"] == "page"]
+    except Exception:
+        return
+    keep = base(keep_url)
+    ts.sort(key=lambda t: base(t["url"]) != keep)  # this run's song tab is the copy that stays
+    seen, close = set(), []
+    for t in ts:
+        u = base(t["url"])
+        ug = re.match(r"^https://(www\.|tabs\.)?ultimate-guitar\.com(/|$)", u + "/")
+        if u in ("about:blank", "chrome://newtab", "chrome://new-tab-page") or (ug and u.count("/") <= 2):
+            close.append(t)
+        elif ug and "/tab/" in u and u in seen:
+            close.append(t)
+        else:
+            seen.add(u)
+    if len(close) == len(ts):
+        close = close[1:]
+    for t in close:
+        try:
+            urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
+        except Exception:
+            pass
+
+
+def search_chords(ctx, song, artist):
+    """The song's best Chords page on UG: (text, video id). ("", "") when there's none. Opened in a
+    tab of its own, which is closed again."""
+    pg = None
+    try:
+        pg = ctx.new_page()
+        url = search_url(pg, song, artist, "Chords", 300)
         if not url:
             return "", ""
         pg.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -1139,16 +1247,18 @@ def save_gp(pg, out, stem):
             pass
 
 
-def save_single(ui, a, result, pg, kind, label):
-    """A chord sheet / plain tab (as text) or a Guitar Pro tab (its download): one file."""
+def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, what=None):
+    """A chord sheet / plain tab (as text) or a Guitar Pro tab (its download): one file.
+    An official song's Guitar Pro version comes here too, with the official page's key and chords."""
     song, artist = song_name(pg)
+    url = url or a.url
     info = page_text(pg) if kind == "text" else {}
     if kind == "text" and not info.get("text", "").strip():
         raise RuntimeError("Couldn't find the tab's text on this page. Wait until it has loaded and open it again.")
-    key = (info.get("key") or "").replace("\u266d", "b").replace("\u266f", "#")
+    key = key or (info.get("key") or "").replace("\u266d", "b").replace("\u266f", "#")
     out = (Path(a.out) if a.out else song_folder(a.root, song, artist, key)).resolve()
-    what = (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
-            else "Save this Guitar Pro tab with the page's Download button?")
+    what = what or (f"Save this {label.lower()} sheet as a text file?" if kind == "text"
+                    else "Save this Guitar Pro tab with the page's Download button?")
     names = [label] if a.yes or a.auto_official else ui.ask({"song": song, "artist": artist, "key": key, "names": [label], "out": str(out), "what": what,
                                           **({"again": True} if a.again else {}),
                                           "note": "One file, saved in a few seconds. Then Fretboard's library offers it (Review & create)."})
@@ -1166,10 +1276,9 @@ def save_single(ui, a, result, pg, kind, label):
             head = " · ".join(x for x in (label, info["key"] and f"Key: {info['key']}", info["capo"] and f"Capo: {info['capo']}",
                                           info["tuning"] and f"Tuning: {info['tuning']}") if x)
             dest = free_name(out, stem, ".txt")
-            dest.write_text(f"{song} - {artist}\n{head}\nFrom: {a.url}\n\n{info['text'].rstrip()}\n", encoding="utf-8")
+            dest.write_text(f"{song} - {artist}\n{head}\nFrom: {url}\n\n{info['text'].rstrip()}\n", encoding="utf-8")
             run.files.append(dest)
-        else:
-            wait_idle(ui, 0, 1, label, 5)
+        else:  # straight into the folder (no Save As window), so it needn't wait for the mouse
             dest = save_gp(pg, out, stem)
             if not dest:
                 raise RuntimeError("The download didn't arrive (the page may need you to be logged in). Nothing was kept.")
@@ -1180,7 +1289,7 @@ def save_single(ui, a, result, pg, kind, label):
         video = page_video(pg)
         if kind == "gp":  # its chords over the words, from the song's Chords page
             ui.progress(0, 1, "chords")
-            text, v2 = search_chords(pg.context, song, artist)
+            text, v2 = (chords, "") if chords else search_chords(pg.context, song, artist)
             hold(ui)
             name = save_chords(out, song, artist, text, run, replace)
             if name:
@@ -1193,7 +1302,7 @@ def save_single(ui, a, result, pg, kind, label):
             name = take_place(dest, out / f"{stem}{dest.suffix}")
             dest = out / name
             man = out / ("fretboard-run-" + label.lower().replace(" ", "-") + ".json")
-        write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": a.url, "kind": kind,
+        write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": url, "kind": kind,
                                        "tracks": [{"name": label, "file": dest.name}], "missing": [], **extra, **({"replace": True} if replace else {})})
         run.files.append(man)
     except Cancelled:
@@ -1235,6 +1344,15 @@ def work(ui, a, result):
             # original key from the "Tuning: ... · Key: Bb · Capo: ..." line
             km = re.search(r"Key:\s*([A-G][#b♭♯]?m?)", pg.evaluate("document.body.innerText"))
             key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
+            # its Guitar Pro version first: a real score (every note, rhythm and track as written),
+            # where PDFs of the official player come out as pictures to read back
+            if not a.only.strip() and not a.pdfs:
+                gp_url = official_gp(pg) or search_gp(ctx, song, artist)
+                if gp_url:
+                    done = official_as_gp(ui, a, result, ctx, pg, gp_url, song, key, len(names))
+                    if done:
+                        return
+                    print("  (The Guitar Pro version has no Download button: saving the PDFs instead.)")
         if not names:
             raise RuntimeError("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, and try again.")
         every = list(names)  # all the song's tracks (a replaced song keeps the ones not saved again)
@@ -1272,6 +1390,7 @@ def work(ui, a, result):
                         ui.progress(i, len(names), n, eta, "" if attempt == 1 else "Trying this track again.")
                         t0 = time.time()
                         try:
+                            keep_drawing(cdp, pg)
                             ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n))
                             while ok and res.get("full") and size + 1 < len(sizes):
                                 dest.unlink()  # its end was below the screen: again, on a taller one
@@ -1368,6 +1487,8 @@ def work(ui, a, result):
         except Exception:
             pass
         ui.finish(f"Something went wrong, so it stopped:\n{err}\n\nFiles already saved were kept.", run.out if run else None)
+    finally:
+        tidy_tabs(a.url)
 
 
 def main():
@@ -1382,6 +1503,7 @@ def main():
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
     ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
+    ap.add_argument("--pdfs", action="store_true", help="official songs: the PDFs of the official player, even when a Guitar Pro version exists")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
