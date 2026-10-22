@@ -1014,6 +1014,9 @@ function showTrackInfo() {
   if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
   // The focus view shows just the key, and the capo when there is one.
+  const capoBadge = $('pl-capo-badge');
+  capoBadge.hidden = !(fretted && staff?.capo > 0);
+  capoBadge.textContent = staff?.capo > 0 ? `Capo ${staff.capo}` : '';
   $('pl-info').dataset.short = [songKey() ? 'Key ' + keyLabel(songKey()) : '', staff?.capo ? `Capo ${staff.capo}` : ''].filter(Boolean).join(' · ');
   showShift();
 }

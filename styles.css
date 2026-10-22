@@ -465,6 +465,9 @@ body.live-mode #pl-bpm-input { pointer-events: none; }
 .player-head > .setlist-nav { flex-basis: auto; margin-left: auto; display: flex; align-items: center; gap: .2rem; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .1rem .3rem; }
 .player-head > .setlist-nav[hidden] { display: none; }
 .pill.rec { background: #5a1d1d; color: #ffb4a8; font-size: .75rem; min-width: 0; }
+/* A capo is easy to miss and wrecks the whole song: shout it. */
+.capo-badge { flex: 0 0 auto; background: var(--accent); color: var(--accent-ink); font-weight: 900; font-size: .95rem; letter-spacing: .06em; text-transform: uppercase; padding: .2rem .7rem; border-radius: 8px; white-space: nowrap; box-shadow: 0 0 0 2px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); }
+.capo-badge[hidden] { display: none; }
 #pl-next-song.pulse { border-color: var(--accent); color: var(--accent); animation: pulse 1.2s ease-in-out 3; }
 @keyframes pulse { 50% { background: #3a3326; } }
 
