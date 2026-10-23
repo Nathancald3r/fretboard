@@ -340,6 +340,56 @@ function thickRest(ink, w, st, xa, xb) {
 
 /* ---------- strips -> bars ---------- */
 
+// Marks drawn just above a tab staff: a swell "<" (the note fades in, as with a sustainer or volume
+// knob) and a wavy line (vibrato over the notes under it).
+export function readMarks(ink, w, st) {
+  const u = st.u, top = st.ys[0];
+  const y0 = Math.max(0, Math.round(top - 2.8 * u)), y1 = Math.round(top - 0.3 * u);
+  const x0 = Math.round(st.x0), x1 = Math.round(st.x1);
+  const seen = new Uint8Array((x1 - x0 + 1) * (y1 - y0 + 1));
+  const W = x1 - x0 + 1;
+  const swells = [], waves = [];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (!ink[y * w + x] || seen[(y - y0) * W + x - x0]) continue;
+    const px = [], stack = [[x, y]];
+    seen[(y - y0) * W + x - x0] = 1;
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      px.push(cx, cy);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < x0 || nx > x1 || ny < y0 || ny > y1 || !ink[ny * w + nx] || seen[(ny - y0) * W + nx - x0]) continue;
+        seen[(ny - y0) * W + nx - x0] = 1; stack.push([nx, ny]);
+      }
+    }
+    let a = Infinity, b = -1, c = Infinity, d = -1;
+    for (let i = 0; i < px.length; i += 2) { a = Math.min(a, px[i]); b = Math.max(b, px[i]); c = Math.min(c, px[i + 1]); d = Math.max(d, px[i + 1]); }
+    const cw = b - a + 1, ch = d - c + 1;
+    if (c <= y0 || d >= y1) continue; // cut off by the band: something bigger (a word, an arc into the staff)
+    // the wavy line: long and flat, its top edge going up and down again and again
+    if (cw >= 1.5 * u && ch <= 0.5 * u) {
+      const tops = new Array(cw).fill(Infinity);
+      for (let i = 0; i < px.length; i += 2) tops[px[i] - a] = Math.min(tops[px[i] - a], px[i + 1]);
+      let turns = 0, dir = 0;
+      for (let k = 1; k < cw; k++) {
+        const s = Math.sign(tops[k] - tops[k - 1]);
+        if (s && s !== dir) { if (dir) turns++; dir = s; }
+      }
+      if (turns >= 6) waves.push({ x0: a, x1: b + 1 });
+      continue;
+    }
+    // the swell: two thin strokes meeting at a point on the left
+    if (cw >= 0.5 * u && cw <= 1.6 * u && ch >= 0.4 * u && ch <= 1.1 * u && px.length / 2 < 0.45 * cw * ch) {
+      const leftAt = (yy) => { let m = Infinity; for (let i = 0; i < px.length; i += 2) if (px[i + 1] === yy) m = Math.min(m, px[i]); return m; };
+      const mid = leftAt(Math.round((c + d) / 2)), up = leftAt(c), down = leftAt(d);
+      let rightMid = false;
+      for (let i = 0; i < px.length; i += 2) if (px[i] >= b - 1 && Math.abs(px[i + 1] - (c + d) / 2) < 0.15 * ch) rightMid = true;
+      if (mid - a <= 0.2 * cw && up - a >= 0.6 * cw && down - a >= 0.6 * cw && !rightMid) swells.push({ x0: a, x1: b + 1 });
+    }
+  }
+  return { swells, waves };
+}
+
 export function readStrip(ink, light, w, h, st) {
   const bl = barLines(light, w, st);
   if (bl.length < 2) return null;
@@ -407,6 +457,17 @@ export function readStrip(ink, light, w, h, st) {
   };
   for (const sec of hd.sections) Object.assign(barAt(sec.x, sec.x1), { heading: true, name: sec.name, numbered: sec.numbered });
   for (const t of hd.tempos) barAt(t.x).tempo = t.v;
+  // a swell goes on the note it stands over, a wavy line on every note under it
+  const marks = readMarks(ink, w, st);
+  const played = bars.flatMap((b) => b.cols.filter((c) => c.notes?.length));
+  for (const m of marks.swells) {
+    const mid = (m.x0 + m.x1) / 2;
+    const c = played.reduce((best, q) => (!best || Math.abs(q.cx - mid) < Math.abs(best.cx - mid) ? q : best), null);
+    if (c && Math.abs(c.cx - mid) < 1.2 * st.u) (c.fx ||= []).push('f');
+  }
+  for (const m of marks.waves) {
+    for (const c of played) if (c.cx >= m.x0 - 0.6 * st.u && c.cx <= m.x1 + 0.3 * st.u && !c.fx?.includes('v')) (c.fx ||= []).push('v');
+  }
   return { bars, dbg, strings: st.ys.length };
 }
 
@@ -506,18 +567,20 @@ const restTex = (len, fx = '') => pieces(len).map((p, i) => `r.${withFx(dur(p), 
 const fretOf = (n) => (n.tie ? '-' : n.t === 'X' ? 'x' : n.t);
 // a drum hit is named by its kit piece (see drumHead), a tab note by fret and string
 const noteTex = (n) => (n.drum ? n.drum : `${fretOf(n)}.${n.s + 1}`);
-const beatTex = (notes, len, fx = '') => {
+// own: the column's marks (f a swell, v vibrato: drawn on each note as a wavy line, as UG does; it carries through ties)
+const vib = (n, own) => (own.includes('v') && !n.drum && !n.tie ? `${noteTex(n)}{v}` : noteTex(n));
+const beatTex = (notes, len, fx = '', own = []) => {
   if (!notes.length) return restTex(len, fx);
-  const d = withFx(dur(len), fx);
-  const one = notes.map(noteTex);
+  const d = withFx(dur(len), [...own.filter((e) => e !== 'v'), fx].filter(Boolean).join(' '));
+  const one = notes.map((n) => vib(n, own));
   return notes.length === 1 ? `${one[0]}.${d}` : `(${one.join(' ')}).${d}`;
 };
 // A length with no single note value (e.g. 10 sixteenths) is written as tied notes.
-const tiedTex = (notes, len, fx = '') => {
+const tiedTex = (notes, len, fx = '', own = []) => {
   if (!notes.length) return restTex(len, fx);
   const [first, ...rest] = pieces(len);
-  const n = notes.map(noteTex);
-  const d = withFx(dur(first), fx);
+  const n = notes.map((x) => vib(x, own));
+  const d = withFx(dur(first), [...own.filter((e) => e !== 'v'), fx].filter(Boolean).join(' '));
   const head = n.length === 1 ? `${n[0]}.${d}` : `(${n.join(' ')}).${d}`;
   if (notes[0].drum) return `${head} ${restTex(len - first)}`; // a drum isn't held: the rest of its time is quiet
   const tail = rest.map((p) => (n.length === 1 ? `-.${notes[0].s + 1}.${dur(p)}` : `(${notes.map((x) => `-.${x.s + 1}`).join(' ')}).${dur(p)}`));
@@ -654,7 +717,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       const c = b.times.indexOf(s);
       const said = ws.filter((w) => w.t === s).map((w) => w.text).join(' ');
       const fx = said ? `lyrics ${JSON.stringify(said)}` : '';
-      return pieces(len).length === 1 ? beatTex(c >= 0 ? b.cols[c].notes : [], len, fx) : tiedTex(c >= 0 ? b.cols[c].notes : [], len, fx);
+      const own = c >= 0 ? b.cols[c].fx || [] : [];
+      return pieces(len).length === 1 ? beatTex(c >= 0 ? b.cols[c].notes : [], len, fx, own) : tiedTex(c >= 0 ? b.cols[c].notes : [], len, fx, own);
     }).join(' ');
   };
   // The vocal part carries the words itself: each syllable sits on the sung note nearest its time
@@ -673,7 +737,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     }
     return b.cols.map((c, k) => {
       const f = fx[k].length ? `lyrics ${JSON.stringify(fx[k].join(' '))}` : '';
-      return pieces(b.lens[k]).length === 1 ? beatTex(c.notes, b.lens[k], f) : tiedTex(c.notes, b.lens[k], f);
+      return pieces(b.lens[k]).length === 1 ? beatTex(c.notes, b.lens[k], f, c.fx) : tiedTex(c.notes, b.lens[k], f, c.fx);
     }).join(' ');
   };
   const render = (barList, first, words = [], sungPart = false, ks = null) => {
@@ -686,7 +750,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     }
     if (!b.cols.length) prevStrings = new Set();
     const beats = words[i]?.length ? [sungPart ? sungBeats(b, words[i]) : wordedBeats(b, words[i])]
-      : b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k]) : tiedTex(c.notes, lens[k])));
+      : b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k], '', c.fx) : tiedTex(c.notes, lens[k], '', c.fx)));
     if (!beats.length) beats.push(restTex(T));
     const head = [];
     if (first) {
