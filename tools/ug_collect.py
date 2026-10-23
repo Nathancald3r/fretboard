@@ -1743,6 +1743,10 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
             raise RuntimeError(f"The player wouldn't show {n}.")
     # the track's tuning, as text under its name: Fretboard reads it to find a bass's 4-line staff
     tuning = pg.evaluate(r"((document.body.innerText.match(/Tuning:\s*([A-G][^\n]*?)\s*(?=Key:|Capo:|\n|$)/) || [])[1] || '').trim()")
+    # and its capo: each track has its own (Trust In God: the acoustic guitars 6th fret, the piano none),
+    # and the tab's frets count from it
+    capo = pg.evaluate(r"((document.body.innerText.match(/Capo:\s*([^\n]*)/) || [])[1] || '').trim()")
+    capo = re.sub(r"(?i)^no capo$", "none", capo)
     def steady(end):
         shot, last = None, None
         for _ in range(8):  # drawn when two looks in a row agree
@@ -1756,7 +1760,8 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
 
     def lay_out(shots, notes, printed=None, notes_printed=None):  # what PAGES_JS sets on the pages
         return {"shots": shots, "notes": notes, "printed": printed, "notesPrinted": notes_printed, "title": label,
-                "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]}
+                "lines": [lines[0], lines[1], "  ·  ".join([n] + ([f"Tuning: {tuning}"] if tuning else [])
+                                                     + ([f"Capo: {capo}"] if capo and fretted else []))]}
 
     fretted = not NO_TAB.search(n)  # by the name: UG shows a Tuning line under every track, drums too
     noted = fretted and NOTATION  # also gets the pages with the music staff

@@ -110,6 +110,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - If it sits over a beam, the beam gives its length (some stems are drawn only a pixel or two above the beam).
   - Otherwise it gets `guess: true`. In tab view that means a whole note, and a lone chord rings to the end of the bar.
   - A bar that has a guessed note is spaced by how far apart its notes sit.
+- **Capo per track:** UG gives each track its own Tuning / Key / Capo (Trust In God: acoustic in Eb tuning, capo 6, G shapes, sounding C; piano and synth pad in C, no capo). The helper writes "Capo: …" into each fretted PDF; `pdftab.js` reads it. Older PDFs: `partCapos` (`ugtab.js`) finds the capo that puts the part's notes into the song's key (UG's key, else the notation parts' key).
+- **Tuning menu (player):** another tuning keeps the frets, so the whole song moves (`retune` in `transposeScore`), and a red "Not the original key" badge shows.
 - **Time signature and tempo** come from **all parts**, not just the first:
   - bars with a guessed note don't vote on the bar length
   - the first tempo mark found in any part is used (the mark may sit over only one part's staff)

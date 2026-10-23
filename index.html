@@ -136,6 +136,7 @@
         <button id="pl-version" class="pill ver-pill" type="button" title="Which recording this tab follows" hidden></button>
         <button id="pl-sync" class="pill sync-pill" type="button" title="Video sync status (tap for the checklist)" hidden></button>
         <span id="pl-capo-badge" class="capo-badge" hidden title="This part needs a capo on this fret"></span>
+        <span id="pl-key-badge" class="capo-badge key-badge" hidden title="Transposed or retuned: the song no longer plays in its original key (Reset under the score puts it back)"></span>
         <span id="pl-recording-badge" class="pill rec" hidden title="The tab follows the linked video (or audio file), not the built-in guitar sound">● Linked video</span>
       </div>
       <span class="head-tools">
@@ -273,6 +274,7 @@
               <button id="tp-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="tp-val" class="mono">0</b><button id="tp-up" class="icon-btn small" aria-label="Transpose up">+</button></span>
             <span class="stepper" title="Same sound, tab and chord shapes for a capo on this fret">Capo
               <button id="capo-down" class="icon-btn small" aria-label="Capo down">−</button><b id="capo-val" class="mono">0</b><button id="capo-up" class="icon-btn small" aria-label="Capo up">+</button></span>
+            <label title="Play this part in another tuning with the same frets. The whole song moves with it, so it is no longer in the original key.">Tuning <select id="tune-sel"></select></label>
             <button id="tp-reset" class="ghost small" hidden>Reset</button>
             <span id="tp-note" class="muted small-text"></span>
           </div>

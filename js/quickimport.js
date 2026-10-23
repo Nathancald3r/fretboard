@@ -204,7 +204,7 @@ async function importRun(r, auto = false) {
   if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.id); showReady(); return null; }
   if (auto) await markRun(r.id); // taken now, so it's never added twice
   // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
-  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
+  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist, key: r.key } } : {}) });
   if (ids?.length && !auto) await markRun(r.id); // cancelled: it stays offered
   if (ids?.length) await addExtras(r, ids[0]);
   showReady();

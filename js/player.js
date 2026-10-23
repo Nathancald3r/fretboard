@@ -1055,11 +1055,16 @@ function showTrackInfo() {
   if (staff && fretted) {
     parts.push('Tuning: ' + [...staff.tuning].reverse().map((m) => noteName(m % 12, true)).join(' '));
   }
-  if (songKey()) parts.push('Key: ' + keyLabel(songKey()));
+  // Transposed or retuned: the key it plays in now, and the song's own.
+  const moved = (song?.transpose || 0) + (song?.tune || 0);
+  const key = songKey();
+  const original = key && moved ? keyLabel({ ...key, tonic: ((key.tonic - moved) % 12 + 12) % 12 }) : '';
+  if (key) parts.push('Key: ' + keyLabel(key) + (original ? ` (original ${original})` : ''));
   if (staff && fretted) parts.push('Capo: ' + (staff.capo ? `fret ${staff.capo}` : 'none'));
-  const semis = song?.transpose || 0;
-  if (semis) parts.push(`Transposed ${semis > 0 ? '+' : '−'}${Math.abs(semis)}`);
   $('pl-info').textContent = parts.join(' · ');
+  const keyBadge = $('pl-key-badge');
+  keyBadge.hidden = !original;
+  keyBadge.textContent = original ? `Not the original key: ${keyLabel(key)} (was ${original})` : '';
   // The focus view shows just the key, and the capo when there is one.
   const capoBadge = $('pl-capo-badge');
   capoBadge.hidden = !(fretted && staff?.capo > 0);
@@ -1206,7 +1211,8 @@ export async function openPlayer(s) {
 // Transpose / capo, then chords, then draw. Shared by opening a song and re-reading it.
 function showParsed(parsed) {
   fileCapo = parsed.tracks[trackIndex]?.staves[0]?.capo || 0;
-  shiftFlats = transposeScore(parsed, { semitones: song.transpose || 0, capo: song.capo ?? null, capoTrack: trackIndex }).flats;
+  fileTuning = [...(parsed.tracks[trackIndex]?.staves[0]?.tuning || [])];
+  shiftFlats = transposeScore(parsed, { semitones: song.transpose || 0, capo: song.capo ?? null, capoTrack: trackIndex, retune: song.tune || 0 }).flats;
   score = parsed;
   prepareChords(parsed);
   singSongChanged();
@@ -1220,6 +1226,7 @@ function showParsed(parsed) {
 /* ---------- transpose and capo ---------- */
 
 let fileCapo = 0; // the capo the file has on the shown track
+let fileTuning = []; // the shown track's tuning as the file has it (song.tune moves it)
 let shiftFlats = false;
 let restoreTick = null; // where to put the cursor once a re-read score is ready
 
@@ -1251,8 +1258,21 @@ function showShift() {
   $('tp-up').disabled = semis >= 11;
   $('capo-down').disabled ||= capo <= 0;
   $('capo-up').disabled ||= capo >= 12;
-  $('tp-reset').hidden = !semis && (song?.capo == null || song.capo === fileCapo);
+  $('tp-reset').hidden = !semis && !song?.tune && (song?.capo == null || song.capo === fileCapo);
+  // Tunings with the same frets: the file's, and up to 3 semitones down or up (Eb standard → E standard).
+  const tune = song?.tune || 0;
+  const names = (d) => [...fileTuning].reverse().map((m) => noteName((m + d) % 12, true)).join(' ');
+  const sel = $('tune-sel');
+  sel.disabled = !canCapo() || !fileTuning.length;
+  sel.replaceChildren(...(sel.disabled ? [0] : [-3, -2, -1, 0, 1, 2, 3]).map((d) => {
+    const o = document.createElement('option');
+    o.value = String(d);
+    o.textContent = !fileTuning.length ? '–' : names(d) + (d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)})` : ' (original)');
+    return o;
+  }));
+  sel.value = String(sel.disabled ? 0 : tune);
   const notes = [];
+  if (tune) notes.push(`File: ${names(0)}`);
   if (song?.capo != null && song.capo !== fileCapo) notes.push(`File: capo ${fileCapo || 'none'}`);
   if (semis && recordingOn()) notes.push('The recording keeps its pitch');
   $('tp-note').textContent = notes.join(' · ');
@@ -1262,7 +1282,7 @@ function setShift(changes) {
   if (!song || !score) return;
   Object.assign(song, changes);
   if (song.capo === fileCapo) song.capo = null; // the file's own capo
-  updateSong(song.id, { transpose: song.transpose || 0, capo: song.capo ?? null });
+  updateSong(song.id, { transpose: song.transpose || 0, capo: song.capo ?? null, tune: song.tune || 0 });
   reloadScore();
 }
 
@@ -2330,7 +2350,8 @@ export function initPlayer() {
   $('tp-up').addEventListener('click', () => setShift({ transpose: Math.min(11, (song?.transpose || 0) + 1) }));
   $('capo-down').addEventListener('click', () => setShift({ capo: Math.max(0, (song?.capo ?? fileCapo) - 1) }));
   $('capo-up').addEventListener('click', () => setShift({ capo: Math.min(12, (song?.capo ?? fileCapo) + 1) }));
-  $('tp-reset').addEventListener('click', () => setShift({ transpose: 0, capo: null }));
+  $('tp-reset').addEventListener('click', () => setShift({ transpose: 0, capo: null, tune: 0 }));
+  $('tune-sel').addEventListener('change', (e) => setShift({ tune: Number(e.target.value) || 0 }));
 
   // Fretboard and lyrics panes.
   // Master volume (the Tracks sheet) and the Amp panel's song volume are one setting.

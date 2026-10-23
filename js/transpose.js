@@ -82,31 +82,46 @@ function shiftChords(staff, semitones, flats) {
 
 /**
  * Rewrites the score. semitones: −11…11. capo: the capo on capoTrack's guitar (null keeps
- * the file's). Returns { flats } so chord names elsewhere can be spelled to match.
+ * the file's). retune: capoTrack's guitar tuned this many semitones from the file's tuning
+ * (+1 turns Eb standard into E standard) with its frets kept, so the guitar sounds higher and
+ * every other part moves with it to stay together. Returns { flats } so chord names elsewhere can be spelled to match.
  */
-export function transposeScore(score, { semitones = 0, capo = null, capoTrack = -1 } = {}) {
-  const firstKs = shiftKeySignature(score.tracks[0]?.staves[0]?.bars[0]?.keySignature ?? 0, semitones);
+export function transposeScore(score, { semitones = 0, capo = null, capoTrack = -1, retune = 0 } = {}) {
+  const retuned = retune && score.tracks[capoTrack]?.staves.some((st) => st.tuning.length > 0 && !st.isPercussion);
+  if (!retuned) retune = 0;
+  const firstKs = shiftKeySignature(score.tracks[0]?.staves[0]?.bars[0]?.keySignature ?? 0, semitones + retune);
   const flats = firstKs < 0;
   score.tracks.forEach((track, ti) => {
     for (const staff of track.staves) {
       if (staff.isPercussion) continue;
-      if (semitones) for (const bar of staff.bars) bar.keySignature = shiftKeySignature(bar.keySignature, semitones);
+      if (semitones + retune) for (const bar of staff.bars) bar.keySignature = shiftKeySignature(bar.keySignature, semitones + retune);
       const stringed = staff.tuning.length > 0;
+      // The retuned guitar's own strings carry the move; every other part moves by it.
+      const own = stringed && ti === capoTrack && retune;
+      if (own) {
+        // Its name ("Eb Standard") is found again from the new notes.
+        const t = staff.stringTuning;
+        t.tunings = t.tunings.map((m) => m + retune);
+        t.name = '';
+        t.isStandard = false;
+        t.finish?.();
+      }
+      const move = own ? semitones : semitones + retune;
       const oldCapo = staff.capo || 0;
       const newCapo = stringed && ti === capoTrack && capo !== null ? capo : oldCapo;
-      if (!semitones && newCapo === oldCapo) continue;
+      if (!move && newCapo === oldCapo) continue;
       eachBeat(staff, (beat) => {
-        if (stringed) { refret(beat, staff, semitones, oldCapo, newCapo); return; }
+        if (stringed) { refret(beat, staff, move, oldCapo, newCapo); return; }
         for (const n of beat.notes) {
           if (n.octave < 0 || n.tone < 0) continue;
-          const v = n.octave * 12 + n.tone + semitones;
+          const v = n.octave * 12 + n.tone + move;
           n.octave = Math.floor(v / 12);
           n.tone = ((v % 12) + 12) % 12;
         }
       });
       staff.capo = newCapo;
       // File chords are named and drawn relative to the capo, like the tab.
-      shiftChords(staff, semitones + oldCapo - newCapo, flats);
+      shiftChords(staff, move + oldCapo - newCapo, flats);
     }
   });
   return { flats };

@@ -6,6 +6,7 @@ import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
 import { readLyricLine, holdLyricReader, closeLyricReader, readWords, drawBox } from './uglyrics.js';
 import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
+import { findMusicStaves, readScorePage } from './ugscore.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
 const PAGE_WIDTH = 1634; // the width the templates were made at
@@ -254,6 +255,16 @@ export async function renderInk(page, scale) {
     ink[i] = g < 150 ? 1 : 0;
     light[i] = g < 205 ? 1 : 0;
   }
+  // a pale 1-px line drawn across two pixel rows leaves both too pale to count (a Synth Pad's staff
+  // was lost on three pages): a pale pair with white above and below is one line, on its upper row
+  const gray = (i) => (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3;
+  for (let y = 1; y + 2 < height; y++) {
+    for (let x = 0, i = y * width; x < width; x++, i++) {
+      if (light[i] || light[i + width]) continue;
+      const a = gray(i), b = gray(i + width);
+      if (a < 240 && b < 240 && a + b < 455 && gray(i - width) >= 240 && gray(i + 2 * width) >= 240) light[i] = 1;
+    }
+  }
   return { ink, light, w: width, h: height };
 }
 
@@ -467,9 +478,11 @@ async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', 
   const seen = new Set();
   let how = 'image', unknown = 0, systems = 0;
   let tuning = null;
+  let capo = null; // "Capo: 6th fret" (or "Capo: none") beside the tuning
   const strips = [];
   const noted = []; // tab staves of the Notation pages, with the marks above each
   let notation = false;
+  let scoreKey = null; // a part written as notes: its key signature, for a system that shows none
   for (let n = 1; n <= pdf.numPages; n++) {
     onProgress(n, pdf.numPages);
     const page = await pdf.getPage(n);
@@ -477,6 +490,7 @@ async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', 
     const lines = textLines(items);
     if (!drums && strips.length && items.some((i) => i.str.trim() === 'Notation')) notation = true;
     tuning ||= parseTuning(items.map((i) => i.str).join(' ')); // "Tuning: E A D G" under the title
+    if (capo == null) { const m = items.map((i) => i.str).join(' ').match(/Capo:\s*(?:(\d+)|no|none)/i); if (m) capo = Number(m[1] || 0); }
     if (looksLikeTab(lines)) {
       how = 'text';
       pages.push(lines.join('\n'));
@@ -543,11 +557,27 @@ async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', 
           continue;
         }
         if (tuning?.length === strip.strings) strip.tuning = tuning;
+        if (capo != null) strip.capo = capo;
         strip.lyr = lyrics ? await readLyricLine(page, scale, st, r.h) : []; // the line under the rhythm row
         strips.push(strip);
         onProgress(n, pdf.numPages, `line ${i + 1} of ${staves.length}`);
       }
       continue;
+    }
+    // no tab: a part written as notes only (a piano's grand staff, keys, strings) is read note by note
+    if (!strips.some((s) => !s.score)) {
+      const music = findMusicStaves(r.light, r.w, r.h);
+      if (music.length) {
+        const u = music.map((s) => s.u).sort((a, b) => a - b)[music.length >> 1];
+        if (Math.abs(u - UG_UNIT) > 0.6) r = await renderInk(page, base * UG_UNIT / u);
+        const got = readScorePage(r.ink, r.light, r.w, r.h, scoreKey);
+        if (got.length) {
+          how = 'score';
+          scoreKey ??= got.flatMap((s) => s.keys).find((k) => k) ?? null;
+          strips.push(...got);
+          continue;
+        }
+      }
     }
     let res = readTabPage(r.ink, r.w, r.h);
     if (res.pitch && Math.abs(res.pitch - PITCH) > 0.25) { // different size: redo at the size the templates fit

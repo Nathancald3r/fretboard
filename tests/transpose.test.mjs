@@ -75,4 +75,17 @@ transposeScore(score, { semitones: 1, capo: 1, capoTrack: 0 });
 assert.deepEqual(pitches(score), g.map((p) => p + 1));
 assert.equal(frets(score)[0], frets(load(tex))[0], 'up 1 with capo 1 = same shapes');
 
+// Retune +1 (Eb standard played on an E standard guitar): same frets, the guitar and the voice
+// both a semitone up, the key G → Ab.
+score = load(tex);
+transposeScore(score, { retune: 1, capoTrack: 0 });
+assert.deepEqual(frets(score), frets(load(tex)), 'retune keeps the frets');
+assert.deepEqual(pitches(score), g.map((p) => p + 1));
+assert.deepEqual(pitches(score, 1), v.map((p) => p + 1));
+assert.equal(score.tracks[0].staves[0].bars[0].keySignature, -4);
+// Retune on a track with no strings does nothing.
+score = load(tex);
+transposeScore(score, { retune: 1, capoTrack: 1 });
+assert.deepEqual(pitches(score), g);
+
 console.log('transpose: all tests passed');

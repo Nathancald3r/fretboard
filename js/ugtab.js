@@ -47,20 +47,25 @@ export function findStaves(light, w, h, ink, counts = [6]) {
       || (longest > 0.07 * w && barAt(longX, y)) || (bridged > 0.07 * w && barAt(bridgedX, y))
       || (longest > 0.06 * w && n > 0.15 * w)) {
       const wide = n > 0.45 * w; // a row across the page
-      if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; l.wide ||= wide; }
-      else lines.push({ last: y, sum: y, n: 1, wide });
+      if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; l.wide ||= wide; if (wide) { l.wsum += y; l.wn++; } }
+      else lines.push({ last: y, sum: y, n: 1, wide, wsum: wide ? y : 0, wn: wide ? 1 : 0 });
     }
   }
   // a band much thicker than the staff lines (a beam, a block of words) is no staff line: taken as
   // one, it would join a staff's run and shift the staff a string down
   const thick = Math.max(lines.map((l) => l.n).sort((a, b) => a - b)[lines.length >> 1] * 2, 3);
-  const found = lines.filter((l) => l.n <= thick).map((l) => ({ y: l.sum / l.n, wide: l.wide }));
+  // A staff line with tie arcs lying along it is thick too, but only its own rows cross the page:
+  // those are the line (Trust In God's Synth Pad lost a staff a page, and a line read a row high
+  // started at the arc and lost its first bar)
+  const found = lines.filter((l) => l.n <= thick || (l.wn && l.wn <= thick))
+    .map((l) => ({ y: l.wn ? l.wsum / l.wn : l.sum / l.n, wide: l.wide }));
   // a short "line" far closer than a staff space to another (the foot of a multi-bar rest's thick
   // bar, a word) is no staff line: it broke the staff's even spacing and lost the line (How He
   // Loves' 12-bar intro)
   const step = found.slice(1).map((l, i) => l.y - found[i].y).filter((g) => g > 6).sort((a, b) => a - b);
   const sp0 = step[step.length >> 1];
   const ys = found.filter((l, i) => l.wide || !sp0 || !((i > 0 && l.y - found[i - 1].y < 0.4 * sp0) || (i + 1 < found.length && found[i + 1].y - l.y < 0.4 * sp0))).map((l) => l.y);
+  const wideAt = new Set(found.filter((l) => l.wide).map((l) => l.y)); // rows across the page
   // A line of only multi-bar rests can be drawn with just its outer two lines (the others are ticks at
   // the bar lines): two lines 3 or 5 spaces apart, joined by bar lines, are a 4- or 6-line staff.
   const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter((g) => g > 6).sort((a, b) => a - b);
@@ -87,8 +92,10 @@ export function findStaves(light, w, h, ink, counts = [6]) {
     // seven in a row: a six-line staff and a stray line next to it (words, a beam); the stray one is
     // the end whose gap fits the others least
     if (j - i === 6 && counts.includes(6) && !counts.includes(7)) {
+      // (a long flat tie over the staff is no row across the page: Synth Pad, Trust In God)
       const g = (k) => ys[k + 1] - ys[k], mid = [1, 2, 3, 4].map((k) => g(i + k)).sort((a, b) => a - b)[2];
-      if (Math.abs(g(i) - mid) > Math.abs(g(j - 1) - mid)) { i++; continue; }
+      const topStray = wideAt.has(ys[i]) !== wideAt.has(ys[j]) ? !wideAt.has(ys[i]) : Math.abs(g(i) - mid) > Math.abs(g(j - 1) - mid);
+      if (topStray) { i++; continue; }
       j--;
     }
     const n = j - i + 1;
@@ -376,7 +383,7 @@ export function stemLength(ink, w, s, u) {
 }
 
 // A multi-bar rest is a thick horizontal bar across the middle of the staff, between two lines.
-function thickRest(ink, w, st, xa, xb) {
+export function thickRest(ink, w, st, xa, xb) {
   const mid = (st.ys[0] + st.ys[st.ys.length - 1]) / 2;
   const half = st.ys.length % 2 ? 0.5 * st.u : 0; // odd line count: the middle is a line, so look just off it
   const runAt = (y) => {
@@ -565,28 +572,76 @@ function tuningTex(strips) {
 const MAJOR_P = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_P = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 const KS_NAMES = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
-function songKey(parts, lists) {
+// How long each pitch class sounds in a part (a tab part as its frets are, without a capo).
+function pitchHist(part, list) {
   const h = new Array(12).fill(0);
-  parts.forEach((part, k) => {
-    const n = part.strips.find((s) => s.strings)?.strings || 6;
-    const given = part.strips.find((s) => s.tuning)?.tuning;
-    const midi = [...(given && given.length === n ? given : STANDARD[n] || STANDARD[6])].reverse();
-    for (const b of lists[k]) b.cols.forEach((c, j) => {
-      for (const nt of c.notes) {
-        const f = Number(nt.t);
-        if (nt.drum || nt.tied || !Number.isFinite(f) || midi[nt.s] == null) continue;
-        h[(midi[nt.s] + f) % 12] += b.lens?.[j] || c.len || 1;
-      }
-    });
+  const n = part.strips.find((s) => s.strings)?.strings || 6;
+  const given = part.strips.find((s) => s.tuning)?.tuning;
+  const midi = [...(given && given.length === n ? given : STANDARD[n] || STANDARD[6])].reverse();
+  for (const b of list) b.cols.forEach((c, j) => {
+    for (const nt of c.notes) {
+      if (nt.p != null) { h[nt.p % 12] += b.lens?.[j] || c.len || 1; continue; } // read from notation
+      const f = Number(nt.t);
+      if (nt.drum || nt.tied || !Number.isFinite(f) || midi[nt.s] == null) continue;
+      h[(midi[nt.s] + f) % 12] += b.lens?.[j] || c.len || 1;
+    }
   });
+  return h;
+}
+// Correlation of histogram h with profile p (both 12 long) put on tonic r.
+function corrOf(h, p, r) {
+  const mh = h.reduce((a, c) => a + c, 0) / 12, mp = p.reduce((a, c) => a + c, 0) / 12;
+  let xy = 0, xx = 0, yy = 0;
+  for (let i = 0; i < 12; i++) { const x = h[(i + r) % 12] - mh, y = p[i] - mp; xy += x * y; xx += x * x; yy += y * y; }
+  return xx && yy ? xy / Math.sqrt(xx * yy) : 0;
+}
+// A capo for each tab part. UG gives each track its own (Trust In God's acoustic guitars: capo 6, its
+// piano none), and its PDF says so ("Capo: 6th fret"). In a PDF saved before the helper wrote it, the
+// capo is found: the part's notes don't fit the song's key (UG's, else the key of the parts written
+// as notes), and with the capo they all do. Of the capos that fit (6 and 1 both put F# major's notes
+// in C major's scale), the one whose notes centre on the key's own note (C, not G).
+function partCapos(parts, lists, key) {
+  let t = KEY_PC[String(key || '').replace(/m$/, '')];
+  if (t != null && /m$/.test(key)) t = (t + 3) % 12; // a minor key: its relative major's scale
+  if (t == null) {
+    const ref = new Array(12).fill(0);
+    parts.forEach((q, j) => { if (isScore(q.strips)) pitchHist(q, lists[j]).forEach((v, i) => { ref[i] += v; }); });
+    if (ref.reduce((x, c) => x + c, 0) >= 40) t = majorOf(ref);
+  }
+  const scale = t == null ? null : new Set([0, 2, 4, 5, 7, 9, 11].map((i) => (i + t) % 12));
+  return parts.map((part, k) => {
+    const given = part.strips.find((s) => s.capo != null)?.capo;
+    if (given != null) return given;
+    if (!scale || isDrums(part.strips) || isScore(part.strips)) return 0;
+    const h = pitchHist(part, lists[k]);
+    const total = h.reduce((x, c) => x + c, 0);
+    if (total < 40) return 0;
+    const fit = (c) => h.reduce((x, v, i) => x + (scale.has((i + c) % 12) ? v : 0), 0) / total;
+    if (fit(0) >= 0.85) return 0;
+    const prof = Array.from({ length: 12 }, (_, i) => MAJOR_P[(i - t + 12) % 12]);
+    let best = 0;
+    for (let c = 1; c <= 9; c++) {
+      if (fit(c) >= 0.9 && (!best || corrOf(h, prof, (12 - c) % 12) > corrOf(h, prof, (12 - best) % 12))) best = c;
+    }
+    return best;
+  });
+}
+// The major key (its tonic) that a histogram fits best; a minor key gives its relative major.
+function majorOf(h) {
+  let best = { v: -2, major: 0 };
+  for (let r = 0; r < 12; r++) {
+    if (corrOf(h, MAJOR_P, r) > best.v) best = { v: corrOf(h, MAJOR_P, r), major: r };
+    if (corrOf(h, MINOR_P, r) > best.v) best = { v: corrOf(h, MINOR_P, r), major: (r + 3) % 12 };
+  }
+  return best.major;
+}
+const KEY_PC = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11 };
+function songKey(parts, lists, capos = []) {
+  const h = new Array(12).fill(0);
+  parts.forEach((part, k) => pitchHist(part, lists[k]).forEach((v, i) => { h[(i + (capos[k] || 0)) % 12] += v; }));
   const total = h.reduce((a, c) => a + c, 0);
   if (total < 20) return null; // too few notes to tell
-  const corr = (p, r) => {
-    const mp = p.reduce((a, c) => a + c, 0) / 12;
-    let xy = 0, xx = 0, yy = 0;
-    for (let i = 0; i < 12; i++) { const x = h[(i + r) % 12] - total / 12, y = p[i] - mp; xy += x * y; xx += x * x; yy += y * y; }
-    return xy / Math.sqrt(xx * yy);
-  };
+  const corr = (p, r) => corrOf(h, p, r);
   let best = { v: -2, major: 0 };
   for (let r = 0; r < 12; r++) {
     if (corr(MAJOR_P, r) > best.v) best = { v: corr(MAJOR_P, r), major: r };
@@ -666,6 +721,7 @@ function lyricTimes(b, T) {
 // grid in sixteenths, or 0 for parts written as they are.
 function keysGrid(part) {
   const n = part?.name || '';
+  if (isScore(part?.strips)) return 0; // read from notation: written as it is
   if (/bass|lead|drum|vocal|guitar|shaker|percussion/i.test(n)) return 0;
   if (/pad|organ|string/i.test(n) || (part.program >= 88 && part.program <= 95)) return 4;
   if (/piano|keys|keyboard|rhodes|wurl|synth/i.test(n)) return 2;
@@ -701,13 +757,51 @@ const drumHead = (strips) => {
   return ['\\staff {score}', '\\instrument percussion', ...[...used].map((d) => `\\articulation ${d} ${DRUM_NOTES[d]}`), '\\clef neutral'].join('\n');
 };
 
+// A part read from notation (see ugscore.js): a staff each for its clefs (a piano's two), all one track.
+const isScore = (strips) => !!strips?.some((s) => s.score);
+const most = (list) => list.reduce((top, v) => (list.filter((x) => x === v).length > list.filter((x) => x === top).length ? v : top), list[0]);
+const scoreStaves = (strips) => {
+  const sys = strips.filter((s) => s.score);
+  const n = Math.max(...sys.map((s) => s.clefs.length));
+  return Array.from({ length: n }, (_, k) => (most(sys.map((s) => s.clefs[k]).filter(Boolean)) === 'bass' ? 'F4' : 'G2'));
+};
+const scoreKey = (strips) => most(strips.filter((s) => s.score).flatMap((s) => s.keys)) || 0;
+const FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const pitchTex = (p, flats, tied) => `${(flats ? FLATS : SHARPS)[p % 12]}${Math.floor(p / 12) - 1}${tied ? '{t}' : ''}`;
+// A notation bar's events fitted to the bar: times scaled when the read lengths don't add up to it
+// (a triplet read as plain notes), to the nearest thirty-second.
+function fitScore(b, T) {
+  const k = b.end > 0 && Math.abs(b.end - T) > 1e-6 ? T / b.end : 1;
+  const q = (v) => Math.min(T, Math.round(v * k * 2) / 2);
+  for (const e of b.staves.flat()) { e.at = q(e.t); e.dur = q(e.t + e.len) - e.at; }
+  b.lens = b.cols.map((c) => c.len * k);
+  b.times = [];
+}
+// One staff's bar: wherever a note starts on that staff, the notes sounding then (one still held
+// from before is tied on); silence is a rest.
+function scoreBeats(b, k, T, flats) {
+  const evs = (b.staves?.[k] || []).filter((e) => e.notes.length && e.dur > 0);
+  const starts = [...new Set([0, ...evs.map((e) => e.at)])].filter((t) => t < T).sort((x, y) => x - y);
+  return starts.map((t, j) => {
+    const len = (j + 1 < starts.length ? starts[j + 1] : T) - t;
+    const held = new Map(); // pitch -> only tied on from before
+    for (const e of evs) if (e.at <= t && e.at + e.dur > t) for (const n of e.notes) held.set(n.p, (held.get(n.p) ?? true) && e.at < t);
+    if (!held.size) return restTex(len);
+    const ps = [...held.keys()].sort((x, y) => x - y);
+    return pieces(len).map((d, i) => {
+      const notes = ps.map((p) => pitchTex(p, flats, i > 0 || held.get(p)));
+      return `${notes.length === 1 ? notes[0] : `(${notes.join(' ')})`}.${dur(d)}`;
+    }).join(' ');
+  }).join(' ');
+}
+
 /**
  * @param strips parsed strips in reading order ({ bars, heading })
  * @returns {{ tex: string, bars: number, exact: number } | null}
  */
 // Other instruments (extra: [{ name, strips, program }]) become tracks of their own, lined up bar for bar
 // with the first one (cut or padded with rests when a part has a different number of bars).
-export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, name = '', program = 27, extra = [] } = {}) {
+export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, name = '', program = 27, extra = [], key = '' } = {}) {
   // each lyric syllable belongs to the bar it starts in
   // a multi-bar rest ("16" over a thick bar) stands for that many empty bars, so every part keeps the same bar count
   const barsOf = (list) => list.flatMap((s) => s.bars.flatMap((b) => {
@@ -749,7 +843,9 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
   const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
   const T = top ? Math.round(Number(top[0])) : 16; // only long notes and chords (one or two a bar): 4/4
-  const grouped3 = bars.some((b) => b.cols.filter((c) => c.beamed).length === 6) && T === 12;
+  // a part read from notation has the time signature's lower number (6/8, not 3/4)
+  const printed = [strips, ...extra.map((p) => p.strips)].flatMap((list) => list.filter((s) => s.score && s.den)).map((s) => s.den)[0];
+  const grouped3 = (bars.some((b) => b.cols.filter((c) => c.beamed).length === 6) || printed === 8) && T === 12;
   const num = T % 4 === 0 && !grouped3 ? T / 4 : T / 2;
   const den = T % 4 === 0 && !grouped3 ? 4 : 8;
   let exact = 0, sectionNo = 0;
@@ -766,6 +862,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   let lastTempo = firstTempo || tempo;
   // each bar's note lengths (sixteenths) fitted to the bar, and when each note starts
   const layout = (b, first) => {
+    if (b.staves) { fitScore(b, T); if (first && Math.abs(b.end - T) < 1e-6) exact++; return; }
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
     if (Math.round(sum) === T && !b.cols.some((c) => c.guess)) { if (first) exact++; } // every part keeps a rhythm row that adds up
@@ -826,9 +923,19 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       return pieces(b.lens[k]).length === 1 ? beatTex(c.notes, b.lens[k], f, c.fx) : tiedTex(c.notes, b.lens[k], f, c.fx);
     }).join(' ');
   };
-  const render = (barList, first, words = [], sungPart = false, ks = null) => {
+  const render = (barList, first, words = [], sungPart = false, ks = null, staff = null) => {
   let prevStrings = new Set();
   return barList.map((b, i) => {
+    if (staff) { // a staff of a part read from notation
+      const head = [];
+      if (first) {
+        if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
+        if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
+        if (i === 0) head.push(`\\ts ${num} ${den}`);
+      }
+      if (i === 0) head.push(`\\clef ${staff.clef}`, `\\ks ${KS_NAMES[staff.key + 7]}`);
+      return `${head.join(' ')} ${scoreBeats(b, staff.k, T, staff.key < 0) || restTex(T)}`.trim();
+    }
     const lens = b.lens;
     for (const c of b.cols) {
       for (const n of c.notes) n.tie = n.tied && prevStrings.has(n.s); // only a note on a string that was just played can be a tie
@@ -863,20 +970,30 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const words = sung ? sungBars.map((b) => (b.lyr.length ? lyricTimes(b, T) : [])) : [];
   const sungAt = lists.indexOf(sungBars);
   const pitched = parts.map((p, k) => k).filter((k) => !isDrums(parts[k].strips));
-  const ks = songKey(pitched.map((k) => parts[k]), pitched.map((k) => lists[k]));
-  const out = render(bars, true, isDrums(strips) || sungAt === 0 ? words : [], sungAt === 0, isDrums(strips) ? null : ks);
+  const capos = partCapos(parts, lists, key);
+  const ks = songKey(pitched.map((k) => parts[k]), pitched.map((k) => lists[k]), pitched.map((k) => capos[k]));
+  const capoTex = (k) => (capos[k] ? `\n\\capo ${capos[k]}` : '');
+  // a part read from notation: one track, a staff for each clef
+  const scoreTrack = (list, part, first) => {
+    const key = scoreKey(part.strips);
+    return scoreStaves(part.strips).map((clef, k) => `\\staff {score}\n\\instrument ${part.program ?? 0}\n`
+      + render(list, first && !k, [], false, null, { k, clef, key }).join(' |\n')).join('\n');
+  };
+  const out = isScore(strips) ? scoreTrack(bars, parts[0], true)
+    : render(bars, true, isDrums(strips) || sungAt === 0 ? words : [], sungAt === 0, isDrums(strips) ? null : ks).join(' |\n');
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
     `\\tempo ${Math.round(firstTempo || tempo)}`,
     '.',
     `\\track ${JSON.stringify(name || title || 'Guitar')}`,
-    ...(isDrums(strips) ? [drumHead(strips)] : ['\\staff {score tabs}', `\\tuning ${tuningTex(strips)}`, `\\instrument ${program}`]),
+    ...(isScore(strips) ? [] : isDrums(strips) ? [drumHead(strips)] : ['\\staff {score tabs}', `\\tuning ${tuningTex(strips)}${capoTex(0)}`, `\\instrument ${program}`]),
   ].filter(Boolean).join('\n');
   const others = extra.map((part, k) => {
+    if (isScore(part.strips)) return `\n\\track ${JSON.stringify(part.name)}\n${scoreTrack(lists[k + 1], part, false)}`;
     const drums = isDrums(part.strips);
-    const head = drums ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
+    const head = drums ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}${capoTex(k + 1)}\n\\instrument ${part.program ?? 27}`;
     return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums || sungAt === k + 1 ? words : [], sungAt === k + 1, drums ? null : ks).join(' |\n')}`;
   }).join('');
-  return { tex: `${header}\n${out.join(' |\n')}${others}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
+  return { tex: `${header}\n${out}${others}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }

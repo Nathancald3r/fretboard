@@ -438,7 +438,7 @@ function reviewParts(items, title, artist) {
   return new Promise((resolve) => {
     const opts = PARTS.map(([n], k) => `<option value="${k}">${n}</option>`).join('') + '<option value="-1">Other</option>';
     const dlg = partDialog(`<h2>Check before it’s added</h2>
-      <p class="muted small-text">One song with a track per instrument. Rename anything that came out wrong, untick parts you don’t want, and use the arrows for the order (the first tab track opens first). Parts with no tab (written as notes) stay in the song as sheet music.</p>
+      <p class="muted small-text">One song with a track per instrument. Rename anything that came out wrong, untick parts you don’t want, and use the arrows for the order (the first tab track opens first). Parts written as notes (piano, keys) are read note by note and play with the rest; one that can’t be read stays in the song as sheet music.</p>
       <div class="parts-meta"><label>Title <input data-f="title" maxlength="120"></label><label>Artist <input data-f="artist" maxlength="120"></label></div>
       <ol class="parts-list"></ol>
       <div class="row"><button class="primary" data-go>Create song</button><button class="ghost" data-no>Cancel</button></div>`);
@@ -457,7 +457,7 @@ function reviewParts(items, title, artist) {
       li.querySelector('.parts-label').value = it.name;
       li.querySelector('select').value = String(partIndex(it.name));
       const badge = li.querySelector('.parts-badge');
-      badge.textContent = it.strips ? `Tab · ${it.bars} bars` : it.error ? 'Couldn’t read: sheet music' : 'Sheet music';
+      badge.textContent = it.strips ? `${it.strips.some((s) => s.score) ? 'Notes' : 'Tab'} · ${it.bars} bars` : it.error ? 'Couldn’t read: sheet music' : 'Sheet music';
       badge.classList.add(it.strips ? 'is-tab' : 'is-sheet');
       list.append(li);
     }
@@ -565,7 +565,10 @@ async function saveImported(song, replace) {
 
 // Several PDFs of one song (one per instrument, as tools/ug_collect.py saves them): read, check, then one song.
 // Returns the new song's id, or null when cancelled or nothing could be made.
-// auto: { title, artist } of a song the UG helper saved: made as it is, without the review.
+// UG's key from the helper's folder name, "Song - Artist (Key C)", when the files came with their folder.
+const folderKey = (files) => files.map((f) => /\(Key ([A-G][#b]?m?)\)[\\/]/.exec(f.webkitRelativePath || '')?.[1]).find(Boolean) || '';
+
+// auto: { title, artist, key } of a song the UG helper saved: made as it is, without the review.
 async function importPdfParts(files, auto = null, replace = false) {
   const first = namesFromPdf(files[0].name.replace(/\.[^.]+$/, ''), true);
   const items = await readParts(files, first.title);
@@ -588,7 +591,7 @@ async function importPdfParts(files, auto = null, replace = false) {
   }
   const { ugToAlphaTex } = await import('./ugtab.js');
   const parts = tabs.map(({ name, program, strips }) => ({ name, program, strips }));
-  const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1) });
+  const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1), key: auto?.key || folderKey(files) });
   if (!made) { toast('Couldn’t combine these PDFs into a song.', 6000); return null; }
   const id = await saveImported({ kind: 'tex', title, artist, data: made.tex, fileName: tabs[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() }, replace);
   toast(`${replace ? 'Updated' : 'Added'} “${title}”: ${parts.length} tab track${parts.length > 1 ? 's' : ''}, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''}`, 8000);
