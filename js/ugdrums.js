@@ -4,7 +4,20 @@
 // The bars come out in the same form as ugtab.js reads tab, so ugToAlphaTex lines them up with the
 // other parts. Image sizes are normalised to a staff spacing of UG_UNIT pixels by the caller.
 import { stemLength } from './ugtab.js';
-import { readHeading } from './ugtext.js';
+import { readHeading, readRestCount } from './ugtext.js';
+
+// the thick bar of a multi-bar rest, drawn across the middle line: solid ink just above and below it.
+// Its middle (where its count is printed), or null.
+function restBar(ink, w, st, xa, xb) {
+  const mid = st.ys[2], need = Math.min(3 * st.u, 0.4 * (xb - xa));
+  const runs = [-0.25, 0.25].map((k) => {
+    const y = Math.round(mid + k * st.u);
+    let run = 0, best = 0, end = 0;
+    for (let x = Math.round(xa) + 3; x < xb - 3; x++) { run = ink[y * w + x] ? run + 1 : 0; if (run > best) { best = run; end = x + 1; } }
+    return [best, end];
+  });
+  return runs.every((r) => r[0] >= need) ? runs[0][1] - runs[0][0] / 2 : null;
+}
 
 /* ---------- staves ---------- */
 
@@ -17,10 +30,17 @@ export function findDrumStaves(light, w, h, oneLine = false) {
     for (let x = 0; x < w; x++) { n += light[y * w + x]; run = light[y * w + x] ? run + 1 : 0; if (run > longest) longest = run; }
     if (n > 0.18 * w && longest > 0.12 * w) {
       const r = rows[rows.length - 1];
-      if (r && y - r.last <= 1) { r.last = y; r.sum += y; r.n++; } else rows.push({ first: y, last: y, sum: y, n: 1 });
+      if (r && y - r.last <= 1) { r.last = y; r.sum += y; r.n++; r.ns.push([y, n]); } else rows.push({ first: y, last: y, sum: y, n: 1, ns: [[y, n]] });
     }
   }
-  const ys = rows.filter((r) => r.n <= 3).map((r) => r.sum / r.n);
+  // a band thicker than a line is a beam, unless a multi-bar rest's thick bar lies on the line: then
+  // the line is its rows that run on past the bar (dropped, the song's last line was lost)
+  const ys = rows.map((r) => {
+    if (r.n <= 3) return r.sum / r.n;
+    const top = Math.max(...r.ns.map((v) => v[1]));
+    const line = r.ns.filter((v) => v[1] >= 0.9 * top);
+    return line.length <= 3 && r.ns.some((v) => v[1] < 0.7 * top) ? line.reduce((a, v) => a + v[0], 0) / line.length : null;
+  }).filter((y) => y !== null);
   const edges = (y) => {
     y = Math.round(y);
     let x0 = 0, x1 = w - 1;
@@ -323,7 +343,11 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
     }
     for (const r of rests) if (r.cx > bl[i] && r.cx < bl[i + 1] && !cols.some((c) => Math.abs(c.cx - r.cx) < 0.6 * u)) cols.push({ ...r });
     cols.sort((a, b) => a.cx - b.cx);
-    bars.push({ x0: bl[i], x1: bl[i + 1], cols: cols.some((c) => !c.rest) ? cols : [] });
+    const bar = { x0: bl[i], x1: bl[i + 1], cols: cols.some((c) => !c.rest) ? cols : [] };
+    // a multi-bar rest: a thick bar on the middle line, its count above the staff ("8")
+    const rc = !bar.cols.length && !st.one && restBar(ink, w, st, bl[i], bl[i + 1]);
+    if (rc) bar.rest = readRestCount(ink, w, st, rc - 2.2 * u, rc + 2.2 * u) || 1;
+    bars.push(bar);
   }
   let hd = { sections: [], tempos: [] };
   try { hd = readHeading(ink, w, { ...st, ys: st.one ? [top - 2 * u, top - u, top, top + u] : st.ys }); } catch { /* no section names: the other parts have them */ }

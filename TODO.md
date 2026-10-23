@@ -81,7 +81,13 @@
 
 **Watch out:** run the tests after changing `js/ugtab.js` or `js/pdftab.js`. In the preview, run `pdfToTab` with `{ lyrics: false }` unless lyrics are what you're testing.
 
-## Bug: How He Loves Us plays out of sync (to fix)
+## Bug: How He Loves Us plays out of sync (fixed 2026-10-23, keep for reference)
+
+**Fixed:** 9 parts read 116 bars and Drums 117, not 128, and the tempo read 261.
+- `findStaves`: the foot of the 8-bar intro rest's thick bar counted as a 7th staff line, so the first line (bars 1–12) was lost. A short line much closer than a staff space to another is now dropped.
+- Drums: multi-bar rests are read (`restBar` + `readRestCount`), and a rest bar lying on the middle line no longer hides that line (the last line, bars 125–128, was lost).
+- Tempo: digits are read with the rest-count reader (UG's own shapes) and the parts vote. The system-font match read 75 as 26 and When I Go Down's 68 as 66.
+- Checked: all 10 tracks 128 bars, every bar adds up, tempo 75; Here I Am To Worship still 85 in every part.
 
 **What the user saw:** in the imported How He Loves Us, some instruments come in early and others late. The tracks don't line up.
 
@@ -138,10 +144,10 @@ Bars read per part with `pdfToTab` (lyrics off):
 | Part | Bars | Note |
 |---|---|---|
 | Electric p5, Electric p6, Bass p3 | 114 ✓ | |
-| Acoustic p4 | 107 | Measured before the rest-line fixes; re-check. 10 pages, about 3 min. |
+| Acoustic p4 | 114 ✓ | (2026-10-23) |
 | Piano p7 | 37 ✗ | Line 3 (bars 28–104) is all multi-bar rests and is lost. `findStaves` finds the staff (ys ≈ 575…651), so the loss is later. Debug `readStrip` on that staff: probably `barLines` (bar lines with ticks or 2 breaks) or `tabSize`. |
-| Drums p2 | 56 ✗ | `readDrumStrip` (`js/ugdrums.js`) doesn't read multi-bar rests. Add the empty bar + big number logic that `readStrip` has (`readRestCount`, `bar.rest`). |
-| Percussion p1 | 33 ✗ | Same as Drums. |
+| Drums p2 | 71 ✗ | Multi-bar rests on a five-line staff are read now (was 56). Find which lines still lose bars. |
+| Percussion p1 | 33 ✗ | One-line staff: `restBar` in `js/ugdrums.js` skips one-line staves. Look at how its multi-bar rests are drawn. |
 
 Other notes:
 - `findStaves` has a new rule: two lines 3 or 5 spaces apart, joined by ≥ 3 bar lines, are filled in as a staff. It isn't proven to help yet; remove it if it doesn't.

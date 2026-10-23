@@ -44,14 +44,21 @@ export function findStaves(light, w, h, ink, counts = [6]) {
     // of the page: that short, it must start at a bar line (a long flat tie doesn't).
     if ((n > 0.45 * w && longest > 20) || longest > 0.15 * w || bridged > 0.15 * w
       || (longest > 0.07 * w && barAt(longX, y)) || (bridged > 0.07 * w && barAt(bridgedX, y))) {
-      if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; }
-      else lines.push({ last: y, sum: y, n: 1 });
+      const wide = n > 0.45 * w; // a row across the page
+      if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; l.wide ||= wide; }
+      else lines.push({ last: y, sum: y, n: 1, wide });
     }
   }
   // a band much thicker than the staff lines (a beam, a block of words) is no staff line: taken as
   // one, it would join a staff's run and shift the staff a string down
-  const thick = lines.map((l) => l.n).sort((a, b) => a - b)[lines.length >> 1] * 2;
-  const ys = lines.filter((l) => l.n <= Math.max(thick, 3)).map((l) => l.sum / l.n);
+  const thick = Math.max(lines.map((l) => l.n).sort((a, b) => a - b)[lines.length >> 1] * 2, 3);
+  const found = lines.filter((l) => l.n <= thick).map((l) => ({ y: l.sum / l.n, wide: l.wide }));
+  // a short "line" far closer than a staff space to another (the foot of a multi-bar rest's thick
+  // bar, a word) is no staff line: it broke the staff's even spacing and lost the line (How He
+  // Loves' 12-bar intro)
+  const step = found.slice(1).map((l, i) => l.y - found[i].y).filter((g) => g > 6).sort((a, b) => a - b);
+  const sp0 = step[step.length >> 1];
+  const ys = found.filter((l, i) => l.wide || !sp0 || !((i > 0 && l.y - found[i - 1].y < 0.4 * sp0) || (i + 1 < found.length && found[i + 1].y - l.y < 0.4 * sp0))).map((l) => l.y);
   // A line of only multi-bar rests can be drawn with just its outer two lines (the others are ticks at
   // the bar lines): two lines 3 or 5 spaces apart, joined by bar lines, are a 4- or 6-line staff.
   const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter((g) => g > 6).sort((a, b) => a - b);
@@ -723,8 +730,10 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     seen[b.name] = (seen[b.name] || 0) + 1;
     return b.numbered ? `${b.name} ${seen[b.name]}` : b.name;
   };
-  // the tempo mark may sit over one part's staff only (over the music staff, not the tab)
-  const firstTempo = [strips, ...extra.map((p) => p.strips)].map((list) => list.flatMap((s) => s.bars).find((b) => b.tempo)?.tempo).find(Boolean);
+  // the tempo mark may sit over one part's staff only (over the music staff, not the tab); when
+  // parts read it differently, most of them are right (a digit misread in one part)
+  const marks = [strips, ...extra.map((p) => p.strips)].map((list) => list.flatMap((s) => s.bars).find((b) => b.tempo)?.tempo).filter(Boolean);
+  const firstTempo = marks.reduce((top, v) => (marks.filter((x) => x === v).length > marks.filter((x) => x === top).length ? v : top), marks[0]);
   let lastTempo = firstTempo || tempo;
   // each bar's note lengths (sixteenths) fitted to the bar, and when each note starts
   const layout = (b, first) => {
