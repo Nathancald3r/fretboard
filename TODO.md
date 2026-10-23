@@ -28,6 +28,15 @@
 
 **Done when:** a full save of Here I Am To Worship takes ~30 s, every part reads 85 bars, and the PDFs show no cut words or notes and no doubled lines (render with `fitz` and look).
 
+**The rest of the 33 s at `b87c4a5`** (besides the 24.6 s of print): `pick_track` 2.8 s, `notation` 1.7 s, `sharp_screen` 0.9 s, chords 0.8 s. These are small, so the time to win is in the prints and the PDF writes.
+
+**Already tried, don't repeat:**
+- Printing tracks in parallel tabs: slower, because UG's drawing is all CPU work.
+- Picking tracks by pressing them from page JS (`PRESS_JS`): unreliable, so `pick_track` keeps the locator click.
+- Lowering the picture scale: never, it costs quality.
+- Print time is all UG CPU work: about 1.1 s of layout plus 0.35 s for `toDataURL` per print. There are no timers or network waits to cut.
+- With the Instruments panel open, the score is 1582 px wide (4 bars a line); closed, 2214 px (6 bars). The note pixel scale is the same, but a wider score means fewer, wider pictures. Measure whether closing the panel before printing saves time.
+
 **Watch out:**
 - The collector Chrome on 9222 is shared with other sessions. Say when you're using it.
 - The preview stalls on page 5 of Rhythm Guitar in `pdfToTab` (old and new PDFs alike). Check the bars another way, or look into that stall.
