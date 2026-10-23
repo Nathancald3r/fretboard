@@ -237,6 +237,10 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
     }
     notes.push({ cx: (c.x0 + c.x1) / 2, cy, stem: s, drum: kind, used: c });
   }
+  // a grace note (a small head before a beat) takes no time: leave it out of the rhythm
+  const mid = (v) => v.sort((p, q) => p - q)[v.length >> 1] || 0;
+  const mw = mid(notes.map((n) => n.used.w)), mh = mid(notes.map((n) => n.used.h));
+  for (const n of notes) n.grace = (n.used.w < 0.8 * mw && n.used.h < 0.8 * mh) || n.used.w < 0.6 * mw; // (or its slash)
   // rests: pieces in the staff with no stem, tall and narrow (quarter, eighth, sixteenth) or a flat block (half)
   const rests = [];
   for (const c of comps) {
@@ -256,10 +260,10 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
   const bars = [];
   for (let i = 0; i + 1 < bl.length; i++) {
     const cols = [];
-    for (const n of notes.filter((q) => q.cx > bl[i] && q.cx < bl[i + 1])) {
+    for (const n of notes.filter((q) => !q.grace && q.cx > bl[i] && q.cx < bl[i + 1])) {
       const c = cols.find((k) => Math.abs(k.sx - n.stem.x) <= 3);
-      if (c) { if (!c.notes.some((q) => q.drum === n.drum)) c.notes.push({ drum: n.drum }); c.cx = Math.min(c.cx, n.cx); c.ys.push(n.cy); }
-      else cols.push({ cx: n.cx, sx: n.stem?.x ?? n.cx, stem: n.stem, ys: [n.cy], notes: [{ drum: n.drum }] });
+      if (c) { if (!c.notes.some((q) => q.drum === n.drum)) c.notes.push({ drum: n.drum }); c.cx = Math.min(c.cx, n.cx); c.ys.push(n.cy); c.heads.push(n.used); }
+      else cols.push({ cx: n.cx, sx: n.stem?.x ?? n.cx, stem: n.stem, ys: [n.cy], heads: [n.used], notes: [{ drum: n.drum }] });
     }
     for (const c of cols) {
       if (!c.stem) { c.len = 16; c.beamed = false; continue; } // a whole note (or a cymbal left to ring)
@@ -271,7 +275,20 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
       const r = hiY - a >= b - loY
         ? stemLength(flipped, w, { x, top: h - 1 - Math.round(hiY), bot: h - 1 - a }, u)
         : stemLength(ink, w, { x, top: Math.round(loY), bot: b }, u);
-      c.len = r.len; c.beamed = r.beamed;
+      // in standard notation the dot sits just right of a notehead (not by the stem, as in tab)
+      const plain = Number.isInteger(Math.log2(r.len)) ? r.len : r.len / 1.5;
+      const dotted = c.heads.some((hd) => comps.some((d) => d.w <= 0.45 * u && d.h <= 0.45 * u && d.area >= 6 && d.x0 > hd.x1 && d.x0 - hd.x1 <= 0.9 * u
+        && (d.y0 + d.y1) / 2 >= hd.y0 - 0.2 * u && (d.y0 + d.y1) / 2 <= hd.y1 + 0.2 * u));
+      c.len = dotted ? plain * 1.5 : plain; c.beamed = r.beamed;
+    }
+    // two voices struck together (a cymbal stem up, the kick's stem down) are one beat; the shorter note sets the next
+    cols.sort((p, q) => p.cx - q.cx);
+    for (let k = cols.length - 1; k > 0; k--) {
+      const p = cols[k - 1], q = cols[k];
+      if (q.cx - p.cx > 0.5 * u) continue;
+      for (const nt of q.notes) if (!p.notes.some((o) => o.drum === nt.drum)) p.notes.push(nt);
+      p.len = Math.min(p.len, q.len);
+      cols.splice(k, 1);
     }
     for (const r of rests) if (r.cx > bl[i] && r.cx < bl[i + 1] && !cols.some((c) => Math.abs(c.cx - r.cx) < 0.6 * u)) cols.push({ ...r });
     cols.sort((a, b) => a.cx - b.cx);

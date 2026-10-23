@@ -64064,7 +64064,8 @@
 					centeredEffectGlyphs.push(glyph);
 				}
 				if (this.container.beat.dots > 0 && tabRenderer.rhythmMode !== TabRhythmMode.Hidden) {
-					const y = this.getNoteY(this.container.beat.maxNote, NoteYPosition.BottomWithStem);
+					// Fretboard: just under the staff beside the stem, as Ultimate Guitar draws it (at the stem's end the beam hides it)
+					const y = tabRenderer.getLineY(this.renderer.bar.staff.tuning.length - 1) + tabRenderer.getLineHeight(.6);
 					for (let i = 0; i < this.container.beat.dots; i++) this.addEffect(new AugmentationDotGlyph(0, y));
 				}
 			} else {
