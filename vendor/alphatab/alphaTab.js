@@ -38878,6 +38878,44 @@
 	*   - Support for modulators
 	* @internal
 	*/
+	
+	function fbModSource(src, key, vel) {
+		const index = src & 127;
+		let x = index === 2 ? vel / 127 : key / 127;
+		if (src & 256) x = 1 - x;
+		const type = src >> 10;
+		const curve = (t) => type === 1 ? (t >= 1 ? 1 : t <= 0 ? 0 : -(40 / 96) * Math.log10(1 - t)) : type === 2 ? (t <= 0 ? 0 : t >= 1 ? 1 : 1 + (40 / 96) * Math.log10(t)) : type === 3 ? (t >= 0.5 ? 1 : 0) : t;
+		if (src & 512) return x >= 0.5 ? curve(2 * x - 1) : -curve(1 - 2 * x);
+		return curve(x);
+	}
+	function fbCollectMods(hydra, pFirst, pBag, iFirst, iBag) {
+		const usable = (m) => {
+			if (m.modDestOper !== 8 && m.modDestOper !== 11) return false;
+			const okSource = (s) => !(s & 128) && ((s & 127) === 2 || (s & 127) === 3);
+			return okSource(m.modSrcOper) && (m.modAmtSrcOper === 0 || okSource(m.modAmtSrcOper));
+		};
+		const same = (a, b) => a.modSrcOper === b.modSrcOper && a.modDestOper === b.modDestOper && a.modAmtSrcOper === b.modAmtSrcOper && a.modTransOper === b.modTransOper;
+		const level = (mods, bags, gens, modField, genField, isZone, first, bag) => {
+			const of = (b) => mods.slice(bags[b][modField], bags[b + 1][modField]);
+			const local = of(bag);
+			let global = [];
+			if (first !== bag && !gens.slice(bags[first][genField], bags[first + 1][genField]).some((g) => g.genOper === isZone)) global = of(first).filter((g) => !local.some((l) => same(g, l)));
+			return global.concat(local);
+		};
+		return level(hydra.imods, hydra.ibags, hydra.igens, 'instModNdx', 'instGenNdx', 53, iFirst, iBag)
+			.concat(level(hydra.pmods, hydra.pbags, hydra.pgens, 'modNdx', 'genNdx', 41, pFirst, pBag))
+			.filter(usable)
+			.map((m) => ({ src: m.modSrcOper, dest: m.modDestOper, amount: (m.modAmount << 16) >> 16, amountSrc: m.modAmtSrcOper }));
+	}
+	function fbApplyMods(region, key, vel) {
+		const r = new Region(region);
+		for (const m of region.fbMods) {
+			const v = fbModSource(m.src, key, vel) * (m.amountSrc ? fbModSource(m.amountSrc, key, vel) : 1) * m.amount;
+			if (m.dest === 8) r.initialFilterFc += v;
+			else r.modEnvToFilterFc += v;
+		}
+		return r;
+	}
 	var TinySoundFont = class TinySoundFont {
 		_midiEventQueue = new Queue();
 		_mutedChannels = /* @__PURE__ */ new Map();
@@ -39105,7 +39143,7 @@
 				return;
 			}
 			const voicePlayIndex = this._voicePlayIndex++;
-			for (const region of this.presets[presetIndex].regions) {
+			for (let region of this.presets[presetIndex].regions) {
 				if (key < region.loKey || key > region.hiKey || midiVelocity < region.loVel || midiVelocity > region.hiVel) continue;
 				let voice = null;
 				if (region.group !== 0) {
@@ -39120,11 +39158,14 @@
 					}
 					voice = this._voices[this._voices.length - 4];
 				}
+				if (region.fbMods && region.fbMods.length) region = fbApplyMods(region, key, midiVelocity);
 				voice.region = region;
 				voice.playingPreset = presetIndex;
 				voice.playingKey = key;
 				voice.playIndex = voicePlayIndex;
-				voice.noteGainDb = this.globalGainDb - region.attenuation - SynthHelper.gainToDecibels(1 / vel);
+				const fbPreset = this.presets[presetIndex];
+				if (fbPreset.fbMinAtt === undefined) fbPreset.fbMinAtt = fbPreset.regions.reduce((m, r) => Math.min(m, r.attenuation), Infinity);
+				voice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt)) - SynthHelper.gainToDecibels(1 / vel);
 				if (this._channels) this._channels.setupVoice(this, voice);
 				else {
 					voice.calcPitchRatio(0, this.outSampleRate);
@@ -39713,7 +39754,7 @@
 										if (!(isPercussion && TinySoundFont._setContainsRange(percussionKeys, zoneRegion.loKey, zoneRegion.hiKey) || !isPercussion && instrumentPrograms.has(phdr.preset))) {
 											Logger.debug("AlphaSynth", `Skipping load of unused sample ${shdr.sampleName} for preset ${phdr.presetName} (bank ${preset.bank} program ${preset.presetNumber})`);
 											zoneRegion.samples = new Float32Array(0);
-										} else if ((shdr.sampleType & 1) !== 0) {
+										} else if ((shdr.sampleType & 7) !== 0) {
 											Logger.debug("AlphaSynth", `Loading of used sample ${shdr.sampleName} for preset ${phdr.presetName} (bank ${preset.bank} program ${preset.presetNumber})`);
 											if ((shdr.sampleType & 16) !== 0) zoneRegion.samples = hydra.decodeSamples(shdr.start, shdr.end, true);
 											else {
@@ -39728,6 +39769,7 @@
 											zoneRegion.samples = new Float32Array(0);
 										}
 										preset.regions[regionIndex] = new Region(zoneRegion);
+										preset.regions[regionIndex].fbMods = fbCollectMods(hydra, phdr.presetBagNdx, pbagIndex, inst.instBagNdx, ibagIndex);
 										regionIndex++;
 										hadSampleId = true;
 									} else zoneRegion.operator(igen.genOper, igen.genAmount);
