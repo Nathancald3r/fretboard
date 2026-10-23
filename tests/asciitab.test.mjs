@@ -105,9 +105,31 @@ D|-----2---0---|
 A|---3-----3---|
 E|-0-----------|`,
     expect: (n, score) => {
-      assert.equal(score.tempo, 98);
+      assert.equal(score.tempo, 196);
       assert.equal(score.tracks[0].staves[0].capo, 1);
       assert.deepEqual(score.tracks[0].staves[0].tuning, [64, 59, 55, 50, 45, 40]);
+    },
+  },
+  'Candlelight intro: each column a slot, string names as they sound with the capo': {
+    text: `Tuning: Capo on the 1st fret (F, Bb, Eb, Ab, C, f)
+Tempo: 196 (98)
+
+f |---0----|---2----|---12-----|
+C |-2---2--|-2---2--|-----2----|
+Ab|--------|--------|----------|
+Eb|--------|--------|----------|
+Bb|0-0-----|0-0-----|0h2-------|
+F |--------|--------|----------|`,
+    expect: (n, score) => {
+      const bars = score.tracks[0].staves[0].bars;
+      assert.deepEqual(score.tracks[0].staves[0].tuning, [64, 59, 55, 50, 45, 40]);
+      assert.equal(score.tracks[0].staves[0].capo, 1);
+      const beats = (b) => b.voices[0].beats.map((x) => (x.isRest ? 'r' : x.notes.map((m) => m.fret).join('+')) + '/' + x.duration + (x.dots ? '.' : ''));
+      // 0 2 0 then f0 a quarter (the gap before C2), C2 a dotted quarter: 8 eighths, 4/4
+      assert.deepEqual(beats(bars[0]), ['0/8', '2/8', '0/8', '0/4', '2/4.']);
+      // 12 is one slot and the h of 0h2 is none: 0 2 12 2(5 slots) → 8 slots
+      assert.deepEqual(beats(bars[2]), ['0/8', '2/8', '12/8', '2/2', 'r/8']);
+      for (const b of bars) assert.equal(b.masterBar.timeSignatureNumerator + '/' + b.masterBar.timeSignatureDenominator, '4/4');
     },
   },
   'header: drop D, half-step-down list': {

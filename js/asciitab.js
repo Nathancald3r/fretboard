@@ -99,8 +99,8 @@ function readHeader(text, strings, labels) {
     if (t && out.tempo == null) {
       const a = Number(t[1]);
       const b = t[2] ? Number(t[2]) : 0;
-      // "196 (98)": the strum count and the beat. Strums are read as 8ths, so the beat is the smaller.
-      out.tempo = b && (Math.abs(a - 2 * b) <= 1 || Math.abs(b - 2 * a) <= 1) ? Math.min(a, b) : a;
+      // "196 (98)": the first number is the tempo
+      out.tempo = a;
     }
     const c = line.match(/\bcapo\b[^\d\n]{0,20}?(\d{1,2})/i);
     if (c && out.capo == null && Number(c[1]) <= 12) out.capo = Number(c[1]);
@@ -122,11 +122,6 @@ function readHeader(text, strings, labels) {
       const flip = [...asis].reverse();
       const cost = (p) => p.reduce((s, x, i) => s + pcGap(x, shapes[i]), 0);
       pcs = cost(flip) <= cost(asis) ? flip : asis;
-      // with a capo, the list is often what sounds (capo 1 on standard: F Bb Eb Ab C F)
-      if (out.capo) {
-        const down = pcs.map((x) => (x - out.capo + 12) % 12);
-        if (cost(down) < cost(pcs)) pcs = down;
-      }
     } else if (drop && NOTE_NAMES[drop[1].toLowerCase()] !== undefined) {
       pcs = [...shapes];
       pcs[strings - 1] = NOTE_NAMES[drop[1].toLowerCase()];
@@ -188,7 +183,44 @@ function parseSystem(lines) {
       }
     });
   }
-  return { bars, events, width, labels: parts.map((p) => p.label), count: lines.length };
+  return { bars, events, width, rows, labels: parts.map((p) => p.label), count: lines.length };
+}
+
+// Every column between two bar lines is one time slot ("|-2---2--|" is 8), except the second digit
+// of a two-digit fret (12 is one slot) and a joining letter on its own between two notes ("5h7",
+// "5/7", "7b9": the h is not a beat). Returns the slot of each column, and the slot count.
+function barSlots(sys, a, b, inBar) {
+  const { rows } = sys;
+  const skip = new Set();
+  for (const e of inBar) if (e.wide) skip.add(e.col + 1);
+  for (let c = a + 1; c < b; c++) {
+    const col = rows.map((r) => r[c] || '-');
+    const joins = col.some((ch, s) => /[hpbrs\/\\]/i.test(ch) && /\d/.test(rows[s][c - 1] || '') && /\d/.test(rows[s][c + 1] || ''));
+    if (joins && col.every((ch) => /[-hpbrs\/\\]/i.test(ch))) skip.add(c);
+  }
+  const slot = {};
+  let n = 0;
+  for (let c = a + 1; c < b; c++) if (!skip.has(c)) slot[c] = n++;
+  return { slot, n };
+}
+
+// One bar timed by its slots: each slot an 8th (a 16th when the bar has more than 12).
+function slotBar(inBar, slot, n) {
+  const unit = n > 12 ? 16 : 8;
+  const at = inBar.map((e) => slot[e.col]);
+  const beats = [];
+  if (at[0] > 0) durationsFor(at[0] / unit).forEach((d) => beats.push('r' + dur(d)));
+  inBar.forEach((e, i) => {
+    const next = i + 1 < at.length ? at[i + 1] : n;
+    const [first, ...rest] = durationsFor((next - at[i]) / unit);
+    beats.push(beatTex(e.notes, first));
+    rest.forEach((d) => beats.push('r' + dur(d)));
+  });
+  // 8 eighths or 16 sixteenths is 4/4; 12 sixteenths is 6/8
+  let ts = [n, unit];
+  if (n === unit) ts = [4, 4];
+  else if (unit === 16 && n % 2 === 0) ts = [n / 2, 8];
+  return { ts, tex: beats.join(' ') };
 }
 
 function durationsFor(fraction) {
@@ -261,7 +293,9 @@ function systemBars(sys) {
     // strums written side by side ("000-00000000"): every strum is an 8th and the dashes between
     // them only separate groups, so the bar is as long as its strums (11 strums: 11/8). A long run
     // goes on into bars of 8.
-    const close = inBar.filter((e, k) => k && e.col - inBar[k - 1].col === 1).length;
+    // (side by side on the same string: notes next to each other on different strings are just tight spacing)
+    const close = inBar.filter((e, k) => k && e.col - inBar[k - 1].col === 1
+      && e.notes.some((x) => inBar[k - 1].notes.some((y) => y.string === x.string))).length;
     if (inBar.length > 2 && close >= inBar.length / 2) {
       const n = inBar.length;
       const sizes = n <= 16 ? [n] : Array.from({ length: Math.ceil(n / 8) }, (_, k) => Math.min(8, n - 8 * k));
@@ -272,7 +306,9 @@ function systemBars(sys) {
       }
       continue;
     }
-    out.push(inBar.length ? barTex(inBar, a, b) : 'r.1');
+    if (!inBar.length) { out.push('r.1'); continue; }
+    const { slot, n } = barSlots(sys, a, b, inBar);
+    out.push(n <= 24 ? slotBar(inBar, slot, n) : barTex(inBar, a, b)); // a very long bar: spacing as a 16th grid
   }
   return out;
 }
@@ -292,7 +328,15 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null
   const strings = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
   const used = systems.filter((s) => s.count === strings);
   const head = readHeader(text, strings, used[0].labels);
-  const tuning = head.tuning || readTuning(used[0].labels, strings);
+  let tuning = head.tuning || readTuning(used[0].labels, strings);
+  // With a capo, the string names are often what sounds (capo 1 on standard: F C Ab Eb Bb F).
+  // The guitar is then in the tuning a capo's worth lower, or the capo would count twice.
+  const std = DEFAULT_TUNINGS[strings];
+  if (head.capo && std) {
+    const off = (t) => t.reduce((s, m, i) => s + pcGap(m % 12, std[i] % 12), 0);
+    const down = tuning.map((m) => m - head.capo);
+    if (off(down) < off(tuning)) tuning = down;
+  }
   const bpm = Math.round(tempo || head.tempo || 100);
 
   // a bar of strums sets its own time signature; the bars after it go back to 4/4
