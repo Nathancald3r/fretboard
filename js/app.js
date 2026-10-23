@@ -599,10 +599,14 @@ async function importPdfParts(files, auto = null, replace = false) {
 // its turn. Two at once each opened a "Reading the PDFs" dialog, and the one in front froze.
 let importing = Promise.resolve();
 let waiting = 0;
+const queued = new Set(); // the same files twice in the queue are imported once
 function importFiles(files, opts) {
+  const key = files.map((f) => `${f.name}|${f.size}`).sort().join('/');
+  if (files.length && queued.has(key)) return Promise.resolve({ ids: [] });
   if (waiting && files.length) toast('Another import is running: this one starts when it’s done.', 5000);
   waiting++;
-  const run = importing.then(() => importFilesNow(files, opts)).finally(() => { waiting--; });
+  queued.add(key);
+  const run = importing.then(() => importFilesNow(files, opts)).finally(() => { waiting--; queued.delete(key); });
   importing = run.catch(() => {});
   return run;
 }

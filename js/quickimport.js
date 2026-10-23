@@ -137,7 +137,9 @@ export async function readyRuns(dir) {
       const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
       // held: a file wasn't saved, so the song waits until you Retry it or leave it out (the UG downloads panel)
       const missing = Array.isArray(m.missing) ? m.missing.filter((n) => !(m.dropped || []).includes(n)) : [];
-      runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
+      // id, not key: key is the song's key (G), and it overwrote this, so a song was never marked taken
+      // and was added again every 4 s (Rest On Us, 8 times)
+      runs.push({ id: key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
         title: String(m.song || ''), artist: String(m.artist || ''), key: String(m.key || ''), replace: m.replace === true, missing, held: missing.length > 0,
         chords: typeof m.chords === 'string' ? m.chords : '', video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
     }
@@ -180,7 +182,7 @@ export async function showReady() {
     const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'a text file' : 'a Guitar Pro file';
     const held = r.held ? ` ${r.missing.length} not saved (${r.missing.join(', ')}).` : '';
     text.textContent = `“${r.song}” is ready: ${kind} saved by the UG collector.${held}${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
-    box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.key); showReady(); }));
+    box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.id); showReady(); }));
   } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
 }
 
@@ -199,11 +201,11 @@ async function importRun(r, auto = false) {
   for (const t of r.tracks) {
     try { files.push(await (await r.dir.getFileHandle(t.file)).getFile()); } catch { /* moved or deleted: left out */ }
   }
-  if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.key); showReady(); return null; }
-  if (auto) await markRun(r.key); // taken now, so it's never added twice
+  if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.id); showReady(); return null; }
+  if (auto) await markRun(r.id); // taken now, so it's never added twice
   // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
   const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist } } : {}) });
-  if (ids?.length && !auto) await markRun(r.key); // cancelled: it stays offered
+  if (ids?.length && !auto) await markRun(r.id); // cancelled: it stays offered
   if (ids?.length) await addExtras(r, ids[0]);
   showReady();
   return ids?.[0] ?? null;
@@ -620,10 +622,12 @@ let runsBusy = false;
 async function checkRuns() {
   if (!runs || runsBusy) return;
   if (Date.now() > runs.until) { clearInterval(runs.timer); runs = null; showAuto(); return; }
-  const dir = await grantedFolder();
-  if (!dir) return;
+  // taken before the first await: the timer, the window's focus and the tab showing again all call
+  // this at once, and each found the same song and added it again (How Great Is Our God, 3 times)
   runsBusy = true;
   try {
+    const dir = await grantedFolder();
+    if (!dir) return;
     // a held song (a file not saved) waits: it comes in once you Retry or leave out that file
     const fresh = (await readyRuns(dir)).filter((r) => !r.held && new Date(r.finished).getTime() >= runs.since).reverse(); // oldest first
     const added = [];
@@ -712,10 +716,10 @@ async function showAuto() {
 async function autoImport() {
   if (!watch || busy) return;
   if (Date.now() > watch.until) { stopWatch(); return; }
-  const dir = await grantedFolder();
-  if (!dir) return;
-  busy = true;
+  busy = true; // before the first await, as in checkRuns
   try {
+    const dir = await grantedFolder();
+    if (!dir) return;
     const seen = new Set((await getValue('importedFiles')) || []);
     const fresh = [];
     for await (const entry of dir.values()) {
