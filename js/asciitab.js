@@ -25,14 +25,27 @@ const VALUES = [
 function isTabLine(line) {
   const body = line.replace(LABEL, '').trim();
   if (body.length < 6 || (body.match(/-/g) || []).length < 4) return false;
+  if (!LABEL.test(line) && !/[|\d]/.test(body)) return false; // only dashes: a "palm mute---" line, not a string
   let ok = 0;
   for (const ch of body) if (TAB_CHARS.test(ch) || ch === ' ') ok++;
   return ok / body.length > 0.9;
 }
 
+// Words written on a string line ("2~~~~ let ring---") become dashes, so the line still reads as
+// tab and its columns stay in place; a repeat sign between bars ("| x2  --0--|") becomes spaces.
+// The string name at the start and runs of x (muted strums) stay.
+function cleanLine(line) {
+  const m = line.match(LABEL);
+  const head = m ? m[0] : '';
+  const body = line.slice(head.length)
+    .replace(/(^|[\s|])(x\d+)(?=\s|$)/gi, (all, pre, x) => pre + ' '.repeat(x.length))
+    .replace(/[A-Za-z]{2,}(?: [A-Za-z]{2,})*/g, (w) => (/^x+$/i.test(w) ? w : '-'.repeat(w.length)));
+  return head + body;
+}
+
 // Groups of consecutive tab lines (one "system" = one line per string).
 function findSystems(text) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const lines = text.replace(/\r\n?/g, '\n').split('\n').map(cleanLine);
   const systems = [];
   let current = [];
   const flush = () => {
@@ -74,6 +87,16 @@ function readTuning(labels, count) {
 
 const midiName = (midi) => NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 
+// Whether the digits at columns c and c+1 of string s are two strums, not one two-digit fret.
+// Strummed chords are often written with no dashes between strums ("000-00000000"): a run of three
+// or more digits is strums, and so is a pair when another string starts a note at c+1.
+function single(rows, s, c) {
+  const row = rows[s];
+  if (!/\d/.test(row[c] || '') || !/\d/.test(row[c + 1] || '')) return false;
+  if (/\d/.test(row[c + 2] || '') || /\d/.test(row[c - 1] || '')) return true;
+  return rows.some((r, k) => k !== s && /\d/.test(r[c + 1] || '') && !/\d/.test(r[c] || ''));
+}
+
 // Reads notes, effects and bar lines from one system.
 function parseSystem(lines) {
   const parts = lines.map(splitLabel);
@@ -89,11 +112,11 @@ function parseSystem(lines) {
       const prev = row[c - 1] || '-';
       let fret = null;
       let len = 1;
-      if (/\d/.test(ch) && !/\d/.test(prev)) {
+      if (/\d/.test(ch) && (!/\d/.test(prev) || single(rows, s, c - 1))) {
         const two = row.slice(c, c + 2);
-        if (/^\d\d$/.test(two) && Number(two) <= 24) { fret = Number(two); len = 2; }
+        if (/^\d\d$/.test(two) && Number(two) <= 24 && !single(rows, s, c)) { fret = Number(two); len = 2; }
         else fret = Number(ch);
-      } else if (/x/i.test(ch) && !/[a-z]/i.test(prev) && !/[a-z]/i.test(row[c + 1] || '-')) {
+      } else if (/x/i.test(ch) && !/[a-wyz]/i.test(prev) && !/[a-wyz]/i.test(row[c + 1] || '-')) {
         fret = 'x';
       }
       if (fret === null) return;
@@ -186,6 +209,16 @@ function systemBars(sys) {
     const [a, b] = [edges[i], edges[i + 1]];
     if (b - a < 3) continue; // "||" or a tiny edge piece
     const inBar = events.filter((e) => e.col > a && e.col < b);
+    // strums written side by side ("00000000000000000000"): one character is a 16th, and a bar
+    // wider than 20 characters goes on into more bars rather than being squeezed into 32nds
+    const close = inBar.filter((e, k) => k && e.col - inBar[k - 1].col === 1).length;
+    if (b - a - 1 > 20 && close >= inBar.length / 2) {
+      for (let s = a; s < b - 1; s += 16) {
+        const part = inBar.filter((e) => e.col > s && e.col <= s + 16);
+        if (part.length || s + 16 < b - 1) out.push(part.length ? barTex(part, s, s + 17) : 'r.1');
+      }
+      continue;
+    }
     out.push(inBar.length ? barTex(inBar, a, b) : 'r.1');
   }
   return out;
