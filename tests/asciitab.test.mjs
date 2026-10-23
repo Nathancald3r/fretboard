@@ -132,6 +132,20 @@ F |--------|--------|----------|`,
       for (const b of bars) assert.equal(b.masterBar.timeSignatureNumerator + '/' + b.masterBar.timeSignatureDenominator, '4/4');
     },
   },
+  'strums side by side: 22 beside 00 is two strums of fret 2, each column one 8th': {
+    text: `f |0-00-000|0-00-000|
+C |2-22-222|2-22-222|
+Ab|2-22-222|2-22-222|
+Eb|2-22-222|2-22-222|
+Bb|0-00-000|0-00-000|
+F |0-00-000|0-00-000|`,
+    expect: (n, score) => {
+      const bar = score.tracks[0].staves[0].bars[0];
+      const beats = bar.voices[0].beats.map((x) => x.notes.map((m) => m.fret).sort().join('') + '/' + x.duration);
+      assert.deepEqual(beats, ['000222/4', '000222/8', '000222/4', '000222/8', '000222/8', '000222/8']);
+      assert.equal(bar.masterBar.timeSignatureNumerator + '/' + bar.masterBar.timeSignatureDenominator, '4/4');
+    },
+  },
   'header: drop D, half-step-down list': {
     text: `Tuning: Drop D
 Tempo: 140

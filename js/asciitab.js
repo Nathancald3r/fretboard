@@ -1,8 +1,8 @@
 // Converts plain-text (ASCII) guitar tab into alphaTex so alphaTab can play it.
 //
-// ASCII tab has no rhythm, so timing is guessed from spacing: each bar is treated
-// as 4/4 and every note's position within the bar is snapped to a 16th (or 32nd)
-// grid. Bars without bar lines fall back to straight eighth notes.
+// ASCII tab has no rhythm, so timing comes from spacing: every placeholder between two bar lines
+// (a dash, a note, a strum) is one 8th, or one 16th in tabs whose bars are mostly 14+ wide.
+// Bars without bar lines fall back to straight eighth notes.
 
 const TAB_CHARS = /[-0-9|hpbrx\/\\~^().<>*=sv:]/i;
 const LABEL = /^\s*([A-Ga-g][#b]?)\s*(?=[|:\-])/;
@@ -133,11 +133,13 @@ function readHeader(text, strings, labels) {
 
 // Whether the digits at columns c and c+1 of string s are two strums, not one two-digit fret.
 // Strummed chords are often written with no dashes between strums ("000-00000000"): a run of three
-// or more digits is strums, and so is a pair when another string starts a note at c+1.
+// or more digits is strums, and so is a pair when another string starts a note at c+1, or when
+// another string has "0d" there (no fret starts with 0, so "-22-" beside "-00-" is two strums).
 function single(rows, s, c) {
   const row = rows[s];
   if (!/\d/.test(row[c] || '') || !/\d/.test(row[c + 1] || '')) return false;
   if (/\d/.test(row[c + 2] || '') || /\d/.test(row[c - 1] || '')) return true;
+  if (rows.some((r) => r[c] === '0' && /\d/.test(r[c + 1] || '') && !/\d/.test(r[c - 1] || ''))) return true;
   return rows.some((r, k) => k !== s && /\d/.test(r[c + 1] || '') && !/\d/.test(r[c] || ''));
 }
 
@@ -204,23 +206,33 @@ function barSlots(sys, a, b, inBar) {
   return { slot, n };
 }
 
-// One bar timed by its slots: each slot an 8th (a 16th when the bar has more than 12).
-function slotBar(inBar, slot, n) {
-  const unit = n > 12 ? 16 : 8;
+// One bar timed by its slots, each slot one `unit` (8: an 8th, 16: a 16th). A bar much longer than
+// 4/4 goes on into bars of 4/4.
+function slotBars(inBar, slot, n, unit) {
   const at = inBar.map((e) => slot[e.col]);
-  const beats = [];
-  if (at[0] > 0) durationsFor(at[0] / unit).forEach((d) => beats.push('r' + dur(d)));
-  inBar.forEach((e, i) => {
-    const next = i + 1 < at.length ? at[i + 1] : n;
-    const [first, ...rest] = durationsFor((next - at[i]) / unit);
-    beats.push(beatTex(e.notes, first));
-    rest.forEach((d) => beats.push('r' + dur(d)));
-  });
-  // 8 eighths or 16 sixteenths is 4/4; 12 sixteenths is 6/8
-  let ts = [n, unit];
-  if (n === unit) ts = [4, 4];
-  else if (unit === 16 && n % 2 === 0) ts = [n / 2, 8];
-  return { ts, tex: beats.join(' ') };
+  const sizes = n <= unit * 1.5 ? [n] : Array.from({ length: Math.ceil(n / unit) }, (_, k) => Math.min(unit, n - unit * k));
+  const out = [];
+  let from = 0;
+  for (const size of sizes) {
+    const to = from + size;
+    const beats = [];
+    const here = inBar.map((e, i) => i).filter((i) => at[i] >= from && at[i] < to);
+    const first = here.length ? at[here[0]] : to;
+    if (first > from) durationsFor((first - from) / unit).forEach((d) => beats.push('r' + dur(d)));
+    here.forEach((i, k) => {
+      const next = k + 1 < here.length ? at[here[k + 1]] : to;
+      const [d, ...rest] = durationsFor((next - at[i]) / unit);
+      beats.push(beatTex(inBar[i].notes, d));
+      rest.forEach((x) => beats.push('r' + dur(x)));
+    });
+    // 8 eighths or 16 sixteenths is 4/4; 12 sixteenths is 6/8
+    let ts = [size, unit];
+    if (size === unit) ts = [4, 4];
+    else if (unit === 16 && size % 2 === 0) ts = [size / 2, 8];
+    out.push({ ts, tex: beats.join(' ') });
+    from = to;
+  }
+  return out;
 }
 
 function durationsFor(fraction) {
@@ -248,31 +260,28 @@ function beatTex(notes, d) {
   return body + dur(d);
 }
 
-// Turns the events of one bar into alphaTex beats (with rests filling gaps).
-function barTex(events, start, end) {
-  const span = Math.max(1, end - start - 1);
-  const grid = events.length <= 16 ? 16 : 32;
-  let slots = events.map((e) => Math.round(((e.col - start - 1) / span) * grid));
-  for (let i = 0; i < slots.length; i++) {
-    slots[i] = Math.max(0, Math.min(grid - 1, slots[i]));
-    if (i && slots[i] <= slots[i - 1]) slots[i] = slots[i - 1] + 1;
-  }
-  if (slots[slots.length - 1] >= grid) slots = events.map((_, i) => Math.floor((i * grid) / events.length));
-
-  const beats = [];
-  if (slots[0] > 0) durationsFor(slots[0] / grid).forEach((d) => beats.push('r' + dur(d)));
-  events.forEach((e, i) => {
-    const next = i + 1 < slots.length ? slots[i + 1] : grid;
-    const [first, ...rest] = durationsFor((next - slots[i]) / grid);
-    beats.push(beatTex(e.notes, first));
-    rest.forEach((d) => beats.push('r' + dur(d)));
-  });
-  return beats.join(' ');
-}
-
-function systemBars(sys) {
+// The bars of a system: [start, end, events] for each.
+function barsOf(sys) {
   const { bars, events, width } = sys;
   const edges = [...new Set([-1, ...bars, width])].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i + 1 < edges.length; i++) {
+    const [a, b] = [edges[i], edges[i + 1]];
+    if (b - a < 3) continue; // "||" or a tiny edge piece
+    out.push([a, b, events.filter((e) => e.col > a && e.col < b)]);
+  }
+  return out;
+}
+
+// What one placeholder is worth in this tab: an 8th, or a 16th when most bars are exactly 16
+// wide (the common "|----------------|" tab drawn on a 16th grid).
+function slotUnit(systems) {
+  const widths = systems.flatMap((sys) => barsOf(sys).filter(([, , ev]) => ev.length).map(([a, b, ev]) => barSlots(sys, a, b, ev).n));
+  return widths.length && widths.filter((n) => n === 16).length >= widths.length * 0.6 ? 16 : 8;
+}
+
+function systemBars(sys, unit = 8) {
+  const { bars, events, width } = sys;
   const out = [];
   const hasInnerBars = bars.some((b) => b > 2 && b < width - 3);
 
@@ -286,29 +295,11 @@ function systemBars(sys) {
     }
     return out;
   }
-  for (let i = 0; i + 1 < edges.length; i++) {
-    const [a, b] = [edges[i], edges[i + 1]];
-    if (b - a < 3) continue; // "||" or a tiny edge piece
-    const inBar = events.filter((e) => e.col > a && e.col < b);
-    // strums written side by side ("000-00000000"): every strum is an 8th and the dashes between
-    // them only separate groups, so the bar is as long as its strums (11 strums: 11/8). A long run
-    // goes on into bars of 8.
-    // (side by side on the same string: notes next to each other on different strings are just tight spacing)
-    const close = inBar.filter((e, k) => k && e.col - inBar[k - 1].col === 1
-      && e.notes.some((x) => inBar[k - 1].notes.some((y) => y.string === x.string))).length;
-    if (inBar.length > 2 && close >= inBar.length / 2) {
-      const n = inBar.length;
-      const sizes = n <= 16 ? [n] : Array.from({ length: Math.ceil(n / 8) }, (_, k) => Math.min(8, n - 8 * k));
-      let at = 0;
-      for (const size of sizes) {
-        out.push({ ts: [size, 8], tex: inBar.slice(at, at + size).map((e) => beatTex(e.notes, VALUES[6])).join(' ') });
-        at += size;
-      }
-      continue;
-    }
+  // Every placeholder (a dash, a note, a strum) is one slot, strums side by side ("2-22-222") too.
+  for (const [a, b, inBar] of barsOf(sys)) {
     if (!inBar.length) { out.push('r.1'); continue; }
     const { slot, n } = barSlots(sys, a, b, inBar);
-    out.push(n <= 24 ? slotBar(inBar, slot, n) : barTex(inBar, a, b)); // a very long bar: spacing as a 16th grid
+    out.push(...slotBars(inBar, slot, n, unit));
   }
   return out;
 }
@@ -341,7 +332,8 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null
 
   // a bar of strums sets its own time signature; the bars after it go back to 4/4
   let ts = '4 4';
-  const bars = used.flatMap(systemBars).map((b) => {
+  const unit = slotUnit(used);
+  const bars = used.flatMap((s) => systemBars(s, unit)).map((b) => {
     const want = typeof b === 'string' ? '4 4' : b.ts.join(' ');
     const tex = typeof b === 'string' ? b : b.tex;
     const mark = want !== ts ? `\\ts ${want} ` : '';
