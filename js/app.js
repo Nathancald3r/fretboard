@@ -518,7 +518,8 @@ async function importPdfParts(files, auto = null, replace = false) {
 }
 
 async function importFiles(files, { quietIfEmpty = false, auto = null, replace = false } = {}) {
-  files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name)); // the UG helper's note for the library, not a song
+  // the UG helper's own notes (its run note, latest.txt, collected.txt), not songs
+  files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name) && !/^(latest|collected)\.txt$/i.test(f.name));
   let added = 0;
   const ids = [];
   const failed = [];
