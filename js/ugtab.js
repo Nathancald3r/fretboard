@@ -41,9 +41,11 @@ export function findStaves(light, w, h, ink, counts = [6]) {
     // staff lines span the page and are broken only by fret numbers; a text tab's dashes never join up.
     // A last line holding a bar or two is shorter, but unbroken, or broken only by a fret number or
     // two (mostly ink across the holes; a row of words is mostly gaps). One bar alone can be just 9%
-    // of the page: that short, it must start at a bar line (a long flat tie doesn't).
+    // of the page: that short, it must start at a bar line (a long flat tie doesn't). Two bars of
+    // chords in brackets leave only 7% runs, but 17% of the row inked (How Great Is Our God's last line).
     if ((n > 0.45 * w && longest > 20) || longest > 0.15 * w || bridged > 0.15 * w
-      || (longest > 0.07 * w && barAt(longX, y)) || (bridged > 0.07 * w && barAt(bridgedX, y))) {
+      || (longest > 0.07 * w && barAt(longX, y)) || (bridged > 0.07 * w && barAt(bridgedX, y))
+      || (longest > 0.06 * w && n > 0.15 * w)) {
       const wide = n > 0.45 * w; // a row across the page
       if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; l.wide ||= wide; }
       else lines.push({ last: y, sum: y, n: 1, wide });
