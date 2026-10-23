@@ -68,10 +68,33 @@
      - make Cancel stop it even mid-`recognize`
      - log which step each part is on
    - **Done when:** importing the same 10 PDFs twice in a row (and while the helper auto-imports) never freezes, and Cancel always works.
+8. **Bug: Cancel doesn't stop the import properly** (the user pressed it on the frozen dialog above).
+   - Now `say()` throws `Cancelled` only when the next progress message comes. A part stuck inside `pdfToTab` (in `recognize`, `page.render` or a pixel loop) never gets there, so Cancel does nothing.
+   - **Fix:**
+     - Close the dialog at once and mark the import cancelled.
+     - Make every `await` in `pdfToTab` and `readLyricLine` check the flag.
+     - Terminate the Tesseract worker (`closeLyricReader`) and destroy the pdf.js document, so the stuck work ends.
+     - Make sure nothing from a cancelled import is added later, and that the next import starts clean.
+   - **Done when:** Cancel at any moment closes the dialog within a second, adds nothing, and a new import right after works.
 
 **Done when:** a full official song (8–10 PDFs) imports in a few seconds per part, and every part still reads the same bars, notes, lyrics and dynamics as before. Compare against the current output before and after.
 
 **Watch out:** run the tests after changing `js/ugtab.js` or `js/pdftab.js`. In the preview, run `pdfToTab` with `{ lyrics: false }` unless lyrics are what you're testing.
+
+## Bug: How He Loves Us plays out of sync (to fix)
+
+**What the user saw:** in the imported How He Loves Us, some instruments come in early and others late. The tracks don't line up.
+
+**Likely cause:** one or more parts read a different number of bars, or a bar of the wrong length, so everything after that point shifts. `ugToAlphaTex` cuts or pads every part to the first part's bar count, so a part that gains or loses a bar early stays shifted from there on.
+
+**Plan:**
+1. Get the song's PDFs again with the UG helper (or from the user's last save folder). Note the song's real bar count from the last bar number printed.
+2. Read each part with `pdfToTab` in the preview (`{ lyrics: false }`, one at a time) and compare `bars` with the real count.
+3. For each part that is off, compare the bars read per line with the bar numbers printed at the start of each line to find the line that gains or loses a bar. Then look at that line (render it with `fitz`) and fix the reader (`findStaves`, `barLines`, multi-bar rests, pickup bar...).
+4. Also check the bar *lengths*: in `window.fretboardPlayer.api.score`, each track's bar beats must add up to `masterBars[i].calculateDuration()`. A wrong time signature, or a guessed note that rings too long, also makes parts drift.
+5. Check the pickup (anacrusis) bar and repeats: a part that starts with a short bar or a repeat sign can line up differently from the others.
+
+**Done when:** every part reads the song's bar count, every bar adds up, and playing it, all instruments come in together. Run the tests, and check Here I Am To Worship still reads 85 bars in every part.
 
 ## Bug: wrong chords and bad sound on imported songs (to fix later)
 
