@@ -2302,3 +2302,14 @@ body.focus .playbar-end > :not(.track-chip) { display: none; }
 .ugq-files .ugq-saved { color: var(--good); }
 .ugq-files .ugq-failed { color: var(--warn); }
 .ugq-files .ugq-saving { color: var(--text); }
+
+/* One-time setup: auto-import and the UG helper (js/quickimport.js setupUG) */
+.ug-setup { width: min(620px, 94vw); }
+.ug-setup h2 { margin: 0 0 .6rem; }
+.ugs-step { border-top: 1px solid var(--line); padding: .6rem 0; }
+.ugs-step h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.ugs-step p { margin: .3rem 0; }
+.ugs-done h3 { color: var(--good); }
+.ugs-kinds { margin: .3rem 0; padding-left: 1.2rem; color: var(--muted); }
+.ugs-kinds li { margin: .2rem 0; }
+.ugs-kinds strong { color: var(--text); }

@@ -508,6 +508,109 @@ export function showAdded(added) {
   row.lastChild.focus();
 }
 
+/* ---------- one-time setup: the auto-import folder and the UG helper ---------- */
+
+const SETUP_SEEN = 'fretboard-ug-setup-seen';
+const setupSeen = () => { try { return localStorage.getItem(SETUP_SEEN) === '1'; } catch { return true; } };
+
+/** Shown once, before the first Ultimate Guitar search (and from "How it works"): turns on auto-import
+ * and explains the UG helper. Steps already done are shown done. Resolves when it's closed. */
+export async function setupUG(always = false) {
+  if (!ctx || !canWatch || (!always && setupSeen())) return;
+  try { localStorage.setItem(SETUP_SEEN, '1'); } catch { /* asked again next time: fine */ }
+  let dlg = $('ug-setup');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'ug-setup';
+    dlg.className = 'ug-setup';
+    document.body.append(dlg);
+  }
+  const step = (n, done, title, ...body) => {
+    const s = document.createElement('section');
+    s.className = 'ugs-step' + (done ? ' ugs-done' : '');
+    const h = document.createElement('h3');
+    h.textContent = done ? `✓ ${title}` : `${n}. ${title}`;
+    s.append(h, ...body);
+    return s;
+  };
+  const para = (text) => { const p = document.createElement('p'); p.className = 'muted'; p.textContent = text; return p; };
+  const draw = async () => {
+    const dir = await grantedFolder();
+    const stored = dir || await getValue('downloadsDir').catch(() => null);
+    const helper = helperPossible() ? await ugHelper() : null;
+    dlg.replaceChildren();
+    const h = document.createElement('h2');
+    h.textContent = 'Add songs by themselves';
+    dlg.append(h);
+    // 1. the folder: the browser can only read a folder you pick once
+    const folderRow = document.createElement('div');
+    folderRow.className = 'row';
+    if (!dir) {
+      folderRow.append(button(stored ? `Allow “${stored.name}” again` : 'Pick my Downloads folder', 'primary small', async () => {
+        try {
+          if (stored && (await stored.requestPermission({ mode: 'read' })) === 'granted') { /* allowed */ } else {
+            const d = await window.showDirectoryPicker({ id: 'tab-downloads', startIn: 'downloads', mode: 'read' });
+            await setValue('downloadsDir', d);
+          }
+        } catch { return; } // cancelled
+        showAuto();
+        draw();
+      }));
+    }
+    dlg.append(step(1, !!dir, dir ? `Auto-import is on (“${dir.name}”)` : 'Turn on auto-import',
+      para(dir ? 'Tab files you download there, and the songs the UG helper saves in its UG Songs folder, are added here by themselves.'
+        : 'Pick your Downloads folder once. Tab files you download there are added here by themselves, and so are the songs the UG helper saves (it puts them in Downloads\\UG Songs, one folder per song).'),
+      folderRow));
+    // 2. the helper (a Windows program): what each kind of UG song gives
+    if (helperPossible()) {
+      const kinds = document.createElement('ul');
+      kinds.className = 'ugs-kinds';
+      for (const [b, t] of [['Official', ' (needs UG Pro): one PDF per track (guitars, bass, drums, keys…) from the version you pick, plus its chords. Fretboard makes them into one song.'],
+        ['Pro and Guitar Pro tabs', ': the Guitar Pro file from their Download button.'],
+        ['Chords, tabs, bass, ukulele and drum tabs', ': one text file.']]) {
+        const li = document.createElement('li');
+        const s = document.createElement('strong');
+        s.textContent = b;
+        li.append(s, t);
+        kinds.append(li);
+      }
+      const helperRow = document.createElement('div');
+      helperRow.className = 'row';
+      if (!helper) {
+        if (!helperKnown()) {
+          const a = document.createElement('a');
+          a.href = SETUP_URL;
+          a.download = 'Set up UG helper.cmd';
+          a.className = 'button ghost small';
+          a.textContent = 'Set up UG helper';
+          a.title = 'First time on this computer: download it and run it once (it installs for your Windows user only)';
+          helperRow.append(a);
+        }
+        helperRow.append(button('Start UG helper', helperKnown() ? 'primary small' : 'ghost small', async (e) => {
+          e.currentTarget.disabled = true;
+          e.currentTarget.textContent = 'Starting…';
+          await startHelper();
+          draw();
+        }));
+      }
+      dlg.append(step(2, !!helper, helper ? 'The UG helper is running' : 'The UG helper (Ultimate Guitar)',
+        para('It opens Ultimate Guitar in its own Chrome window, where you log in once. Search here, pick the version you want there, and you’re back here while it saves the song:'),
+        kinds,
+        para(helper ? 'It works out of sight. Stop it from the UG helper line under the search.'
+          : 'It works out of sight: no command window. Stop it from the UG helper line under the search. First time on this computer? Press Set up UG helper and run the file it downloads (once), then Start UG helper.'),
+        helperRow));
+    }
+    const row = document.createElement('div');
+    row.className = 'row spread';
+    const all = dir && (helper || !helperPossible());
+    row.append(button(all ? 'Done' : 'Not now', all ? 'primary' : 'ghost', () => dlg.close()));
+    dlg.append(row);
+  };
+  await draw();
+  if (!dlg.open) dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener('close', () => resolve(), { once: true }));
+}
+
 // While you look for a song in the helper's Chrome, each song it finishes saving is made into one
 // song here and opened.
 const RUNS_MINUTES = 45;
@@ -601,6 +704,9 @@ async function showAuto() {
     });
     el.append(b);
   }
+  const how = button('How it works', 'link-btn', () => setupUG(true));
+  how.title = 'Auto-import and the UG helper, step by step';
+  el.append(' ', how);
 }
 
 async function autoImport() {

@@ -15,7 +15,7 @@ import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
 import { formatDuration, recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showHelper } from './quickimport.js';
+import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showHelper, setupUG } from './quickimport.js';
 import { TAB_SOURCES, sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer } from './drawer.js';
@@ -766,6 +766,7 @@ function initFind() {
     // here as one song by themselves.
     // Not running yet: it's started (its link) when it has run in this browser before.
     if (site === 'ug-gp' && helperPossible()) {
+      await setupUG(); // the first time only: auto-import and the UG helper explained
       let up = await ugHelper();
       const tried = !up && localStorage.getItem('fretboard-ug-helper-set') === '1';
       if (tried) up = await startHelper();
