@@ -139,18 +139,18 @@ def print_open():
     return any(t["url"].startswith("chrome://print") for t in targets())
 
 
-def close_prints(ctx=None):
+def close_prints(ctx=None, dialog=True):
     """Shut any Print window with its own Cancel button: that frees the song's tab again
     (just closing it would leave the tab stuck). A Save As dialog left open is cancelled too.
     Never fails: with Chrome closed there's nothing to shut, and a Cancel still tidies up."""
     try:
-        _close_prints()
+        _close_prints(dialog)
     except Exception:
         pass
 
 
-def _close_prints():
-    if DIALOG.exists():
+def _close_prints(dialog=True):
+    if dialog and DIALOG.exists():
         subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(DIALOG), "-CancelAll"],
                        capture_output=True, text=True)
     if not print_open():
@@ -163,10 +163,10 @@ def _close_prints():
                 pr.locator("cr-button.cancel-button").first.click(no_wait_after=True, timeout=4000)
             except Exception:
                 pass
-    for _ in range(10):
+    for _ in range(50):
         if not print_open():
             return
-        time.sleep(0.5)
+        time.sleep(0.1)
     for t in targets():  # last resort: close the Print window itself (never the song's tab)
         if t["url"].startswith("chrome://print") and t["type"] == "page":
             urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
@@ -273,20 +273,18 @@ def notation(pg, want=None):
     dismiss = "() => document.querySelectorAll('button[aria-label=Dismiss]').forEach((b) => b.click())"
     try:
         gear.click(timeout=4000)
-        pg.wait_for_timeout(600)
+        # each step goes on as soon as the menu shows what it needs (no fixed waits)
+        pg.wait_for_function(f"({NOTATION_JS})() !== null", timeout=4000, polling=100)
         now = pg.evaluate(NOTATION_JS)
-        if want and now is not None:
+        if want and now is not None and now != {NOTES_VIEW: "St. + Tab"}.get(want, want):
             pg.locator("button", has_text="Notation").first.click(timeout=4000)
-            pg.wait_for_timeout(500)
             pg.locator("[role=option]", has_text=want).filter(has_text=re.compile(rf"^\s*{re.escape(want)}\s*$")).first.click(timeout=4000)
-            pg.wait_for_timeout(500)
         return now
     except Exception:
         return None
     finally:
         try:
             pg.evaluate(dismiss)
-            pg.wait_for_timeout(400)
         except Exception:
             pass
 
@@ -1015,7 +1013,7 @@ SCROLL_JS = r"""(end) => {
 }"""
 SHOW_JS = r"""()=>{ for (const [e, v] of (window.__fbHidden || []).reverse()) e.style.visibility = v; window.__fbHidden = []; }"""
 
-PAGES_JS = r"""async ({ shots, title, lines, notes }) => {
+PAGES_JS = r"""async ({ shots, title, lines, notes, printed }) => {
   // the pictures of one view joined top to bottom and cut into lines of music
   const cut = async (shots) => {
   const imgs = await Promise.all(shots.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
@@ -1135,8 +1133,17 @@ PAGES_JS = r"""async ({ shots, title, lines, notes }) => {
   });
   return { parts, full: last >= h - 3, pictures: at.length };
   };
-  const tab = await cut(shots);
+  // UG's own Print already comes cut into lines, one picture each
+  const given = async (srcs) => {
+    const imgs = await Promise.all(srcs.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
+    return { parts: imgs.map((i) => ({ src: i.src, h: i.height, mm: 186 / i.width })), full: false, pictures: 0 };
+  };
+  const tab = printed ? await given(printed) : await cut(shots);
   if (tab.error) return tab;
+  // A take gone wrong (the score not cut into its lines) comes out as one or a few tall pieces,
+  // squashed onto a page: the whole song's bars blur together and Fretboard misreads them.
+  const tall = tab.parts.filter((p) => p.h * p.mm > 272).length;
+  const glitch = !printed && (tall > 0 || (tab.parts.length === 1 && tab.parts[0].h * tab.parts[0].mm > 90));
   // the same score with its music staff (Standard + Tablature): Fretboard reads only the dynamics and
   // the words ("w/sustainer", "let ring") from these pages, which come after a page headed "Notation"
   let more = null;
@@ -1175,7 +1182,7 @@ PAGES_JS = r"""async ({ shots, title, lines, notes }) => {
     }
   }
   await Promise.all([...document.images].map((i) => i.decode()));
-  return { lines: tab.parts.length, pages, full: tab.full, pictures: tab.pictures, notation: !!more };
+  return { lines: tab.parts.length, pages, full: tab.full, pictures: tab.pictures, notation: !!more, glitch };
 }"""
 
 
@@ -1199,7 +1206,15 @@ def shoot(cdp, pg, end=False):
 
 def sharp_screen(cdp, pg, height=SHOT_H, dsf=SHOT_DSF):
     cdp.send("Emulation.setDeviceMetricsOverride", {"width": SHOT_W, "height": height, "deviceScaleFactor": dsf, "mobile": False})
-    pg.wait_for_timeout(3000)
+    # on once the player has laid itself out for the new screen: its score the same size twice running
+    size = "(()=>{const c=document.querySelector('#xtz_canvas');return c?[c.width,c.height,innerWidth].join():''})()"
+    last = None
+    for _ in range(15):
+        pg.wait_for_timeout(200)
+        now = pg.evaluate(size)
+        if now and now == last and now.endswith(f",{SHOT_W}"):
+            break
+        last = now
 
 
 def normal_screen(cdp):
@@ -1258,6 +1273,59 @@ def pick_track(pg, n, k=0):
         raise RuntimeError(f"Couldn't find the track {n} in Instruments.")
 
 
+PRINT_JS = r"""() => {
+  const b = [...document.querySelectorAll('button')].find((e) => e.innerText.trim() == 'Print');
+  if (!b) return false;
+  setTimeout(() => b.click(), 0);  // after this call returns: the Print window then holds the page
+  return true;
+}"""
+
+
+def printed_lines(ui, ctx, pg, cdp):
+    """The shown track as UG's own Print draws it: one picture per line, as PNG data URLs. UG puts
+    them in a frame on the page and opens Chrome's Print window; the pictures are read from the
+    frame and the window is cancelled straight away (nothing is printed, no Save As). Chrome's own
+    page breaks are what cut lyrics off a UG printout; these lines are set on pages by PAGES_JS.
+    None when UG has no Print button or it didn't open."""
+    if not pg.evaluate(PRINT_JS):
+        return None
+    try:
+        for _ in range(300):  # UG draws its pages first: a few seconds for a long song
+            hold(ui)
+            if print_open():
+                break
+            time.sleep(0.1)
+        else:
+            return None
+        root = cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})["root"]
+        srcs, todo = [], [root]
+        while todo:
+            node = todo.pop()
+            if node.get("nodeName") == "IFRAME" and node.get("contentDocument"):
+                frame = [node["contentDocument"]]
+                while frame:
+                    m = frame.pop()
+                    if m.get("nodeName") == "IMG":
+                        a = m.get("attributes", [])
+                        src = dict(zip(a[::2], a[1::2])).get("src", "")
+                        if src.startswith("data:image/"):
+                            srcs.append(src)
+                    frame += reversed(m.get("children", []) or [])  # in the page's order
+            todo += reversed(node.get("children", []) or [])
+        return srcs or None
+    finally:
+        cancel_print(ctx)
+
+
+def cancel_print(ctx):
+    """The Print window's own Cancel: that frees the song's tab at once. Playwright's open
+    connection never sees a Print window opened after it connected, so a fresh one in its
+    own process clicks Cancel (a second connection can't run in this one)."""
+    if print_open():
+        subprocess.run([sys.executable, "-c", "import ug_collect; ug_collect.close_prints(dialog=False)"],
+                       cwd=str(Path(__file__).parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+
+
 NOTES_VIEW = "Standard + Tablature"
 NO_TAB = re.compile(r"drum|perc|shaker|tambourine|vocal|voice|sing|choir|piano|key|organ|synth(?!\s*bass)|pad|string|violin|cello|horn|sax|trumpet|flute", re.I)
 
@@ -1267,11 +1335,10 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
     view: a one-item list, the player's Notation view now; kept up to date for the next track."""
     view = view if view is not None else ["Tablature"]
     pick_track(pg, n, k)
-    pg.wait_for_timeout(1000)
-    for _ in range(6):  # on as soon as the player shows it (steady() then waits for the drawing)
+    for _ in range(16):  # on as soon as the player shows it (steady() then waits for the drawing)
         if showing(pg, n, k):
             break
-        pg.wait_for_timeout(250)
+        pg.wait_for_timeout(150)
     if showing(pg, n, k) is False:  # something else switched the track: the right one is picked again
         pick_track(pg, n, k)
         pg.wait_for_timeout(2500)
@@ -1290,10 +1357,11 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
             pg.wait_for_timeout(400)
         return shot
 
-    def lay_out(shots, notes):
+    def lay_out(shots, notes, printed=None):
         out = ctx.new_page()
         try:
-            res = out.evaluate(PAGES_JS, {"shots": shots, "notes": notes, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
+            res = out.evaluate(PAGES_JS, {"shots": shots, "notes": notes, "printed": printed, "title": label,
+                                          "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
             if res.get("error"):
                 return res, None
             hold(ui)
@@ -1338,10 +1406,19 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
         notes = []
     pg.evaluate("scrollTo(0, 0)")
     res, pdf = lay_out(shots, notes)
+    if res.get("glitch"):
+        # the pictures came out jumbled: the track is taken again from UG's own Print, in tab view
+        print(f"  ({n}: the pictures came out jumbled; taking it from UG's Print instead)")
+        if view[0] == "Tablature" or switch("Tablature"):
+            printed = printed_lines(ui, ctx, pg, cdp)
+            if printed:
+                res, pdf = lay_out(None, [], printed)
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
     if res.get("error"):
         return False, res["error"], res
+    if res.get("glitch"):  # UG's Print didn't come: the whole track is tried again (work())
+        return False, "the pictures came out jumbled", res
     tmp = dest.with_name(dest.name + ".part")
     tmp.write_bytes(base64.b64decode(pdf["data"]))
     if dest.exists():  # appeared meanwhile: never replaced

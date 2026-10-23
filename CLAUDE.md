@@ -63,6 +63,12 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - The canvas (`#xtz_canvas`) is viewport-sized and sticky, so one picture never covers a long song.
   - Never skip the second picture on a "looks complete" check: the song can end in the gap between two lines.
 - **Wait for a steady picture:** `steady()` takes pictures until two in a row agree.
+- **Jumbled pictures → UG's Print instead** (`printed_lines`):
+  - A picture is "jumbled" when the score wasn't cut into lines: a part taller than a page, or one tall part. PAGES_JS returns `glitch`.
+  - Print builds a same-origin frame with one PNG per line. Those PNGs are read through CDP `DOM.getDocument` with pierce, and the Print window is then cancelled. Nothing is printed and no Save As dialog opens.
+  - Playwright's open connection never sees a Print window opened after it connected, and `time.sleep` doesn't pump its events. So `print_open()` checks over HTTP, and `cancel_print` clicks Cancel from a fresh process. Use DEVNULL for its output: `capture_output` hangs.
+  - About 10 s per track. The tab must be in front.
+- **No fixed waits** where something can be watched. The user wants no pointless clicks or delays. Poll for the state instead (view switched, track shown, canvas resized).
 
 ### Reading the tab, and the traps already hit (keep these)
 
