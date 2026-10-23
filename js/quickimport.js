@@ -290,6 +290,22 @@ export async function showHelper(status) {
     show.title = 'Brings the UG helper\'s Chrome up, full screen (clicking it in the taskbar does too)';
     show.addEventListener('click', showCollector);
     el.append(on, show);
+    if (s.version >= 4) { // it runs out of sight: this is how it's closed
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'ghost small';
+      stop.textContent = 'Stop helper';
+      stop.title = 'Closes the UG helper and its Chrome window';
+      stop.addEventListener('click', async () => {
+        try {
+          const r = await (await fetch(HELPER + '/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })).json();
+          if (r.busy) { stop.textContent = 'Saving a song: wait, or Cancel it in its window'; return; }
+        } catch { /* gone already */ }
+        await new Promise((r) => setTimeout(r, 800));
+        showHelper();
+      });
+      el.append(' ', stop);
+    }
     if (s.wait) { // UG's player isn't loading the song (often UG checking a public wifi network)
       const w = document.createElement('strong');
       w.className = 'find-wait';

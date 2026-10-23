@@ -19,13 +19,19 @@ and added to Fretboard, without asking.
 Songs already collected are remembered (Downloads\\UG Songs\\collected.txt) and not asked
 again. A song you Skip or Cancel isn't asked again while its tab stays open.
 
-  python tools/ug_watch.py            (Ctrl+C to stop)
+It runs out of sight: started from a console it starts itself again without one and that console
+closes (what it prints goes to helper.log beside it). Fretboard's Stop button ends it, and it ends
+by itself a minute after you close its Chrome while nothing is being saved.
+
+  python tools/ug_watch.py            (in the background)
+  python tools/ug_watch.py --visible  (in this console, Ctrl+C to stop)
 """
-import argparse, json, subprocess, sys, threading, time, urllib.parse, urllib.request
+import argparse, json, os, subprocess, sys, threading, time, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 COLLECT = Path(__file__).with_name("ug_collect.py")
+LOG = Path(__file__).with_name("helper.log")
 CHROME = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
           Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
           Path.home() / r"AppData\Local\Google\Chrome\Application\chrome.exe"]
@@ -244,6 +250,11 @@ def open_tab(url):
                 pg.evaluate(GUIDE_JS)
             except Exception:
                 pass  # the guide only helps; the results work without it
+            try:  # the window you searched from (Fretboard): where you go back to once you've picked
+                _, _, u32, _ = _win32()
+                state["back_to"] = u32.GetForegroundWindow()
+            except Exception:
+                state["back_to"] = 0
             pg.bring_to_front()
             show_window()
             print("Pick the song in the UG window: it's saved and added to Fretboard by itself.")
@@ -252,7 +263,7 @@ def open_tab(url):
 
 
 # ---------- the helper Fretboard talks to ----------
-HELPER_PORT = 9231
+HELPER_PORT = int(os.environ.get("FB_HELPER_PORT") or 9231)  # another port only for tests
 # What Fretboard's UG helper line set, kept beside the helper: {"notation": true} also saves each
 # fretted track's pages with the music staff (dynamics, words), a slower save
 SETTINGS = Path(__file__).with_name("settings.json")
@@ -276,6 +287,21 @@ def is_ug(url):
         return False
     host = (u.hostname or "").lower()
     return u.scheme == "https" and (host == "ultimate-guitar.com" or host.endswith(".ultimate-guitar.com"))
+
+
+def back_to_app(port):
+    """You picked a song: its Chrome goes out of sight again and you're back in Fretboard, while it saves."""
+    back, state["back_to"] = state.get("back_to"), 0
+    try:
+        with _connect(port) as p:
+            ctx = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000).contexts[0]
+            hide_window(ctx.new_cdp_session(ctx.pages[-1]))
+        _, _, u32, _ = _win32()
+        if back and u32.IsWindow(back):
+            from ug_collect import focus_window
+            focus_window(back)
+    except Exception as e:
+        print(f"(Couldn't go back to Fretboard by itself: {str(e).splitlines()[0][:100]})")
 
 
 def open_in_chrome(url):
@@ -317,7 +343,7 @@ class Helper(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/status":
-            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 3,
+            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 4,
                                     "chrome": state["chrome"], "busy": state["busy"], "wait": state["wait"], "notation": bool(settings().get("notation"))})
         self._send(404, {"ok": False})
 
@@ -338,6 +364,12 @@ class Helper(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if self.headers.get("Origin") is None:
             return self._send(403, {"ok": False})
+        if self.path.split("?")[0] == "/quit":  # Fretboard's Stop: its Chrome closes too (it opened it)
+            if state["busy"]:  # not in the middle of a song: Cancel it in its window, or let it finish
+                return self._send(200, {"ok": False, "busy": True})
+            self._send(200, {"ok": True})
+            threading.Thread(target=quit_helper, daemon=True).start()
+            return
         if self.path.split("?")[0] == "/settings":
             try:
                 n = min(int(self.headers.get("Content-Length") or 0), 8192)
@@ -369,6 +401,45 @@ class HelperServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def close_chrome(port):
+    try:
+        from ug_collect import Cdp
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=3) as r:
+            ws = json.load(r)["webSocketDebuggerUrl"]
+        with Cdp(ws, timeout=5) as b:
+            b.send("Browser.close")
+    except Exception:
+        pass  # closed already
+
+
+def quit_helper():
+    """Stop from Fretboard (never while a song is being saved): its Chrome closes, then the helper ends."""
+    print("Stopped from Fretboard.")
+    close_chrome(state["chrome_port"])
+    time.sleep(0.3)
+    os._exit(0)
+
+
+def helper_running():
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{HELPER_PORT}/status", timeout=1.5) as r:
+            return json.load(r).get("app") == "fretboard-ug-helper"
+    except (OSError, ValueError):
+        return False
+
+
+def to_background():
+    """Starts this helper again without a console window (what it prints goes to helper.log); this one ends."""
+    if helper_running():
+        print("The UG helper is already running.")
+        return
+    log = LOG.open("w", encoding="utf-8")
+    subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve()), *sys.argv[1:], "--hidden"],
+                     cwd=str(Path(__file__).parent), stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                     env={**os.environ, "PYTHONIOENCODING": "utf-8"}, creationflags=0x08000000)  # CREATE_NO_WINDOW
+    print("The UG helper is running in the background. Stop it from Fretboard (Find tabs online).")
+
+
 def start_helper():
     try:
         srv = HelperServer(("127.0.0.1", HELPER_PORT), Helper)
@@ -388,11 +459,16 @@ def main():
     ap.add_argument("--profile", default=r"C:\ug-chrome", help="the collector Chrome's own profile folder")
     ap.add_argument("--no-ui", action="store_true", help="no windows: save every track without asking")
     ap.add_argument("--official-only", action="store_true", help="only official songs, not chords / tabs / Guitar Pro pages")
+    ap.add_argument("--visible", action="store_true", help="run in this console instead of in the background")
+    ap.add_argument("--hidden", action="store_true", help=argparse.SUPPRESS)  # the background copy
     a = ap.parse_args()
+    if os.name == "nt" and not (a.visible or a.hidden):
+        return to_background()
     state["chrome_port"], state["profile"] = a.port, a.profile
     if not start_helper():
-        print("The UG helper is already running in another window. This one closes in a few seconds.")
-        time.sleep(4)
+        print("The UG helper is already running. This one closes in a few seconds.")
+        if not a.hidden:
+            time.sleep(4)
         return
     DONE_FILE = Path(a.root) / "collected.txt"
     DONE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -401,12 +477,20 @@ def main():
     passed = set()  # skipped or cancelled: not asked again while the tab stays open
     print("Watching the collector Chrome. Open a UG song there and a window asks to save it (official songs: their\n"
           "PDFs; chords and tabs: the text; Guitar Pro tabs: their download).\n"
-          f"They go into {a.root}. Ctrl+C here to stop.\n")
+          f"They go into {a.root}. " + ("Stop it from Fretboard.\n" if a.hidden else "Ctrl+C here to stop.\n"))
     started = warned = False
+    gone = None  # when its Chrome was last seen closed (after it had been open)
     while True:
         try:
             urls = song_tabs(a.port, a.official_only)
             state["chrome"] = urls is not None
+            if urls is not None:
+                gone, started = None, True
+            elif started and time.time() - state["launched"] > 40 and not state["busy"]:
+                gone = gone or time.time()
+                if a.hidden and time.time() - gone > 60:  # you closed its Chrome: nothing left for it to do
+                    print("Its Chrome was closed, so the UG helper stopped.")
+                    return
             if urls is None:
                 if not started:
                     started = True
@@ -428,6 +512,8 @@ def main():
                 for u in urls:
                     if u not in seen:
                         state["asked"][u.split("?")[0]] = now
+                        if state.get("back_to"):
+                            threading.Thread(target=back_to_app, args=(a.port,), daemon=True).start()
             seen = {u: seen.get(u, now) for u in urls}
             passed &= set(urls)  # a song closed and opened again is asked again
             for u in urls:

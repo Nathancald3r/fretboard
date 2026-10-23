@@ -1,5 +1,17 @@
 # Fretboard: open work (moved out of CLAUDE.md)
 
+## The UG workflow: search, pick, save in the background, review, import (the user's plan, 2026-10-23)
+
+**The user's answers:** skip the review when the automatic checks pass; the recording for syncing is YouTube (UG's linked video); build setup + queue + background first.
+
+1. **One-time setup:** Fretboard asks to turn on auto-import from a folder (it makes one, or you pick one), then offers the UG helper and explains it: Official songs (UG Pro) give one PDF per track from the version you picked; Pro / Guitar Pro give the .gp file; chords, tab, bass, ukulele and drum tabs give one file each. **The helper runs hidden**, no command prompt in front.
+2. **Pick songs:** search from Fretboard, the helper's Chrome comes to the front to pick the version, then you're back in the app. Several songs can be queued while you keep using the app. One song at a time, at a person's pace (nothing hidden: no bot-hiding).
+3. **Save in the background:** a folder per song, a status per file. A bad file never stops the others; it waits for you: Retry, Try another method, Cancel. A song moves on only when all its files are settled; finished songs don't wait for it. Cancel one file, several, or the whole song (only those files / the folder are deleted). Problems it can't fix (cut lyrics, stretched sheets) are notified. When done, it closes the windows it opened and the helper when nothing is left.
+4. **Review (Official only):** opens only when a check flags something (any song's review can still be opened). The PDFs zoomable, two tracks side by side, quick track switching; per track Retry / Try another method / Cancel, each saving a diagnostic report.
+5. **Import:** reviewed songs import by themselves. Success: a dialog with the song's name and details and **Open song**. Problems: to the import status.
+6. **Automatic checks** on the PDFs and the conversion: same bar count in every track, nothing cut or stretched, time signature and tempo agree.
+7. **Sync to a recording (separate test project, later):** find the right YouTube version, line up the start, match tempo, time signature and sections; if the arrangement differs, adapt (add rests, skip parts). Test and improve on its own first.
+
 ## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 
 - **Now:** Here I Am To Worship (8 tracks + chords) saves in **20 s**. The fretted tracks' Standard + Tab prints are off by default: they were the longest (~15 s together), and Fretboard reads only dynamics and words from them.
