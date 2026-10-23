@@ -83,7 +83,10 @@ export async function readLyricLine(page, scale, st, limitY) {
 // Common misreads in this font: the word "I" read as "1", "|", "l" or "[I"; a stray capital
 // stuck to the front of a word ("KE-very").
 function fixWord(w) {
-  const sym = (w.symbols || []).filter((s) => !/^[\[\]()]$/.test(s.text));
+  // a sliver of a letter inside the next letter's box is made up: "us," read as "wus," (a 1-6 px "w";
+  // at most 0.15 of the next letter; two real letters drawn joined share a box: "tr" gives a "t" of 0.25)
+  const thin = (s, n) => n && s.bbox.x0 >= n.bbox.x0 - 1 && s.bbox.x1 <= n.bbox.x1 && s.bbox.x1 - s.bbox.x0 < 0.2 * (n.bbox.x1 - n.bbox.x0);
+  const sym = (w.symbols || []).filter((s, i, all) => !/^[\[\]()]$/.test(s.text) && !thin(s, all[i + 1]));
   if (sym.length === 1 && /^[1|lI]$/.test(sym[0].text) && !isDash({ symbols: sym, text: '' })) {
     return { ...w, text: 'I', confidence: Math.max(w.confidence, 60), symbols: [{ ...sym[0], text: 'I' }] };
   }
@@ -113,7 +116,8 @@ export function syllables(words, xOffset = 0) {
   // often unsure of a syllable split by long dashes, e.g. "vic—-to—-ry", yet reads it right).
   const real = lettered.filter((w) => w.confidence >= 55 || (w.confidence >= 20 && WORDLIKE.test(w.text)));
   // a strip with no lyrics reads as scattered marks (bar numbers, beams, the staff): skip it
-  const clean = lettered.filter((w) => w.confidence >= 55 && WORDLIKE.test(w.text) && /[a-z]{2}/.test(w.text)).length;
+  // ("Oh!" and "He" count as words: a line of "Oh! how He loves us," was dropped)
+  const clean = lettered.filter((w) => w.confidence >= 55 && WORDLIKE.test(w.text) && /[A-Za-z][a-z]/.test(w.text)).length;
   if (real.length < 2 || clean < 0.5 * marks) return [];
   for (const w of sorted) {
     if (isDash(w)) { if (out.length) out[out.length - 1].joined = true; continue; }
