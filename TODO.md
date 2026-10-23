@@ -23,9 +23,3 @@
 7. Test on web, then bump the Android version, build, install, and send the APK (under 30 MB).
 
 **Done when:** the chords on song 40 match the sheet, the vocal lines up with the lyric bar, and the guitar sounds right.
-
-## Drums: some hi-hat hits are dropped (Here I Am To Worship)
-
-- Bars 30–34, 44–46, 49, 69–70 of the Drums PDF read short (10–14 sixteenths instead of 16), so the part pads them.
-- Cause: a hi-hat x that sits alone above the staff has a short stem up to its beam. `stemOf` in `js/ugdrums.js` needs a 2-space stem, so those notes are dropped.
-- Lowering the limit to 1.3 spaces for heads above the staff made bar 1 read a note (the ♩ = 76 tempo mark). A fix must skip the tempo mark.

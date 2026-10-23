@@ -166,7 +166,33 @@ function heads(ink, w, h, st) {
       comps.push({ x0: a + x0, x1: b + x0 + 1, y0: c + y0, y1: d + y0 + 1, w: b - a + 1, h: d - c + 1, area, px, ox: x0, oy: y0, W, m });
     }
   }
-  return comps;
+  // a cross head sitting on a staff line can be cut in two by the line removal: join the halves and put the line back
+  for (let i = 0; i < comps.length; i++) {
+    for (let j = 0; j < comps.length; j++) {
+      const p = comps[i], q = comps[j];
+      if (i === j || !p || !q || q.y0 < p.y1 || q.y0 - p.y1 > 3) continue;
+      const over = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0);
+      if (over < 0.7 * Math.max(p.w, q.w) || p.h > 0.8 * u || q.h > 0.8 * u || Math.max(p.y1, q.y1) - p.y0 > 1.4 * u) continue;
+      const a = Math.min(p.x0, q.x0), b = Math.max(p.x1, q.x1);
+      for (let y = p.y1 - y0; y < q.y0 - y0; y++) for (let x = a - x0; x < b - x0; x++) {
+        const k = y * W + x;
+        if (!m[k] && ink[(y + y0) * w + x + x0]) { m[k] = 1; p.px.push(x, y); p.area++; }
+      }
+      p.px.push(...q.px); p.area += q.area;
+      p.x0 = a; p.x1 = b; p.y1 = Math.max(p.y1, q.y1); p.w = b - a; p.h = p.y1 - p.y0;
+      comps[j] = null;
+    }
+  }
+  // a ledger line sticks out either side of a head on it: trim its thin ends off
+  for (const c of comps) {
+    if (!c || c.w <= 1.4 * u || c.h > 1.4 * u) continue;
+    const col = (x) => { let n = 0; for (let i = 0; i < c.px.length; i += 2) if (c.px[i] === x) n++; return n; };
+    let a = c.x0 - x0, b = c.x1 - x0 - 1;
+    while (b - a > 0.6 * u && col(a) <= 3) a++;
+    while (b - a > 0.6 * u && col(b) <= 3) b--;
+    c.x0 = a + x0; c.x1 = b + x0 + 1; c.w = b - a + 1;
+  }
+  return comps.filter(Boolean);
 }
 
 // Filled oval, cross, or circled cross.
@@ -245,6 +271,7 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
   const rests = [];
   for (const c of comps) {
     if (notes.some((n) => n.used === c)) continue;
+    if (notes.some((n) => n.grace && n.stem && c.x0 <= n.stem.x + 0.6 * u && c.x1 >= n.stem.x - 0.6 * u)) continue; // a grace note's slash isn't a rest
     const cy = (c.y0 + c.y1) / 2;
     if (cy < top - 0.5 * u || cy > bot + 0.5 * u || (st.one && Math.abs(cy - top) > 1.6 * u)) continue;
     if (bl.some((x) => Math.abs(x - (c.x0 + c.x1) / 2) < 0.6 * u) || c.x0 < st.x0 + 3 * u) continue; // (the clef at the start of a line isn't a rest)
@@ -254,8 +281,11 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
     else if (c.h >= 2.3 * u && c.h <= 3.4 * u && c.w > 1.2 * u && c.w <= 1.7 * u) len = 1;
     else if (c.h >= 0.35 * u && c.h <= 0.7 * u && c.w >= 0.9 * u && c.w <= 1.6 * u && c.area > 0.8 * c.w * c.h) len = Math.abs(cy - (st.one ? top : st.ys[2]) + 0.25 * u) < 0.5 * u ? 8 : 16;
     if (!len) continue;
-    const dot = comps.some((d) => d !== c && d.w <= 0.45 * u && d.h <= 0.45 * u && d.area >= 6 && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.9 * u && d.y0 >= c.y0 - 0.5 * u && d.y1 <= c.y1 + 0.5 * u);
-    rests.push({ cx: (c.x0 + c.x1) / 2, len: dot ? len * 1.5 : len, rest: true, notes: [] });
+    const isDot = (d) => d !== c && d.w <= 0.45 * u && d.h <= 0.45 * u && d.area >= 6;
+    const dot = comps.find((d) => isDot(d) && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.9 * u && d.y0 >= c.y0 - 0.5 * u && d.y1 <= c.y1 + 0.5 * u);
+    // a second dot just after the first: double dotted (one and three quarters)
+    const two = dot && comps.some((d) => d !== dot && isDot(d) && d.x0 >= dot.x1 && d.x0 - dot.x1 <= 0.6 * u && Math.abs(d.y0 + d.y1 - dot.y0 - dot.y1) <= 0.5 * u);
+    rests.push({ cx: (c.x0 + c.x1) / 2, len: two ? len * 1.75 : dot ? len * 1.5 : len, rest: true, notes: [] });
   }
   const bars = [];
   for (let i = 0; i + 1 < bl.length; i++) {
@@ -272,9 +302,10 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
       // only the part of the stem past its noteheads (a chord's heads would look like flags or dots)
       const ys = c.ys;
       const hiY = Math.min(...ys) - 0.6 * u, loY = Math.max(...ys) + 0.6 * u;
+      const lines = [...st.ys, top - u, top - 2 * u, bot + u, bot + 2 * u]; // a stem ending by a staff line mustn't read it as a beam
       const r = hiY - a >= b - loY
-        ? stemLength(flipped, w, { x, top: h - 1 - Math.round(hiY), bot: h - 1 - a }, u)
-        : stemLength(ink, w, { x, top: Math.round(loY), bot: b }, u);
+        ? stemLength(flipped, w, { x, top: h - 1 - Math.round(hiY), bot: h - 1 - a, lines: lines.map((l) => h - 1 - l) }, u)
+        : stemLength(ink, w, { x, top: Math.round(loY), bot: b, lines }, u);
       // in standard notation the dot sits just right of a notehead (not by the stem, as in tab)
       const plain = Number.isInteger(Math.log2(r.len)) ? r.len : r.len / 1.5;
       const dotted = c.heads.some((hd) => comps.some((d) => d.w <= 0.45 * u && d.h <= 0.45 * u && d.area >= 6 && d.x0 > hd.x1 && d.x0 - hd.x1 <= 0.9 * u

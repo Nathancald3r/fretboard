@@ -198,9 +198,12 @@ export function readRests(comps, st) { // exported for tests
       len = line(c.y1) ? 8 : line(c.y0) ? 16 : 0;
     }
     if (!len) continue;
-    const dot = comps.some((d) => d.w <= 0.4 * u && d.h <= 0.4 * u && d.area >= 6 && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.8 * u
+    const isDot = (d) => d.w <= 0.4 * u && d.h <= 0.4 * u && d.area >= 6;
+    const dot = comps.find((d) => isDot(d) && d.x0 >= c.x1 && d.x0 - c.x1 <= 0.8 * u
       && ((d.y0 >= c.y0 && d.y1 <= c.y1) || Math.abs((d.y0 + d.y1) / 2 - cy) < 0.5 * u));
-    rests.push({ cx: (c.x0 + c.x1) / 2, len: dot ? len * 1.5 : len, rest: true, notes: [] });
+    // a second dot just after the first: double dotted (one and three quarters)
+    const two = dot && comps.some((d) => d !== dot && isDot(d) && d.x0 >= dot.x1 && d.x0 - dot.x1 <= 0.6 * u && Math.abs(d.y0 + d.y1 - dot.y0 - dot.y1) <= 0.5 * u);
+    rests.push({ cx: (c.x0 + c.x1) / 2, len: two ? len * 1.75 : dot ? len * 1.5 : len, rest: true, notes: [] });
   }
   return rests;
 }
@@ -233,13 +236,13 @@ export function stemsBelow(ink, w, h, st) { // exported for tests
   }));
 }
 
-function bandCount(ink, w, xa, xb, ya, yb) {
+function bandCount(ink, w, xa, xb, ya, yb, lines = []) {
   xa = Math.round(xa); xb = Math.round(xb);
   let bands = 0, inBand = false;
   for (let y = ya; y <= yb; y++) {
     let n = 0;
     for (let x = xa; x <= xb; x++) n += ink[y * w + x];
-    const on = n > 0.6 * (xb - xa + 1);
+    const on = lines.some((l) => Math.abs(y - l) <= 1.5) ? inBand : n > 0.6 * (xb - xa + 1); // (a staff line running through is no beam)
     if (on && !inBand) bands++;
     inBand = on;
   }
@@ -258,7 +261,7 @@ export function stemLength(ink, w, s, u) {
     for (let y = bottom[0]; y <= bottom[1]; y++) {
       let n = 0;
       for (let xx = Math.min(xs, xe); xx <= Math.max(xs, xe); xx++) n += ink[y * w + xx];
-      const on = n >= need;
+      const on = (s.lines || []).some((l) => Math.abs(y - l) <= 1.5) ? inBand : n >= need; // (a staff line running through is no beam)
       if (on && !inBand) bands++;
       inBand = on;
     }
@@ -275,7 +278,7 @@ export function stemLength(ink, w, s, u) {
       else { dot = run >= 3 && run <= 8 && !wide; run = 0; wide = false; }
     }
     // a sixteenth beside eighths has only a short second beam (a stub about half a space long) at its stem
-    const near = Math.max(bandCount(ink, w, x + 0.2 * u, x + 0.45 * u, bottom[0], s.bot), bandCount(ink, w, x - 0.45 * u, x - 0.2 * u, bottom[0], s.bot)); // not below the beam: bar numbers sit there
+    const near = Math.max(bandCount(ink, w, x + 0.2 * u, x + 0.45 * u, bottom[0], s.bot, s.lines), bandCount(ink, w, x - 0.45 * u, x - 0.2 * u, bottom[0], s.bot, s.lines)); // not below the beam: bar numbers sit there
     const beams = Math.max(far, near);
     const len = beams >= 3 ? 0.5 : beams >= 2 ? 1 : 2;
     return { len: dot ? len * 1.5 : len, beamed: true };
@@ -439,10 +442,46 @@ function tuningTex(strips) {
 
 /* ---------- alphaTex ---------- */
 
-const UNITS = [[16, 1, false], [12, 2, true], [8, 2, false], [6, 4, true], [4, 4, false], [3, 8, true], [2, 8, false], [1.5, 16, true], [1, 16, false], [0.5, 32, false]];
+// The song's key from every pitched note, weighted by how long it sounds (Krumhansl's key profiles),
+// written as the major key with the same signature (a minor key shares its relative major's).
+const MAJOR_P = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR_P = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+const KS_NAMES = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+function songKey(parts, lists) {
+  const h = new Array(12).fill(0);
+  parts.forEach((part, k) => {
+    const n = part.strips.find((s) => s.strings)?.strings || 6;
+    const given = part.strips.find((s) => s.tuning)?.tuning;
+    const midi = [...(given && given.length === n ? given : STANDARD[n] || STANDARD[6])].reverse();
+    for (const b of lists[k]) b.cols.forEach((c, j) => {
+      for (const nt of c.notes) {
+        const f = Number(nt.t);
+        if (nt.drum || nt.tied || !Number.isFinite(f) || midi[nt.s] == null) continue;
+        h[(midi[nt.s] + f) % 12] += b.lens?.[j] || c.len || 1;
+      }
+    });
+  });
+  const total = h.reduce((a, c) => a + c, 0);
+  if (total < 20) return null; // too few notes to tell
+  const corr = (p, r) => {
+    const mp = p.reduce((a, c) => a + c, 0) / 12;
+    let xy = 0, xx = 0, yy = 0;
+    for (let i = 0; i < 12; i++) { const x = h[(i + r) % 12] - total / 12, y = p[i] - mp; xy += x * y; xx += x * x; yy += y * y; }
+    return xy / Math.sqrt(xx * yy);
+  };
+  let best = { v: -2, major: 0 };
+  for (let r = 0; r < 12; r++) {
+    if (corr(MAJOR_P, r) > best.v) best = { v: corr(MAJOR_P, r), major: r };
+    if (corr(MINOR_P, r) > best.v) best = { v: corr(MINOR_P, r), major: (r + 3) % 12 };
+  }
+  const fifths = (best.major * 7) % 12; // number of sharps; 7 and up read better as flats
+  return KS_NAMES[(fifths > 6 ? fifths - 12 : fifths) + 7];
+}
+
+const UNITS = [[16, 1, false], [14, 2, 'dd'], [12, 2, true], [8, 2, false], [7, 4, 'dd'], [6, 4, true], [4, 4, false], [3.5, 8, 'dd'], [3, 8, true], [2, 8, false], [1.5, 16, true], [1, 16, false], [0.5, 32, false]];
 const dur = (len) => {
   const u = UNITS.find(([n]) => n === len);
-  return u ? `${u[1]}${u[2] ? '{d}' : ''}` : null;
+  return u ? `${u[1]}${u[2] === 'dd' ? '{dd}' : u[2] ? '{d}' : ''}` : null;
 };
 
 // Splits a length (sixteenths) into note values.
@@ -637,7 +676,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       return pieces(b.lens[k]).length === 1 ? beatTex(c.notes, b.lens[k], f) : tiedTex(c.notes, b.lens[k], f);
     }).join(' ');
   };
-  const render = (barList, first, words = [], sungPart = false) => {
+  const render = (barList, first, words = [], sungPart = false, ks = null) => {
   let prevStrings = new Set();
   return barList.map((b, i) => {
     const lens = b.lens;
@@ -655,6 +694,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
       if (i === 0) head.push(`\\ts ${num} ${den}`);
     }
+    if (i === 0 && ks) head.push(`\\ks ${ks}`);
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
   });
   };
@@ -672,7 +712,9 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const sung = !!sungBars;
   const words = sung ? sungBars.map((b) => (b.lyr.length ? lyricTimes(b, T) : [])) : [];
   const sungAt = lists.indexOf(sungBars);
-  const out = render(bars, true, isDrums(strips) || sungAt === 0 ? words : [], sungAt === 0);
+  const pitched = parts.map((p, k) => k).filter((k) => !isDrums(parts[k].strips));
+  const ks = songKey(pitched.map((k) => parts[k]), pitched.map((k) => lists[k]));
+  const out = render(bars, true, isDrums(strips) || sungAt === 0 ? words : [], sungAt === 0, isDrums(strips) ? null : ks);
   const header = [
     `\\title ${JSON.stringify(title)}`,
     artist ? `\\artist ${JSON.stringify(artist)}` : '',
@@ -684,7 +726,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const others = extra.map((part, k) => {
     const drums = isDrums(part.strips);
     const head = drums ? drumHead(part.strips) : `\\staff {score tabs}\n\\tuning ${tuningTex(part.strips)}\n\\instrument ${part.program ?? 27}`;
-    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums || sungAt === k + 1 ? words : [], sungAt === k + 1).join(' |\n')}`;
+    return `\n\\track ${JSON.stringify(part.name)}\n${head}\n${render(lists[k + 1], false, drums || sungAt === k + 1 ? words : [], sungAt === k + 1, drums ? null : ks).join(' |\n')}`;
   }).join('');
   return { tex: `${header}\n${out.join(' |\n')}${others}`, bars: bars.length, exact, lyrics: sung, tracks: 1 + extra.length };
 }
