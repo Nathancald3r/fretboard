@@ -14,24 +14,72 @@
 6. **Automatic checks** on the PDFs and the conversion: same bar count in every track, nothing cut or stretched, time signature and tempo agree.
 7. **Sync to a recording (separate test project, later):** find the right YouTube version, line up the start, match tempo, time signature and sections; if the arrangement differs, adapt (add rests, skip parts). Test and improve on its own first.
 
-## Chord charts as a songbook: columns, ChordPro in and out, live mode (the user's plan, 2026-10-23, not started)
+## Chord charts as a songbook: columns, ChordPro in and out, live mode, Roman numerals fix (the user's plan, 2026-10-23, not started)
 
 **The goal:** chord charts that feel like Planning Center Music Stand when playing live, with the range of SongbookPro, and files that open cleanly in SongbookPro, OnSong and Music Stand.
 
-1. **Two columns:** the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
-2. **Export:**
-   - **ChordPro (.cho / .chordpro), the main one.** `{title}`, `{artist}`, `{key}`, `{capo}`, `{tempo}`, `{time}`, sections as `{start_of_verse: Verse 1}` … `{end_of_verse}` (chorus, bridge; others as `{comment}`), chords inline `[G]As the [C/G]Spirit`. Exports what is shown (transposed chords if transposed; Nashville or Roman only when chosen, as the key stays in `{key}`).
+**Where things are now (context):**
+- A chord sheet is a song with `kind: 'text'` (IndexedDB `songs`, `js/db.js`); its text is `song.data`. It opens in the text view (`js/texttab.js`: `openText`, `render`, `initText`; markup in `index.html` under `#tx-…`, styles `.tx-…` in `styles.css`).
+- **The sheet's head:** the UG helper writes a header (title, `Key:`, `Capo:`, `Tuning:`, `From: <UG url>`); `sheetHead()` reads it. `song.strum` holds the strumming patterns (`{ part, bpm, per, triplet, strokes }`, UG codes 1 down, 101 up, 3/103 accented, 2/102 muted, 0 none), `song.recording` the video.
+- **What a song remembers:** `song.transpose`, `song.chordMode` (`letters` / `nashville` / `roman`), `song.key` (the key for numbers, or `auto`), `song.textSize`, `song.scrollSpeed`, `song.tempo`.
+- **Chord names:**
+  - `highlight(text, rename)` draws chord lines and keeps each chord in its column.
+  - `toNashville` / `toRoman` are in `js/theory.js`, `shiftChordName` in `js/transpose.js`, and `detectKey` guesses the key from the chords.
+- **Other pieces:**
+  - Perform mode (`setPerform`, `body.performing`) is the existing "just the song, big" view.
+  - The strum player is `js/strumplay.js` (its own hidden alphaTab player, looping).
+  - Imports start in `importFiles` (`js/app.js`); the file input's `accept` list is in `index.html` (`#file-input`).
+  - Auto-import from the Downloads folder is `js/quickimport.js`.
+- **The UG helper's Done window** is drawn by `tools/ug_collect.py` (tkinter, "UG song collector"). The helper (`tools/ug_watch.py`, 127.0.0.1:9231) already talks to Fretboard (`/status`, `/report`, `/retry`, `/drop`). A fix reaches the user only after a push and a restart of the helper.
+- Rules that apply:
+  - Check the exports in the real apps, not just by eye.
+  - Guitar sound comes first.
+  - Line endings: `texttab.js` and `app.js` are CRLF; `theory.js`, `strumplay.js` and `index.html` are LF.
+
+1. **Fix the Roman numerals (and Nashville numbers) — the user asked for this later.** What's known wrong:
+   - **The key is guessed from the chords, not taken from the page.** A sheet of G, C/G and Em7 was guessed as C, so G showed as V instead of I. Fix:
+     - Use the head's `Key:` minus its `Capo:`: the shapes' key, since the numbers are written over the shapes.
+     - Fall back to `detectKey` only when there's no key line.
+     - Weigh the first and last chord more, and slash chords by their top chord.
+   - **Show which key the numbers count from** next to them, e.g. "Roman in G".
+   - **Check the spelling** against what worship charts use:
+     - minor lower case (vi) and diminished vii°; half-diminished as viiø7 or vii⌀7
+     - slash basses: we write `IV/1`; charts may want `IV/I` or plain `IV` over a bass note
+     - sus, add9 and maj7 suffixes
+     - chords outside the key: bVII, and borrowed iv
+     - minor keys: we count from the minor tonic, so C in Am is III; some charts count from the relative major instead
+   - Ask the user what looked wrong before changing the spelling.
+   - Tests are in `tests/theory.test.mjs`.
+2. **Two columns:** the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
+3. **Export:**
+   - **ChordPro (.cho / .chordpro), the main one.**
+     - Header: `{title}`, `{artist}`, `{key}`, `{capo}`, `{tempo}`, `{time}`.
+     - Sections: `{start_of_verse: Verse 1}` … `{end_of_verse}`, and the same for chorus and bridge; other sections as `{comment}`.
+     - Chords inline: `[G]As the [C/G]Spirit`.
+     - Exports what is shown: transposed chords if transposed. Nashville or Roman only when chosen; the key stays in `{key}`.
    - **PDF:** what the page shows (columns, text size), one song per file, page breaks between sections.
    - **.txt:** chords over lyrics, as UG writes them.
-   - Check each file by opening it in SongbookPro, OnSong and Music Stand (their ChordPro readers differ: OnSong wants `{c:}` comments, Music Stand reads `{key}` and `{tempo}`).
-3. **Import:** ChordPro files (`.cho`, `.chordpro`, `.chopro`, `.pro` and `.txt` with `{title}` or `[chords]` inline); plain chords-over-lyrics `.txt` (already read as a text tab); PDF chord charts (text PDFs: the chord line above each lyric line, kept by column position).
-4. **Live mode for chord charts (Music Stand feel, SongbookPro range):**
-   - A set list: songs in order, swipe or pedal (Page Down / arrow keys, Bluetooth page turners) to turn pages and move to the next song.
-   - Page-at-a-time view (no scrolling while playing), half-page turns as an option.
+   - Check each file by opening it in SongbookPro, OnSong and Music Stand. Their ChordPro readers differ: OnSong wants `{c:}` comments, Music Stand reads `{key}` and `{tempo}`.
+4. **Import:**
+   - ChordPro files: `.cho`, `.chordpro`, `.chopro`, `.pro`, and `.txt` with `{title}` or inline `[chords]`. Add them to `#file-input`'s `accept` and to `importFiles`.
+   - Plain chords-over-lyrics `.txt`: already read as a text tab.
+   - PDF chord charts (text PDFs): the chord line above each lyric line, kept by column position.
+5. **Live mode for chord charts (Music Stand feel, SongbookPro range):**
+   - A set list: songs in order. Turn pages and move to the next song by swipe or pedal (Page Down / arrow keys, Bluetooth page turners).
+   - Page-at-a-time view (no scrolling while playing), with half-page turns as an option.
    - Per song: key, capo, transpose, columns, text size, Nashville / Roman, all remembered.
    - Notes and highlights drawn on the chart (kept per song), a metronome flash, the strum pattern on top.
-   - Big, high-contrast, dark or light; screen stays awake.
-5. **UG helper's "Done" window ("UG song collector"):** add an **Open in app** button beside Open folder and Close. It opens Fretboard (the website or the open Fretboard tab) on the song, importing it first if auto-import hasn't yet, so there's no Import files / select all / Create song step.
+   - Big, high-contrast, dark or light; the screen stays awake.
+   - Build on Perform mode and the existing Live mode (`js/livemode.js`) rather than starting over.
+6. **UG helper's Done window ("UG song collector"):** add an **Open in app** button beside Open folder and Close.
+   - It opens Fretboard (the website, or the Fretboard tab already open) on the song. If auto-import hasn't brought the song in yet, it imports it first, so there's no Import files / select all / Create song step.
+   - The helper can tell Fretboard over `ug_watch.py` (a "ready, open it" flag Fretboard picks up on its 4 s check), or open the website with the song's folder in the address.
+
+**Done already (2026-10-23):**
+- The strum pattern plays on loop: ▶ Play at the song's tempo, and Slow practice from 60%, +5% every two loops.
+- Roman numerals are a Chords option.
+- Each track keeps its own capo and key.
+- The player's Tuning menu, with its "Not the original key" badge.
 
 ## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 
