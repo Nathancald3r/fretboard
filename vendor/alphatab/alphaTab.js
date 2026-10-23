@@ -39164,8 +39164,13 @@
 				voice.playingKey = key;
 				voice.playIndex = voicePlayIndex;
 				const fbPreset = this.presets[presetIndex];
-				if (fbPreset.fbMinAtt === undefined) fbPreset.fbMinAtt = fbPreset.regions.reduce((m, r) => Math.min(m, r.attenuation), Infinity);
-				voice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt)) - SynthHelper.gainToDecibels(1 / vel);
+				if (fbPreset.fbMinAtt === undefined) {
+					const min = fbPreset.regions.reduce((m, r) => Math.min(m, r.attenuation), Infinity);
+					const typical = fbPreset.regions.filter((r) => r.loVel <= 95 && r.hiVel >= 95 && r.loKey <= 60 && r.hiKey >= 60).reduce((m, r) => Math.min(m, min + 0.4 * (r.attenuation - min)), Infinity);
+					fbPreset.fbMinAtt = min;
+					fbPreset.fbLift = Number.isFinite(typical) ? Math.max(0, typical - 20) : 0;
+				}
+				voice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt) - fbPreset.fbLift) - SynthHelper.gainToDecibels(1 / vel);
 				if (this._channels) this._channels.setupVoice(this, voice);
 				else {
 					voice.calcPitchRatio(0, this.outSampleRate);

@@ -106,6 +106,17 @@ code = code.replace(NEW_REGION, NEW_REGION + '\n\t\t\t\t\t\t\t\t\t\tpreset.regio
 // (the guitars) sound exactly as before.
 const GAIN = 'voice.noteGainDb = this.globalGainDb - region.attenuation - SynthHelper.gainToDecibels(1 / vel);';
 if (!code.includes(GAIN)) throw new Error('alphaTab changed: attenuation patch no longer applies');
-code = code.replace(GAIN, 'const fbPreset = this.presets[presetIndex];\n\t\t\t\tif (fbPreset.fbMinAtt === undefined) fbPreset.fbMinAtt = fbPreset.regions.reduce((m, r) => Math.min(m, r.attenuation), Infinity);\n\t\t\t\tvoice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt)) - SynthHelper.gainToDecibels(1 / vel);');
+// A floor for every instrument: a normal (mf) note at middle C is never set quieter than 20 dB,
+// the quietest any guitar preset uses, so the guitars keep their level and nothing else (the
+// piano was) is buried under them. Too-quiet instruments are lifted as a whole, keeping their
+// soft-to-loud layers.
+code = code.replace(GAIN, `const fbPreset = this.presets[presetIndex];
+				if (fbPreset.fbMinAtt === undefined) {
+					const min = fbPreset.regions.reduce((m, r) => Math.min(m, r.attenuation), Infinity);
+					const typical = fbPreset.regions.filter((r) => r.loVel <= 95 && r.hiVel >= 95 && r.loKey <= 60 && r.hiKey >= 60).reduce((m, r) => Math.min(m, min + 0.4 * (r.attenuation - min)), Infinity);
+					fbPreset.fbMinAtt = min;
+					fbPreset.fbLift = Number.isFinite(typical) ? Math.max(0, typical - 20) : 0;
+				}
+				voice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt) - fbPreset.fbLift) - SynthHelper.gainToDecibels(1 / vel);`);
 writeFileSync(script, code);
 console.log('alphaTab copied to vendor/alphatab');
