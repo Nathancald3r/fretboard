@@ -597,7 +597,7 @@
       </div>
 
       <div class="playbar">
-        <div id="pl-lyrics" class="lyrics-pane" hidden aria-live="off"><button id="ly-hide" class="ly-hide" title="Hide the lyrics (View › Lyrics brings them back)" aria-label="Hide the lyrics">×</button><p id="ly-now" class="ly-now"></p><p id="ly-next" class="ly-next"></p></div>
+        <div id="pl-lyrics" class="lyrics-pane" hidden aria-live="off"><button id="ly-hide" class="ly-hide" title="Hide the lyrics (the Lyrics button in the play bar brings them back)" aria-label="Hide the lyrics">×</button><p id="ly-now" class="ly-now"></p><p id="ly-next" class="ly-next"></p></div>
         <div id="pl-fretview" class="fret-pane" hidden><div id="pl-neck"></div><div id="pl-keys"></div><div id="pl-drums" class="drum-pane"></div><p class="fret-hint">Hover over a note in the music, or tap it, to see how to play it.</p></div>
         <input id="pl-seek" class="seek" type="range" min="0" max="1000" value="0" step="1" title="Song position (click to jump)">
         <div class="playbar-row">
@@ -640,7 +640,8 @@
             </span>
             <span class="stepper qk-key" title="Transpose the whole song up or down (synth, tab and chord names)">Key
               <button id="qk-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="qk-val" class="mono">0</b><button id="qk-up" class="icon-btn small" aria-label="Transpose up">+</button></span>
-            <span class="tog-group"><button id="pl-metro" class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
+            <span class="tog-group"><button id="pl-howto" class="tog" title="How to play: the neck, keys or drums for this track, under the music (F)">Neck</button><button id="pl-lyr-btn" class="tog" title="The lyrics across the screen">Lyrics</button></span>
+            <span class="tog-group"><button id="pl-metro"class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
             <span class="tog-group vid-group"><button id="pa-toggle" class="tog rec" title="Linked video (R): on = this song plays with its linked YouTube video; off = the built-in guitar sound. The first press lets you find a video.">Video</button><button id="pa-gear" class="tog gear" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙</button></span>
           </div>
           <span id="tr-status" class="muted small-text practice-only"></span>

@@ -15,6 +15,12 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* thin dark scrollbars (Chrome's default ones are white boxes with arrows) */
+* { scrollbar-width: thin; scrollbar-color: #4a505c transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #4a505c; border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: #5d6472; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -2269,3 +2275,6 @@ body.edit-mode .ed-close { display: none; }
   .sheet[data-sheet="mixer"] .mixer-row .track-name { padding: .3rem; }
 }
 @keyframes pop { from { transform: translate(-50%, -48%); opacity: 0; } }
+/* full screen keeps the track picker (and its mute / solo) */
+body.focus .playbar-end { display: flex; }
+body.focus .playbar-end > :not(.track-chip) { display: none; }

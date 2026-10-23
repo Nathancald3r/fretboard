@@ -1531,6 +1531,10 @@ function showNeck() {
   for (const [id, on] of [['pl-neck', viewKind === 'neck'], ['pl-keys', viewKind === 'keys'], ['pl-drums', kit]]) $(id).hidden = !on;
   $('pl-fretview').classList.toggle('over-music', kit); // the kit floats over the bottom of the music
   document.body.classList.toggle('kit-over', kit); // room under the last line of music
+  // the play bar's button for it, named for what this track shows
+  $('pl-howto').hidden = !staff;
+  $('pl-howto').textContent = !staff ? 'Neck' : staff.isPercussion ? 'Drums' : staff.tuning.length > 0 && isFretted(track) ? 'Neck' : 'Keys';
+  $('pl-howto').classList.toggle('on', on);
   onBeat(playedBeat?.voice?.bar?.staff?.track?.index === trackIndex ? playedBeat : null);
 }
 
@@ -1655,6 +1659,8 @@ function resetLyrics() {
   const track = score ? lyricsTrack(score) : -1;
   const on = $('pl-lyrics-on').checked;
   $('pl-lyrics').hidden = !on || track === -1;
+  $('pl-lyr-btn').hidden = track === -1;
+  $('pl-lyr-btn').classList.toggle('on', on);
   $('pl-lyrics-note').textContent = !score ? '' : track === -1 ? 'This song has no lyrics.' : `From ${trackLabel(score.tracks[track], track)}.`;
   $('ly-now').textContent = '';
   $('ly-next').textContent = '';
@@ -2343,7 +2349,10 @@ export function initPlayer() {
   initDrumView($('pl-drums'));
   initShakerView($('pl-drums'));
   hoverNotes($('alphatab'));
-  $('ly-hide').addEventListener('click', () => { $('pl-lyrics-on').checked = false; $('pl-lyrics-on').dispatchEvent(new Event('change')); });
+  const flip = (id, v) => { $(id).checked = v; $(id).dispatchEvent(new Event('change')); };
+  $('ly-hide').addEventListener('click', () => flip('pl-lyrics-on', false));
+  $('pl-lyr-btn').addEventListener('click', () => flip('pl-lyrics-on', !$('pl-lyrics-on').checked));
+  $('pl-howto').addEventListener('click', () => flip('pl-fretboard', !fretboardOn()));
   for (const [id, key, def] of [['pl-fretboard', 'fretboard-fretview', '0'], ['pl-lyrics-on', 'fretboard-lyrics', '1']]) {
     let v = def;
     try { v = localStorage.getItem(key) ?? def; } catch { /* ignore */ }
