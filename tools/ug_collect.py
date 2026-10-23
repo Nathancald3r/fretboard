@@ -318,10 +318,10 @@ TEXT_KINDS = [("-chords-", "Chords"), ("-ukulele-", "Ukulele Chords"), ("-bass-"
 
 def page_kind(pg):
     url = pg.url.split("?")[0]
-    if "-guitar-pro-" in url:  # a Guitar Pro tab (its URL also has "-pro-"): just its Download button
-        return "gp", "Guitar Pro"
-    if "-official-" in url or "-pro-" in url:  # Official and Pro songs: a PDF per instrument
+    if "-official-" in url:  # official songs: a PDF per instrument
         return "official", ""
+    if "-pro-" in url:  # Pro and Guitar Pro tabs: just the .gp file from their Download button
+        return "gp", "Guitar Pro"
     if gp_button(pg) is not None:
         return "gp", "Guitar Pro"
     if pg.evaluate("[...document.querySelectorAll('h2')].some(e=>e.innerText.trim()=='Instruments')"):
