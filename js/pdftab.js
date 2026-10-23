@@ -330,14 +330,20 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     // a staff with as many lines as the tuning has strings (bass: 4); six-line guitar staves always
     // (a bass part whose PDF doesn't say its tuning: four strings)
     const counts = [...new Set([6, tuning?.length || (bass ? 4 : 6)])];
-    let staves = findStaves(r.light, r.w, r.h, r.ink, counts);
+    // the page's tab staves share one line spacing; a music staff taken for one (its lines and a
+    // ledger line or beam) is closer set
+    const tabSize = (st) => {
+      const m = st.map((s) => s.u).sort((a, b) => a - b)[st.length >> 1];
+      return st.filter((s) => Math.abs(s.u - m) < 0.2 * m);
+    };
+    let staves = tabSize(findStaves(r.light, r.w, r.h, r.ink, counts));
     if (staves.length) { // a graphic TAB staff (Ultimate Guitar Tab Pro)
       how = 'staff';
       let scale = base;
       if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
         scale = base * UG_UNIT / staves[0].u;
         r = await renderInk(page, scale);
-        staves = findStaves(r.light, r.w, r.h, r.ink, counts);
+        staves = tabSize(findStaves(r.light, r.w, r.h, r.ink, counts));
       }
       for (let i = 0; i < staves.length; i++) {
         const st = staves[i];

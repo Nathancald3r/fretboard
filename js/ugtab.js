@@ -22,18 +22,29 @@ export function findStaves(light, w, h, ink, counts = [6]) {
       run = light[y * w + x] ? run + 1 : 0;
       if (run > longest) longest = run;
     }
-    // staff lines span the page and are broken only by fret numbers; a text tab's dashes never join up
-    if (n > 0.45 * w && longest > 20) {
+    // staff lines span the page and are broken only by fret numbers; a text tab's dashes never join up.
+    // A last line holding a bar or two is shorter, but unbroken.
+    if ((n > 0.45 * w && longest > 20) || longest > 0.15 * w) {
       if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; }
       else lines.push({ last: y, sum: y, n: 1 });
     }
   }
-  const ys = lines.map((l) => l.sum / l.n);
+  // a band much thicker than the staff lines (a beam, a block of words) is no staff line: taken as
+  // one, it would join a staff's run and shift the staff a string down
+  const thick = lines.map((l) => l.n).sort((a, b) => a - b)[lines.length >> 1] * 2;
+  const ys = lines.filter((l) => l.n <= Math.max(thick, 3)).map((l) => l.sum / l.n);
   const out = [];
   for (let i = 0; i + 1 < ys.length;) {
     const gap = ys[i + 1] - ys[i];
     let j = i + 1; // the run of lines spaced like the first two
     while (j + 1 < ys.length && Math.abs(ys[j + 1] - ys[j] - gap) < 3) j++;
+    // seven in a row: a six-line staff and a stray line next to it (words, a beam); the stray one is
+    // the end whose gap fits the others least
+    if (j - i === 6 && counts.includes(6) && !counts.includes(7)) {
+      const g = (k) => ys[k + 1] - ys[k], mid = [1, 2, 3, 4].map((k) => g(i + k)).sort((a, b) => a - b)[2];
+      if (Math.abs(g(i) - mid) > Math.abs(g(j - 1) - mid)) { i++; continue; }
+      j--;
+    }
     const n = j - i + 1;
     // a longer run counts only if it splits evenly into six-line staves
     const size = counts.includes(n) ? n : n > 7 && n % 6 === 0 && counts.includes(6) ? 6 : 0;
@@ -44,10 +55,14 @@ export function findStaves(light, w, h, ink, counts = [6]) {
         let x0 = 0, x1 = w - 1;
         while (x0 < w && !light[y * w + x0]) x0++;
         while (x1 > 0 && !light[y * w + x1]) x1--;
+        // a staff's lines all start at its left edge; a beam over a music staff starts after the clef
+        const starts = rows.map((r) => Math.min(...[-1, 0, 1].map((d) => { const yy = Math.round(r) + d; let x = 0; while (x < w && !light[yy * w + x]) x++; return x; })));
+        if (Math.max(...starts) - Math.min(...starts) > 2 * gap) continue;
         out.push({ ys: rows, x0, x1, u: (rows[size - 1] - rows[0]) / (size - 1) });
       }
       i = j + 1;
-    } else i++;
+    } else if (gap > 6 && n === 5) i = j + 1; // a music staff: none of its lines start a bass's four
+    else i++;
   }
   return out;
 }
@@ -65,7 +80,8 @@ function barLines(light, w, st) {
     if (groups.length && x - groups[groups.length - 1][groups[groups.length - 1].length - 1] <= 2) groups[groups.length - 1].push(x);
     else groups.push([x]);
   }
-  const out = groups.map((g) => g.reduce((a, c) => a + c, 0) / g.length);
+  const out = groups.map((g) => g.reduce((a, c) => a + c, 0) / g.length)
+    .filter((x, i, a) => i === 0 || x - a[i - 1] > st.u); // the thin and thick lines of a final double bar are one
   // some systems end without a closing bar line: the staff's end closes the last bar
   if (out.length && st.x1 - out[out.length - 1] > 4 * st.u) out.push(st.x1);
   return out;
@@ -338,8 +354,9 @@ export function readStrip(ink, light, w, h, st) {
     cols.sort((a, b) => a.cx - b.cx);
     for (const c of cols) {
       const s = stems.reduce((best, q) => (!best || Math.abs(q.x - c.cx) < Math.abs(best.x - c.cx) ? q : best), null);
-      const r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false };
+      const r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false, guess: true };
       c.len = r.len; c.beamed = r.beamed;
+      if (r.guess) c.guess = true; // no rhythm row (the notes' lengths are in the music staff above)
     }
     // A stem with no number over it is the previous note held on (its tie arc ends there). Stems start just
     // under the staff; anything starting lower (a bar number) isn't one.
@@ -530,7 +547,9 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [] }))] : [one];
   }));
   const bars = barsOf(strips);
-  const sums = bars.filter((b) => b.cols.length >= 3).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
+  // the bar length every part agrees on most (a part with no rhythm row has no say)
+  const sums = [strips, ...extra.map((p) => p.strips)].flatMap((list) => list.flatMap((s) => s.bars))
+    .filter((b) => b.cols.length >= 3 && !b.cols.some((c) => c.guess)).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
   const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
@@ -545,13 +564,14 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     seen[b.name] = (seen[b.name] || 0) + 1;
     return b.numbered ? `${b.name} ${seen[b.name]}` : b.name;
   };
-  const firstTempo = bars.find((b) => b.tempo)?.tempo;
+  // the tempo mark may sit over one part's staff only (over the music staff, not the tab)
+  const firstTempo = [strips, ...extra.map((p) => p.strips)].map((list) => list.flatMap((s) => s.bars).find((b) => b.tempo)?.tempo).find(Boolean);
   let lastTempo = firstTempo || tempo;
   // each bar's note lengths (sixteenths) fitted to the bar, and when each note starts
   const layout = (b, first) => {
     let lens = b.cols.map((c) => c.len);
     const sum = lens.reduce((a, c) => a + c, 0);
-    if (Math.round(sum) === T) { if (first) exact++; } // every part keeps a rhythm row that adds up
+    if (Math.round(sum) === T && !b.cols.some((c) => c.guess)) { if (first) exact++; } // every part keeps a rhythm row that adds up
     else if (b.cols.length > 1) {
       // the rhythm row didn't add up: spread the bar by how far apart the notes sit
       const ends = [...b.cols.map((c) => c.cx), b.x1];

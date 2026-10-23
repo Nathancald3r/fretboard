@@ -1236,12 +1236,11 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
         finally:
             out.close()
 
-    shots = [steady(False)]
+    # the score from its top, then scrolled down as far as it goes: a song longer than the screen
+    # ends below the first picture (it may end in the gap between two lines, so it's always taken)
+    shots = [steady(False), steady(True)]
+    pg.evaluate("scrollTo(0, 0)")
     res, pdf = lay_out(shots)
-    if res.get("full"):  # its end is below the screen: a second picture, scrolled down, joins on
-        shots.append(steady(True))
-        res, pdf = lay_out(shots)
-        pg.evaluate("scrollTo(0, 0)")
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
     if res.get("error"):
