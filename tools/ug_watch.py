@@ -253,6 +253,17 @@ def open_tab(url):
 
 # ---------- the helper Fretboard talks to ----------
 HELPER_PORT = 9231
+# What Fretboard's UG helper line set, kept beside the helper: {"notation": true} also saves each
+# fretted track's pages with the music staff (dynamics, words), a slower save
+SETTINGS = Path(__file__).with_name("settings.json")
+
+
+def settings():
+    try:
+        s = json.loads(SETTINGS.read_text(encoding="utf-8"))
+        return s if isinstance(s, dict) else {}
+    except (OSError, ValueError):
+        return {}
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io"} | {f"http://{h}:{p}" for h in ("localhost", "127.0.0.1") for p in (8420, 8421)}
 state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
@@ -306,8 +317,8 @@ class Helper(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/status":
-            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 2,
-                                    "chrome": state["chrome"], "busy": state["busy"]})
+            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 3,
+                                    "chrome": state["chrome"], "busy": state["busy"], "notation": bool(settings().get("notation"))})
         self._send(404, {"ok": False})
 
     def do_POST(self):
@@ -318,6 +329,17 @@ class Helper(BaseHTTPRequestHandler):
             return self._send(200, {"ok": ok})
         if self.headers.get("Origin") is None:
             return self._send(403, {"ok": False})
+        if self.path.split("?")[0] == "/settings":
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 8192)
+                got = json.loads(self.rfile.read(n) or b"{}")
+                s = settings()
+                if "notation" in got:
+                    s["notation"] = bool(got["notation"])
+                SETTINGS.write_text(json.dumps(s), encoding="utf-8")
+            except (ValueError, AttributeError, OSError):
+                return self._send(400, {"ok": False})
+            return self._send(200, {"ok": True, "notation": bool(s.get("notation"))})
         if self.path.split("?")[0] != "/open":
             return self._send(404, {"ok": False})
         try:
@@ -407,6 +429,8 @@ def main():
                 state["asked"].pop(u.split("?")[0], None)
                 print(f"\n=== {u}")
                 cmd = [sys.executable, "-u", str(COLLECT), u, "--port", str(a.port), "--root", a.root] + (["--no-ui"] if a.no_ui else [])
+                if settings().get("notation"):
+                    cmd.append("--notation")
                 if again:
                     print("Saved before: a window asks whether to replace it or save a new copy.")
                     cmd.append("--again")

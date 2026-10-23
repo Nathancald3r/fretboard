@@ -29,6 +29,9 @@ from datetime import datetime
 from pathlib import Path
 
 PORT = 9222
+# --notation: fretted tracks also get their "Standard + Tablature" pages (Fretboard reads only the
+# dynamics and words from them). Off, a save is ~15 s quicker: those are the longest prints.
+NOTATION = False
 DIALOG = Path(__file__).with_name("ug_save_dialog.ps1")
 DONE, FAILED, SKIPPED, CANCELLED = 0, 1, 2, 3
 SECONDS_PER_TRACK = 14  # first guess for the time left; then measured
@@ -1543,6 +1546,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
                 "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]}
 
     fretted = not NO_TAB.search(n)  # by the name: UG shows a Tuning line under every track, drums too
+    noted = fretted and NOTATION  # also gets the pages with the music staff
 
     def shots_pdf():
         front(pg)
@@ -1550,14 +1554,14 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
         keep_drawing(cdp, pg)
         sharp_screen(cdp, pg)  # tall: as much of the score in one picture as it takes
         try:
-            notes = notes_pages() if fretted and view[0] == NOTES_VIEW else None
+            notes = notes_pages() if noted and view[0] == NOTES_VIEW else None
             if view[0] != "Tablature" and not switch("Tablature"):
                 raise RuntimeError("Couldn't switch the player to Tablature.")
             # the score from its top, then scrolled down as far as it goes: a song longer than the screen
             # ends below the first picture (it may end in the gap between two lines, so it's always taken)
             shots = [steady(False), steady(True)]
             if notes is None:
-                notes = notes_pages() if fretted else []
+                notes = notes_pages() if noted else []
             if notes == shots:
                 notes = []
             pg.evaluate("scrollTo(0, 0)")
@@ -1596,10 +1600,10 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
                 return None
             view[0] = want
         return printed_lines(ui, pg)
-    order = [NOTES_VIEW, "Tablature"] if fretted and view[0] == NOTES_VIEW else ["Tablature", NOTES_VIEW]
+    order = [NOTES_VIEW, "Tablature"] if noted and view[0] == NOTES_VIEW else ["Tablature", NOTES_VIEW]
     got = {}
     for v in order:
-        if v == NOTES_VIEW and not fretted:
+        if v == NOTES_VIEW and not noted:
             continue
         got[v] = printed(v)
         if v == "Tablature" and not got[v]:
@@ -2086,7 +2090,7 @@ def work(ui, a, result):
 
 
 def main():
-    global PORT
+    global PORT, NOTATION
     ap = argparse.ArgumentParser()
     ap.add_argument("url")
     ap.add_argument("--port", type=int, default=9222)
@@ -2097,10 +2101,12 @@ def main():
     ap.add_argument("--no-ui", action="store_true", help="no windows: ask nothing, report in the console")
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
     ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
+    ap.add_argument("--notation", action="store_true", help="fretted tracks: also the pages with the music staff (dynamics, words); a slower save")
     ap.add_argument("--gp", action="store_true", help="official songs: their Guitar Pro version instead of the PDFs, when UG has one")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
+    NOTATION = a.notation
     result = {"code": FAILED}
     ui = None
     if not a.no_ui:

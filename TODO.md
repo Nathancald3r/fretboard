@@ -1,54 +1,20 @@
 # Fretboard: open work (moved out of CLAUDE.md)
 
-## UG helper: a whole official song back to ~30 s (now 54 s)
+## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 
-**Goal (the user's words):** "get the full process down in 30 seconds, there is a bunch of wasted time in the process". No pointless waits, and never at the cost of picture quality or cut words.
-
-**Where it stands:** `b87c4a5` saved Here I Am To Worship (8 tracks + chords) in ~33 s. Of that, `printed_lines` (UG drawing its own print pictures) took ~24.6 s. `108be84` fixed the words and notes cut at each print page's foot, and the doubled lines, but a save now takes **54 s**.
-
-**Last timed run (`108be84`, `prof.py`), 54.1 s in total:**
-- `printed_lines` 39.9 s over 12 prints:
-  - the 4 untabbed tracks take ~2.1 s each, about as before
-  - the fretted tracks, tab view and then Standard + Tab: 4.31, 2.86, 2.21, 3.7, **9.59**, 4.04 and 2.51 s
-- `write_pdf` 23.8 s, written in the background: 1.2 s each for the untabbed tracks; 4.87, 2.74, **8.41** and 2.82 s for the fretted ones
-- The run ends with an 8.41 s PDF write and a 2.82 s one *after* the last print, so ~4 s of tail isn't hidden behind the next track.
-
-**What changed in `108be84` that can cost time:**
-1. `PRINT_H` 6000 (was 1000): UG lays out and draws a 12000-px canvas for every print. At 1000 the page-foot cut stays, because nothing is drawn below the page.
-2. The `getImageData` hook in `GRAB_JS` makes one extra-tall read per line, so each read covers the line plus up to one more line height. Each read of Print's canvas costs ~0.1 s.
-3. `PAGES_JS` `pixels()` counts every pixel of every picture (on top of `mend`), and `repeats()` compares neighbouring pictures. The Standard + Tab pictures are big.
-
-**Plan (measure first, one change at a time, using `%TEMP%\ugp\prof.py`; reload the UG tab with `reload.py` before each run):**
-1. A/B one fretted track (Acoustic, both views): `printed_lines` at `PRINT_H` 1000 vs 6000, and at 6000 with the hook on vs off. That shows whether the time is UG's drawing or our hook.
-2. Find the smallest height that still works. The canvas must be taller than 10000 px plus one line (try 5300, i.e. 10600 px at 2×), and the result must have no cuts.
-3. If the tall screen is the cost, use it only where a cut can happen: the screen just over one page, or only for tracks long enough to need a second page.
-4. `write_pdf`: time `PAGES_JS` per part. Count pixels every 2nd column, read each picture's pixels once (shared by `mend`, `inked` and `repeats`), and skip `repeats` when the two pictures' row counts can't match.
-5. Take the longest track's prints earlier, so its PDF write overlaps the other prints instead of trailing at the end.
-6. Check whether the Standard + Tab print is needed for every fretted track (Fretboard reads only the dynamics and words from it). If a track has none, skip it.
-
-**Measured 2026-10-23 (Here I Am To Worship, `%TEMP%\ugp\prof.py`, runs vary ±4 s):**
-- Today's code: 41.5–50 s. The prints are ~31–35 s of it, back to back; PDF writing (~20 s) mostly hides behind them.
-- `PRINT_H` 1000: 39–42 s, but the page-foot cuts come back. 5400 (a 10800-px canvas): 43.9 vs 47.5 s at 6000 in the same pair of runs. 5400 is too short anyway: a Standard + Tab line can be 1770 px tall (Acoustic), so the canvas needs 10000 + 1770.
-- Print time grows with the canvas: Print draws every 10000-px page at the canvas's full height. Almost every print here spans 2+ pages (tab prints 8600–12200 px, Standard + Tab up to 38700 px), so a tall canvas only where needed saves nothing.
-- The `getImageData` hook costs ~1 s at most (hook off: 41.0 s).
-- PDF writing in the background slows the prints by ~4 s (prints alone: 30.8 s), but writing them afterwards makes the run longer (60 s).
-- Instruments panel closed: the print is 1383 px wide, not 1582, with smaller notes. Lower quality: no.
-- **What's left to win:** the 5 Standard + Tab prints are the longest (~15 s together). Fretboard reads only dynamics and words from them (How He Loves: one "f" per part). Skipping them, or making them an option, is the one big cut left. That's the user's call.
-
-**Done when:** a full save of Here I Am To Worship takes ~30 s, every part reads 85 bars, and the PDFs show no cut words or notes and no doubled lines (render with `fitz` and look).
-
-**The rest of the 33 s at `b87c4a5`** (besides the 24.6 s of print): `pick_track` 2.8 s, `notation` 1.7 s, `sharp_screen` 0.9 s, chords 0.8 s. These are small, so the time to win is in the prints and the PDF writes.
-
-**Already tried, don't repeat:**
-- Printing tracks in parallel tabs: slower, because UG's drawing is all CPU work.
-- Picking tracks by pressing them from page JS (`PRESS_JS`): unreliable, so `pick_track` keeps the locator click.
-- Lowering the picture scale: never, it costs quality.
-- Print time is all UG CPU work: about 1.1 s of layout plus 0.35 s for `toDataURL` per print. There are no timers or network waits to cut.
-- With the Instruments panel open, the score is 1582 px wide (4 bars a line); closed, 2214 px (6 bars). The note pixel scale is the same, but a wider score means fewer, wider pictures. Measure whether closing the panel before printing saves time.
-
-**Watch out:**
-- The collector Chrome on 9222 is shared with other sessions. Say when you're using it.
-- The preview stalls on page 5 of Rhythm Guitar in `pdfToTab` (old and new PDFs alike). Check the bars another way, or look into that stall.
+- **Now:** Here I Am To Worship (8 tracks + chords) saves in **20 s**. The fretted tracks' Standard + Tab prints are off by default: they were the longest (~15 s together), and Fretboard reads only dynamics and words from them.
+  - The option: the checkbox "Also save the Standard + Tab pages" on Fretboard's UG helper line (helper `/settings`, saved in `settings.json` beside the helper; `ug_collect.py --notation`).
+- The floor is UG drawing its own print pictures (pure CPU work), ~2 s per track.
+- **Measured, don't redo:**
+  - `PRINT_H` 1000 is ~8 s quicker but brings back the page-foot cuts. 5400 is too short: a Standard + Tab line can be 1770 px tall, so the canvas needs 10000 + 1770.
+  - Print time grows with the canvas height, and almost every print spans 2+ pages, so a tall canvas only where needed saves nothing.
+  - The `getImageData` hook costs ~1 s at most.
+  - Writing the PDFs in the background slows the prints by ~4 s, but writing them afterwards is slower overall.
+  - Instruments panel closed: a narrower print with smaller notes. Lower quality: no.
+- **Already tried, don't repeat:**
+  - Printing tracks in parallel tabs: slower, because UG's drawing is all CPU work.
+  - Picking tracks by pressing them from page JS (`PRESS_JS`): unreliable, so `pick_track` keeps the locator click.
+  - Lowering the picture scale: never, it costs quality.
 
 ## Importing the PDFs ("Reading the PDFs" dialog): make it quicker
 

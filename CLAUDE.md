@@ -57,7 +57,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ### How the helper captures a track (`save_track` / `PAGES_JS` in `ug_collect.py`)
 
-- **Speed (2026-10-23): a whole song (8 tracks + chords) takes about 33 s.** About 25 s of that is UG drawing its own print pictures (pure UG CPU work), the floor. Keep it fast:
+- **Speed (2026-10-23): a whole song (8 tracks + chords) takes about 20 s.** Most of that is UG drawing its own print pictures (pure UG CPU work), the floor. Keep it fast:
+  - **Standard + Tab prints are off by default** (they were ~15 s). Fretted tracks then get only their tab pages, so Fretboard has no dynamics or words. The user turns them on with the checkbox on Fretboard's UG helper line: `/settings` in `ug_watch.py` keeps `{"notation": true}` in `settings.json` beside the helper (a `--refresh` leaves it) and passes `--notation` to `ug_collect.py`.
   - **Main route: UG's own Print pictures** (`GRAB_JS` / `printed_lines`). A patched `execCommand`/`print` in UG's print frame takes the line pictures, so no Print window opens. Screenshots (`shots_pdf`, the two pictures below) are only the fallback.
   - **PDFs are written in the background** (`PdfWriter`, over raw CDP) while the next track is taken.
   - **Always 127.0.0.1, never localhost**: on Windows each localhost connection costs 2 s.

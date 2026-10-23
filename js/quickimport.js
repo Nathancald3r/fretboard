@@ -289,6 +289,21 @@ export async function showHelper(status) {
     show.title = 'Brings the UG helper\'s Chrome up, full screen (clicking it in the taskbar does too)';
     show.addEventListener('click', showCollector);
     el.append(on, show);
+    if (typeof s.notation === 'boolean') { // older helpers have no such setting
+      const lab = document.createElement('label');
+      lab.title = 'Fretted tracks are also printed with the music staff, so Fretboard gets their dynamics (mf, ff) and words. Off, a save is about 15 s quicker';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = s.notation;
+      box.addEventListener('change', async () => {
+        try {
+          const r = await fetch(HELPER + '/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notation: box.checked }), signal: AbortSignal.timeout(5000) });
+          box.checked = (await r.json()).notation === true;
+        } catch { box.checked = !box.checked; }
+      });
+      lab.append(' ', box, ' Also save the Standard + Tab pages (dynamics, words; slower)');
+      el.append(lab);
+    }
     return;
   }
   if (helperState === 'starting') {
