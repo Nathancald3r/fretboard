@@ -713,6 +713,33 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [] }))] : [one];
   }));
   const bars = barsOf(strips);
+  // Section names from every part: each part misses some (a name cut at the picture's edge, one
+  // printed over another part's staff only) and misreads a few. A name two parts agree on (give or
+  // take a bar) starts a section; with fewer than 3 parts, any name does.
+  if (extra.length) {
+    const groups = [];
+    for (const list of [bars, ...extra.map((p) => barsOf(p.strips))]) {
+      list.slice(0, bars.length).forEach((b, i) => {
+        if (!b.heading || !b.name) return;
+        const g = groups.find((x) => x.name === b.name && Math.abs(x.i - i) <= 1);
+        if (g) g.votes.push({ i, numbered: b.numbered }); else groups.push({ name: b.name, i, votes: [{ i, numbered: b.numbered }] });
+      });
+    }
+    const need = extra.length >= 2 ? 2 : 1;
+    const at = new Map();
+    for (const g of groups) {
+      if (g.votes.length < need) continue;
+      const is = g.votes.map((v) => v.i);
+      g.i = is.reduce((top, i) => (is.filter((x) => x === i).length > is.filter((x) => x === top).length ? i : top), is[0]);
+      g.numbered = g.votes.filter((v) => v.numbered).length * 2 >= g.votes.length;
+      if (!at.has(g.i) || at.get(g.i).votes.length < g.votes.length) at.set(g.i, g);
+    }
+    bars.forEach((b, i) => {
+      const g = at.get(i);
+      if (g) Object.assign(b, { heading: true, name: g.name, numbered: g.numbered });
+      else { b.heading = false; b.name = ''; }
+    });
+  }
   // the bar length every part agrees on most (a part with no rhythm row has no say)
   const sums = [strips, ...extra.map((p) => p.strips)].flatMap((list) => list.flatMap((s) => s.bars))
     .filter((b) => b.cols.length >= 3 && !b.cols.some((c) => c.guess)).map((b) => b.cols.reduce((a, c) => a + c.len, 0));

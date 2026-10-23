@@ -4,7 +4,9 @@
 
 const WORDS = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Bridge', 'Interlude', 'Break', 'Outro', 'Instrumental', 'Tag',
   'Turnaround', 'Solo', 'Refrain', 'Ending', 'Coda', 'Vamp', 'Hook', 'Riff', 'Lead', 'Fill', 'Jam', 'Tag', 'Post-Chorus', 'Channel'];
-const FONT = 'bold 40px "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif';
+// each name without its first letter or two (cut at the picture's left edge) -> the name
+const CUT = new Map(WORDS.flatMap((wd) => [1, 2].map((k) => [wd.slice(k), wd]).filter(([s]) => s.length >= 4 && /^[a-z]/.test(s))));
+const FONT ='bold 40px "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif';
 const GW = 48, GH = 14; // comparison grid
 
 function labelRegion(ink, w, x0, x1, y0, y1) {
@@ -213,13 +215,20 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
       if (txt && v >= 30 && v <= 300) tempos.push({ v, x: items[eq].x0 });
       continue;
     }
+    // a line of many words may be the previous line's lyrics (in tab view they sit just above this
+    // staff): there a name must match closely ("loves" read as "Vamp" at 0.22)
+    const near = boxes.length > 4 ? 0.19 : 0.225;
     // section name: first recognised word, plus a number after it
     for (let i = 0; i < boxes.length; i++) {
       const bx = boxes[i];
       if (bx.h < 0.45 * u) continue;
-      const [d, wd] = best(grid(bx.px, bx.a, bx.t, bx.w, bx.h), WORDS);
+      // a name centred on a line's first bar line runs off UG's picture: its first letter is cut ("horus")
+      const cut = bx.a <= st.x0 + 0.3 * u;
+      let [d, wd] = best(grid(bx.px, bx.a, bx.t, bx.w, bx.h), cut ? [...WORDS, ...CUT.keys()] : WORDS);
+      const part = CUT.has(wd);
+      if (part) wd = CUT.get(wd);
       if (debug) debug.push({ word: wd, d, w: bx.w });
-      if (d < 0.225) {
+      if (d < (part ? near + 0.025 : near)) { // a cut name matches less closely ("horus": 0.228)
         const next = boxes[i + 1];
         // "Verse 1": the number is counted by the caller
         sections.push({ name: wd, x: bx.a, x1: bx.b, numbered: !!(next && next.n === 1 && next.w < 0.9 * u && next.h > 0.55 * u) });
