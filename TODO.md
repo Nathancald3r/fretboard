@@ -1,5 +1,37 @@
 # Fretboard: open work (moved out of CLAUDE.md)
 
+## UG helper: a whole official song back to ~30 s (now 54 s)
+
+**Goal (the user's words):** "get the full process down in 30 seconds, there is a bunch of wasted time in the process". No pointless waits, and never at the cost of picture quality or cut words.
+
+**Where it stands:** `b87c4a5` saved Here I Am To Worship (8 tracks + chords) in ~33 s. Of that, `printed_lines` (UG drawing its own print pictures) took ~24.6 s. `108be84` fixed the words and notes cut at each print page's foot, and the doubled lines, but a save now takes **54 s**.
+
+**Last timed run (`108be84`, `prof.py`), 54.1 s in total:**
+- `printed_lines` 39.9 s over 12 prints:
+  - the 4 untabbed tracks take ~2.1 s each, about as before
+  - the fretted tracks, tab view and then Standard + Tab: 4.31, 2.86, 2.21, 3.7, **9.59**, 4.04 and 2.51 s
+- `write_pdf` 23.8 s, written in the background: 1.2 s each for the untabbed tracks; 4.87, 2.74, **8.41** and 2.82 s for the fretted ones
+- The run ends with an 8.41 s PDF write and a 2.82 s one *after* the last print, so ~4 s of tail isn't hidden behind the next track.
+
+**What changed in `108be84` that can cost time:**
+1. `PRINT_H` 6000 (was 1000): UG lays out and draws a 12000-px canvas for every print. At 1000 the page-foot cut stays, because nothing is drawn below the page.
+2. The `getImageData` hook in `GRAB_JS` makes one extra-tall read per line, so each read covers the line plus up to one more line height. Each read of Print's canvas costs ~0.1 s.
+3. `PAGES_JS` `pixels()` counts every pixel of every picture (on top of `mend`), and `repeats()` compares neighbouring pictures. The Standard + Tab pictures are big.
+
+**Plan (measure first, one change at a time, using `%TEMP%\ugp\prof.py`; reload the UG tab with `reload.py` before each run):**
+1. A/B one fretted track (Acoustic, both views): `printed_lines` at `PRINT_H` 1000 vs 6000, and at 6000 with the hook on vs off. That shows whether the time is UG's drawing or our hook.
+2. Find the smallest height that still works. The canvas must be taller than 10000 px plus one line (try 5300, i.e. 10600 px at 2×), and the result must have no cuts.
+3. If the tall screen is the cost, use it only where a cut can happen: the screen just over one page, or only for tracks long enough to need a second page.
+4. `write_pdf`: time `PAGES_JS` per part. Count pixels every 2nd column, read each picture's pixels once (shared by `mend`, `inked` and `repeats`), and skip `repeats` when the two pictures' row counts can't match.
+5. Take the longest track's prints earlier, so its PDF write overlaps the other prints instead of trailing at the end.
+6. Check whether the Standard + Tab print is needed for every fretted track (Fretboard reads only the dynamics and words from it). If a track has none, skip it.
+
+**Done when:** a full save of Here I Am To Worship takes ~30 s, every part reads 85 bars, and the PDFs show no cut words or notes and no doubled lines (render with `fitz` and look).
+
+**Watch out:**
+- The collector Chrome on 9222 is shared with other sessions. Say when you're using it.
+- The preview stalls on page 5 of Rhythm Guitar in `pdfToTab` (old and new PDFs alike). Check the bars another way, or look into that stall.
+
 ## Bug: wrong chords and bad sound on imported songs (to fix later)
 
 **What the user saw (screenshot, Here I Am To Worship, song 40, Verse 2 and Chorus):**
