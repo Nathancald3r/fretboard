@@ -5,7 +5,7 @@ import { initEditor, pickBeat } from './editor.js';
 import { updateSong, getValue, setValue } from './db.js';
 import { TONES, installTone, getTone, setTone, ROOMS, getRoom, setRoom } from './tone.js';
 import { createPracticeTimer, formatClock } from './practice.js';
-import { asciiTabToAlphaTex } from './asciitab.js';
+import { asciiTabToAlphaTex, asciiTabsToAlphaTex } from './asciitab.js';
 import { noteName, keyLabel } from './theory.js';
 import { initAmp, ampSongOpened, playAlongState } from './amp.js';
 import { scoreHasChords, guessChords, injectChords, fileChords, sheetKeyShift } from './chords.js';
@@ -1087,7 +1087,11 @@ function parseScore(s) {
   if (s.kind === 'text' || s.kind === 'tex') {
     let tex = s.data;
     if (s.kind === 'text') {
-      const converted = asciiTabToAlphaTex(s.data, { title: s.title, artist: s.artist, tempo: s.tempo });
+      const opts = { title: s.title, artist: s.artist, tempo: s.tempo };
+      // a guitar tab with its bass tab (combined on import): a track each
+      const converted = s.parts?.length
+        ? asciiTabsToAlphaTex([{ name: s.part || 'Guitar', text: s.data }, ...s.parts.map((p) => ({ name: p.name, text: p.data }))], opts)
+        : asciiTabToAlphaTex(s.data, opts);
       if (!converted) throw new Error('No tab lines found in this text (chord sheets can’t be played).');
       tex = converted.tex;
     }

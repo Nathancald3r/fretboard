@@ -59,7 +59,9 @@ export function highlight(text, rename) {
 
 // Key for Nashville numbers: the saved choice, or detected from the chords.
 function render() {
-  const detected = detectKey(songChords(song.data));
+  // a combined song shows each tab in turn, under its instrument's name
+  const text = [song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
+  const detected = detectKey(songChords(text));
   const keySelect = $('tx-key');
   keySelect.innerHTML = '';
   keySelect.add(new Option(detected ? `Auto (${keyLabel(detected)})` : 'Auto (no chords found)', 'auto'));
@@ -73,7 +75,7 @@ function render() {
     : detected;
   const nashville = song.chordMode === 'nashville';
   keySelect.disabled = !nashville;
-  $('tx-body').innerHTML = highlight(song.data, nashville && key ? (c) => toNashville(c, key) : null);
+  $('tx-body').innerHTML = highlight(text, nashville && key ? (c) => toNashville(c, key) : null);
 }
 
 function frame(now) {

@@ -45,16 +45,24 @@ function cleanLine(line) {
 
 // Groups of consecutive tab lines (one "system" = one line per string).
 function findSystems(text) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n').map(cleanLine);
+  const raw = text.replace(/\r\n?/g, '\n').split('\n');
+  const lines = raw.map(cleanLine);
   const systems = [];
   let current = [];
+  let tempo = 0; // a "Tempo: 98" line after the first system: the tempo from the next system on
   const flush = () => {
-    if (current.length >= 4 && current.length <= 8) systems.push(current);
+    if (current.length >= 4 && current.length <= 8) {
+      if (tempo && systems.length) current.tempo = tempo;
+      systems.push(current);
+      tempo = 0;
+    }
     current = [];
   };
-  for (const line of lines) {
-    if (isTabLine(line)) current.push(line.replace(/\s+$/, ''));
-    else flush();
+  for (const [i, line] of lines.entries()) {
+    const t = raw[i].match(/^\s*(?:tempo|bpm)\s*[:=]?\s*(\d{2,3})\b/i);
+    if (!t && isTabLine(line)) { current.push(line.replace(/\s+$/, '')); continue; }
+    flush();
+    if (t && Number(t[1]) >= 30 && Number(t[1]) <= 300) tempo = Number(t[1]);
   }
   flush();
   return systems;
@@ -195,8 +203,15 @@ function parseSystem(lines) {
 // Every column between two bar lines is one time slot ("|-2---2--|" is 8), except the second digit
 // of a two-digit fret (12 is one slot) and a joining letter on its own between two notes ("5h7",
 // "5/7", "7b9": the h is not a beat). Returns the slot of each column, and the slot count.
-function barSlots(sys, a, b, inBar) {
+function barSlots(sys, a, b, inBar, unit = 0) {
   const { rows } = sys;
+  // a bar exactly one (or two) 4/4 bars wide is drawn one column per slot, two-digit frets too
+  // ("--8-10-8--------" is 16 sixteenths, not 15)
+  if (unit && (b - a - 1) % unit === 0) {
+    const slot = {};
+    for (let c = a + 1; c < b; c++) slot[c] = c - a - 1;
+    return { slot, n: b - a - 1 };
+  }
   const skip = new Set();
   for (const e of inBar) if (e.wide) skip.add(e.col + 1);
   for (let c = a + 1; c < b; c++) {
@@ -280,7 +295,7 @@ function barsOf(sys) {
 // What one placeholder is worth in this tab: an 8th, or a 16th when most bars are exactly 16
 // wide (the common "|----------------|" tab drawn on a 16th grid).
 function slotUnit(systems) {
-  const widths = systems.flatMap((sys) => barsOf(sys).filter(([, , ev]) => ev.length).map(([a, b, ev]) => barSlots(sys, a, b, ev).n));
+  const widths = systems.flatMap((sys) => barsOf(sys).filter(([, , ev]) => ev.length).map(([a, b, ev]) => (b - a - 1 === 16 ? 16 : barSlots(sys, a, b, ev).n)));
   return widths.length && widths.filter((n) => n === 16).length >= widths.length * 0.6 ? 16 : 8;
 }
 
@@ -301,8 +316,12 @@ function systemBars(sys, unit = 8) {
   }
   // Every placeholder (a dash, a note, a strum) is one slot, strums side by side ("2-22-222") too.
   for (const [a, b, inBar] of barsOf(sys)) {
-    if (!inBar.length) { out.push('r.1'); continue; }
-    const { slot, n } = barSlots(sys, a, b, inBar);
+    if (!inBar.length) { // an empty bar: as many bars of rest as it is wide (a 16-wide bar of 8ths is two)
+      const n = b - a - 1;
+      for (let k = n > unit * 1.5 ? Math.round(n / unit) : 1; k > 0; k--) out.push('r.1');
+      continue;
+    }
+    const { slot, n } = barSlots(sys, a, b, inBar, unit);
     out.push(...slotBars(inBar, slot, n, unit));
   }
   return out;
@@ -310,11 +329,10 @@ function systemBars(sys, unit = 8) {
 
 const quote = (s) => `"${String(s || '').replace(/["\\]/g, '')}"`;
 
-/**
- * @returns {{ tex: string, bars: number, strings: number } | null} null when no tab lines are found.
- */
-export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null } = {}) {
-  const systems = findSystems(text).map(parseSystem).filter((s) => s.events.length);
+// Reads one text tab: its bars (alphaTex, with \ts marks where the time signature changes),
+// tuning, capo and tempo. null when no tab lines are found.
+function readTab(text, tempo = null, forceUnit = 0) {
+  const systems = findSystems(text).map((l) => Object.assign(parseSystem(l), { tempo: l.tempo || 0 })).filter((s) => s.events.length);
   if (!systems.length) return null;
 
   // Use the most common string count; skip systems that don't match (e.g. a bass part).
@@ -332,28 +350,65 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null
     const down = tuning.map((m) => m - head.capo);
     if (off(down) < off(tuning)) tuning = down;
   }
-  const bpm = Math.round(tempo || head.tempo || 100);
+  const unit = forceUnit || slotUnit(used);
+  const bars = used.flatMap((s) => systemBars(s, unit).map((b, i) => {
+    const bar = typeof b === 'string' ? { ts: [4, 4], tex: b } : b;
+    return i === 0 && s.tempo ? { ...bar, tempo: s.tempo } : bar; // "Tempo: 98" above a system changes the tempo there
+  }));
+  return { bars, strings, tuning, capo: head.capo || 0, tempo: tempo || head.tempo || null };
+}
 
-  // a bar of strums sets its own time signature; the bars after it go back to 4/4
+// One track's lines: its staff, tuning, sound, then its bars (a \ts mark where the time signature changes).
+// Time signatures and tempo changes are song-wide, so only the first track writes them.
+function trackTex(name, tab, count = tab.bars.length, tempos = true) {
   let ts = '4 4';
-  const unit = slotUnit(used);
-  const bars = used.flatMap((s) => systemBars(s, unit)).map((b) => {
-    const want = typeof b === 'string' ? '4 4' : b.ts.join(' ');
-    const tex = typeof b === 'string' ? b : b.tex;
-    const mark = want !== ts ? `\\ts ${want} ` : '';
+  const bars = Array.from({ length: count }, (_, i) => tab.bars[i] || { ts: [4, 4], tex: 'r.1' }).map((b) => {
+    const want = b.ts.join(' ');
+    const mark = (tempos && want !== ts ?`\\ts ${want} ` : '') + (tempos && b.tempo ? `\\tempo ${b.tempo} ` : '');
     ts = want;
-    return mark + tex;
+    return mark + b.tex;
   });
-  const header = [
-    `\\title ${quote(title)}`,
-    artist ? `\\artist ${quote(artist)}` : '',
-    `\\tempo ${bpm}`,
-    '.',
-    `\\track ${quote(title || 'Guitar')}`,
+  return [
+    `\\track ${quote(name)}`,
     `\\staff {score tabs}`,
-    `\\tuning ${tuning.map(midiName).join(' ')}`,
-    head.capo ? `\\capo ${head.capo}` : '',
-    strings <= 5 ? '\\instrument 33' : '\\instrument 27',
+    `\\tuning ${tab.tuning.map(midiName).join(' ')}`,
+    tab.capo ? `\\capo ${tab.capo}` : '',
+    // a picked bass: each note starts with a clear attack, so quick repeated notes stay apart
+    tab.strings <= 5 ? '\\instrument 34' : '\\instrument 27',
+    bars.join(' |\n'),
   ].filter(Boolean).join('\n');
-  return { tex: `${header}\n${bars.join(' |\n')}`, bars: bars.length, strings, tempo: bpm, capo: head.capo || 0 };
+}
+
+const headerTex = (title, artist, bpm) =>
+  [`\\title ${quote(title)}`, artist ? `\\artist ${quote(artist)}` : '', `\\tempo ${bpm}`, '.'].filter(Boolean).join('\n');
+
+/**
+ * @returns {{ tex: string, bars: number, strings: number } | null} null when no tab lines are found.
+ */
+export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null } = {}) {
+  const tab = readTab(text, tempo);
+  if (!tab) return null;
+  const bpm = Math.round(tab.tempo || 100);
+  const header = headerTex(title, artist, bpm);
+  return { tex: `${header}\n${trackTex(title || 'Guitar', tab)}`, bars: tab.bars.length, strings: tab.strings, tempo: bpm, capo: tab.capo };
+}
+
+/**
+ * Several text tabs of one song (a guitar tab and its bass tab) as one score, a track each.
+ * The first tab sets the length: the others are cut or padded with rests to its bar count.
+ * The tempo is the one given, else the first tab's that has one.
+ * @param {{ name: string, text: string }[]} parts
+ */
+export function asciiTabsToAlphaTex(parts, { title = '', artist = '', tempo = null } = {}) {
+  const first = parts.length && readTab(parts[0].text);
+  if (!first) return null;
+  const count = first.bars.length;
+  // Each other tab is read on the grid (8ths or 16ths) that gives it the first tab's length: a bass tab
+  // drawn in 16-wide bars can be one bar each, or two bars of the guitar's 8ths.
+  const fit = (text) => [8, 16].map((u) => readTab(text, null, u)).filter(Boolean)
+    .sort((a, b) => Math.abs(a.bars.length - count) - Math.abs(b.bars.length - count))[0];
+  const tabs = [{ name: parts[0].name, tab: first }, ...parts.slice(1).map((p) => ({ name: p.name, tab: fit(p.text) })).filter((p) => p.tab)];
+  const bpm = Math.round(tempo || tabs.find((p) => p.tab.tempo)?.tab.tempo || 100);
+  const tracks = tabs.map((p, i) => trackTex(p.name, p.tab, count, i === 0));
+  return { tex: `${headerTex(title, artist, bpm)}\n${tracks.join('\n')}`, bars: count, strings: tabs[0].tab.strings, tempo: bpm, capo: tabs[0].tab.capo, tracks: tabs.length };
 }

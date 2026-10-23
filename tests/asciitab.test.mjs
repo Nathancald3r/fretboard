@@ -2,7 +2,7 @@
 // Run: node tests/asciitab.test.mjs
 import assert from 'node:assert/strict';
 import * as alphaTab from '@coderline/alphatab';
-import { asciiTabToAlphaTex } from '../js/asciitab.js';
+import { asciiTabToAlphaTex, asciiTabsToAlphaTex } from '../js/asciitab.js';
 
 function load(tex) {
   const settings = new alphaTab.Settings();
@@ -203,5 +203,38 @@ for (const [name, c] of Object.entries(cases)) {
   }
 }
 assert.equal(asciiTabToAlphaTex('Am C G\nJust lyrics'), null, 'chord sheet has no tab');
+
+// a 16-wide bar with a two-digit fret is still 16 sixteenths (it read as 15/16)
+{
+  const bass = `G|----------------|----------------|
+D|--8-10-8--------|8-8---8-8-8---8-|
+A|--------7-7-77-6|----------------|
+E|----------------|----------------|`;
+  const score = load(asciiTabToAlphaTex(bass).tex);
+  for (const m of score.masterBars) assert.equal(m.timeSignatureNumerator + '/' + m.timeSignatureDenominator, '4/4');
+  // with a guitar tab in 8ths, the same bass is read in 8ths: each 16-wide bar is two of the guitar's bars
+  const guitar = `e|---0----|---2----|---0----|---2----|
+B|-2---2--|-2---2--|-2---2--|-2---2--|
+G|--------|--------|--------|--------|
+D|--------|--------|--------|--------|
+A|0-0-----|0-0-----|0-0-----|0-0-----|
+E|--------|--------|--------|--------|
+Tempo: 98
+e|---0----|
+B|-2---2--|
+G|--------|
+D|--------|
+A|0-0-----|
+E|--------|`;
+  const both = load(asciiTabsToAlphaTex([{ name: 'Guitar', text: guitar }, { name: 'Bass', text: bass }]).tex);
+  assert.equal(both.tracks.length, 2);
+  assert.equal(both.masterBars.length, 5);
+  assert.equal(both.masterBars[4].tempoAutomations[0]?.value, 98, 'tempo change above a system');
+  for (const t of both.tracks) t.staves[0].bars.forEach((b, i) => {
+    const d = b.voices[0].beats.reduce((a, x) => a + x.playbackDuration, 0);
+    assert.equal(d, both.masterBars[i].calculateDuration(), `${t.name} bar ${i + 1} is full`);
+  });
+  console.log('ok   bass in 16ths, combined with a guitar tab');
+}
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);

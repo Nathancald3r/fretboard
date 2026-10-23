@@ -104,7 +104,7 @@ async function renderLibrary() {
 
   $('library-list').innerHTML = songs.map((s) => {
     const type = chartType(s);
-    return `<article class="card" data-id="${escape(s.id)}" data-type="${type}">
+    return `<article class="card" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
       <div class="title">${escape(s.title)}</div>
       <div class="meta">${escape(s.artist || '')}</div>
       <div class="meta">
@@ -209,6 +209,16 @@ async function cardAct(act, id) {
   if (act === 'open-tab') { location.hash = `song/${id}/tab`; return; }
   if (act === 'open-chords') { location.hash = `song/${id}/chords`; return; }
   if (act === 'version') { await askVersion(song); renderLibrary(); return; }
+  if (act === 'combine-ask') { await setCombinePref('ask'); toast('You’ll be asked again when a tab of the same song comes in.'); return; }
+  if (act === 'split') {
+    for (const p of song.parts || []) {
+      await putSong({ kind: 'text', title: `${song.title} (${p.name})`, artist: song.artist, data: p.data, fileName: p.fileName, added: Date.now() });
+    }
+    await updateSong(id, { parts: [], title: song.part ? `${song.title} (${song.part})` : song.title });
+    toast('Split: each tab is its own song again.');
+    renderLibrary();
+    return;
+  }
   if (act === 'delete') {
     const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
     if (!ok) return;
@@ -266,6 +276,8 @@ function openCardMenu(card, at) {
     editable ? ['edit', '✎ Edit mode', 'Arrange bars, fix notes, match a recording'] : null,
     ['practice', '▶ Open in Practice'],
     ['version', '🎧 Version…', 'Studio, live or cover'],
+    card.dataset.parts ? ['split', 'Split tabs apart', 'One song for each tab again'] : null,
+    card.dataset.type === 'text' && combinePref !== 'ask' ? ['combine-ask', 'Ask before combining tabs', `Now: always ${combinePref === 'yes' ? 'combine' : 'keep apart'}`] : null,
     ['rename', 'Rename'],
     ['delete', 'Delete'],
   ].filter(Boolean).map(([k, label, hint]) => `<button role="menuitem" data-m="${k}" class="${k === 'delete' ? 'danger' : ''}">${label}${hint ? `<small>${hint}</small>` : ''}</button>`).join('');
@@ -338,7 +350,7 @@ function namesFromPdf(base, plain = false) {
 const PARTS = [
   ['Vocal', 53, /vocal|voice|sing/i], ['Acoustic Guitar', 25, /acoustic|nylon/i], ['Rhythm Guitar', 27, /rhythm/i],
   ['Lead Guitar', 29, /lead(?!\s*vocal)|electric/i], ['Piano', 0, /piano|keys|keyboard/i], ['Synth Pad', 89, /pad/i],
-  ['Synth Bass', 38, /synth\s*bass/i], ['Synth Lead', 80, /synth/i], ['Bass', 33, /bass/i], ['Ukulele', 24, /uke/i],
+  ['Synth Bass', 38, /synth\s*bass/i], ['Synth Lead', 80, /synth/i], ['Bass', 34, /bass/i], ['Ukulele', 24, /uke/i],
   ['Drums', 0, /drum|shaker|percussion|tambourine|cajon|conga|bongo/i],
 ];
 
@@ -470,6 +482,66 @@ function reviewParts(items, title, artist) {
 
 // A song the UG helper saved again with "Replace the old files": the library's song of that title and artist
 // gets the new content and keeps its id, so its practice history, loops and settings stay. Otherwise a new song.
+/* ---------- a bass tab and a guitar tab of one song become one song ---------- */
+
+// 'ask' (default), 'yes' (always combine) or 'no' (always keep apart)
+let combinePref = 'ask';
+getValue('combineTabs').then((v) => { if (v) combinePref = v; }).catch(() => {});
+async function setCombinePref(v) { combinePref = v; await setValue('combineTabs', v); }
+
+// Which instrument a text tab is for, from its file name ("Song - Artist - Bass Tab").
+const tabPart = (name) => (/bass/i.test(name) ? 'Bass' : /ukulele|uke\b/i.test(name) ? 'Ukulele' : 'Guitar');
+const plainTitle = (t) => String(t || '').replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+
+// A new text tab for a song already in the library as another instrument's tab: offer to make
+// them one song with a track each. Returns the combined song's id, or 0 to save it on its own.
+async function combineTab({ base, data, fileName }) {
+  if (combinePref === 'no') return 0;
+  const { asciiTabToAlphaTex } = await import('./asciitab.js');
+  if (!asciiTabToAlphaTex(data)) return 0; // a chord sheet
+  const { title, artist } = namesFromPdf(base, true);
+  const part = tabPart(base);
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const other = (await listSongs()).filter((s) => s.kind === 'text' && same(s.artist, artist) && plainTitle(s.title) === title.toLowerCase()
+    && (s.part || tabPart(s.fileName || s.title)) !== part && !(s.parts || []).some((p) => p.name === part)
+    && asciiTabToAlphaTex(s.data)).sort((a, b) => (b.added || 0) - (a.added || 0))[0];
+  if (!other) return 0;
+  if (combinePref === 'ask') {
+    const answer = await askCombine(other.title, part);
+    if (!answer) return 0;
+    if (!answer.again) await setCombinePref(answer.combine ? 'yes' : 'no');
+    if (!answer.combine) return 0;
+  }
+  const otherPart = other.part || tabPart(other.fileName || other.title);
+  const mine = { name: part, data, fileName };
+  // the guitar comes first: it is the track the song opens on and it sets the length
+  const next = part === 'Bass' || otherPart === 'Guitar'
+    ? { part: otherPart, parts: [...(other.parts || []), mine] }
+    : { data, fileName, part, parts: [{ name: otherPart, data: other.data, fileName: other.fileName }, ...(other.parts || [])] };
+  await updateSong(other.id, { ...next, title });
+  toast(`Combined: “${title}” now has a ${[next.part, ...next.parts.map((p) => p.name)].join(' and a ')} track.`, 5000);
+  return other.id;
+}
+
+// Resolves { combine, again } or null when closed.
+function askCombine(existing, part) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'parts-dialog';
+  dlg.innerHTML = `<form method="dialog">
+    <h2>Combine with “${escape(existing)}”?</h2>
+    <p class="muted">This ${escape(part.toLowerCase())} tab is for a song you already have. Combined, it’s one song with a track for each tab, playing together.</p>
+    <label style="display: flex; align-items: center; gap: .5rem; margin: .8rem 0"><input type="checkbox" data-again checked> Ask every time</label>
+    <div class="row spread"><button value="no" class="ghost">Keep separate</button><button value="yes" class="primary">Combine</button></div>
+  </form>`;
+  document.body.append(dlg);
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener('close', () => {
+    const again = dlg.querySelector('[data-again]').checked;
+    dlg.remove();
+    resolve(dlg.returnValue === 'yes' || dlg.returnValue === 'no' ? { combine: dlg.returnValue === 'yes', again } : null);
+  }, { once: true }));
+}
+
 async function saveImported(song, replace) {
   if (replace) {
     const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
@@ -521,6 +593,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null, replace =
   // the UG helper's own notes (its run note, latest.txt, collected.txt), not songs
   files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name) && !/^(latest|collected)\.txt$/i.test(f.name));
   let added = 0;
+  let combined = 0; // tabs that joined a song already in the library (it said so itself)
   const ids = [];
   const failed = [];
   const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
@@ -543,6 +616,8 @@ async function importFiles(files, { quietIfEmpty = false, auto = null, replace =
       const { title, artist } = namesFromPdf(base);
       const data = cleanTabText(await file.text());
       const from = data.slice(0, 600).match(/^From: (https:\/\/\S+)$/m)?.[1];
+      const joined = !replace && await combineTab({ base, data, fileName: file.name });
+      if (joined) { ids.push(joined); combined++; continue; }
       ids.push(await saveImported({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }, replace));
       added++;
       continue;
@@ -587,7 +662,7 @@ async function importFiles(files, { quietIfEmpty = false, auto = null, replace =
   if (added) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
   if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
-  else if (!quietIfEmpty && pdfs.length < 2) toast('Nothing to import.'); // a cancelled PDF import already said so
+  else if (!quietIfEmpty && pdfs.length < 2 && !combined) toast('Nothing to import.'); // a cancelled PDF import already said so
   if (open) { location.hash = `#song/${open}`; return { added, failed, ids }; } // straight to the new song
   renderLibrary();
   return { added, failed, ids };
