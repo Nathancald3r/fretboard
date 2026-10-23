@@ -26,6 +26,15 @@
 5. Take the longest track's prints earlier, so its PDF write overlaps the other prints instead of trailing at the end.
 6. Check whether the Standard + Tab print is needed for every fretted track (Fretboard reads only the dynamics and words from it). If a track has none, skip it.
 
+**Measured 2026-10-23 (Here I Am To Worship, `%TEMP%\ugp\prof.py`, runs vary ±4 s):**
+- Today's code: 41.5–50 s. The prints are ~31–35 s of it, back to back; PDF writing (~20 s) mostly hides behind them.
+- `PRINT_H` 1000: 39–42 s, but the page-foot cuts come back. 5400 (a 10800-px canvas): 43.9 vs 47.5 s at 6000 in the same pair of runs. 5400 is too short anyway: a Standard + Tab line can be 1770 px tall (Acoustic), so the canvas needs 10000 + 1770.
+- Print time grows with the canvas: Print draws every 10000-px page at the canvas's full height. Almost every print here spans 2+ pages (tab prints 8600–12200 px, Standard + Tab up to 38700 px), so a tall canvas only where needed saves nothing.
+- The `getImageData` hook costs ~1 s at most (hook off: 41.0 s).
+- PDF writing in the background slows the prints by ~4 s (prints alone: 30.8 s), but writing them afterwards makes the run longer (60 s).
+- Instruments panel closed: the print is 1383 px wide, not 1582, with smaller notes. Lower quality: no.
+- **What's left to win:** the 5 Standard + Tab prints are the longest (~15 s together). Fretboard reads only dynamics and words from them (How He Loves: one "f" per part). Skipping them, or making them an option, is the one big cut left. That's the user's call.
+
 **Done when:** a full save of Here I Am To Worship takes ~30 s, every part reads 85 bars, and the PDFs show no cut words or notes and no doubled lines (render with `fitz` and look).
 
 **The rest of the 33 s at `b87c4a5`** (besides the 24.6 s of print): `pick_track` 2.8 s, `notation` 1.7 s, `sharp_screen` 0.9 s, chords 0.8 s. These are small, so the time to win is in the prints and the PDF writes.
