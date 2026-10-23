@@ -135,8 +135,10 @@ export async function readyRuns(dir) {
       const tracks = Array.isArray(m?.tracks) ? m.tracks.filter((t) => typeof t?.file === 'string' && /\.(pdf|txt|gp\w*)$/i.test(t.file)) : [];
       if (done.has(key) || !tracks.length) continue;
       const what = m.kind === 'text' || m.kind === 'gp' ? String(tracks[0].name || '') : '';
+      // held: a file wasn't saved, so the song waits until you Retry it or leave it out (the UG downloads panel)
+      const missing = Array.isArray(m.missing) ? m.missing.filter((n) => !(m.dropped || []).includes(n)) : [];
       runs.push({ key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
-        title: String(m.song || ''), artist: String(m.artist || ''), replace: m.replace === true,
+        title: String(m.song || ''), artist: String(m.artist || ''), key: String(m.key || ''), replace: m.replace === true, missing, held: missing.length > 0,
         chords: typeof m.chords === 'string' ? m.chords : '', video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
     }
   }
@@ -176,7 +178,8 @@ export async function showReady() {
     const text = document.createElement('span');
     const n = r.tracks.length;
     const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'a text file' : 'a Guitar Pro file';
-    text.textContent = `“${r.song}” is ready: ${kind} saved by the UG collector.${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
+    const held = r.held ? ` ${r.missing.length} not saved (${r.missing.join(', ')}).` : '';
+    text.textContent = `“${r.song}” is ready: ${kind} saved by the UG collector.${held}${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
     box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.key); showReady(); }));
   } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
 }
@@ -366,6 +369,145 @@ export async function openInCollector(url) {
   } catch { return false; }
 }
 
+/* ---------- UG downloads: each song the helper saves, file by file, with Retry and Cancel ---------- */
+
+const SONG_TEXT = { waiting: 'Waiting', saving: 'Saving', done: 'Saved', held: 'Needs you', failed: 'Didn’t save', cancelled: 'Cancelled' };
+const FILE_TEXT = { waiting: 'waiting', saving: 'saving…', saved: 'saved', failed: 'not saved', dropped: 'left out' };
+const said = new Map(); // url -> the state last shown, so "needs you" is said once
+const closed = new Set(); // url|state of the songs you closed with ×
+let queueTimer = 0;
+let queueSmall = false; // folded to its title line
+
+async function helperPost(path, body) {
+  try {
+    const r = await fetch(HELPER + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) });
+    return await r.json();
+  } catch { return { ok: false, why: 'The UG helper isn’t running.' }; }
+}
+
+// A button that asks once more on its first click (no dialog in the way).
+function sureButton(label, sure, onClick) {
+  let armed = 0;
+  const b = button(label, 'ghost small', () => {
+    if (Date.now() - armed > 4000) { armed = Date.now(); b.textContent = sure; setTimeout(() => { b.textContent = label; }, 4000); return; }
+    onClick();
+  });
+  return b;
+}
+
+function songCard(s) {
+  const card = document.createElement('div');
+  card.className = `ugq-song ugq-${s.state}`;
+  const head = document.createElement('div');
+  head.className = 'ugq-head';
+  const name = document.createElement('strong');
+  name.textContent = s.song + (s.artist ? ` – ${s.artist}` : '');
+  const st = document.createElement('span');
+  st.className = 'ugq-state';
+  const n = s.tracks.length, got = s.tracks.filter((t) => t.state === 'saved').length;
+  st.textContent = SONG_TEXT[s.state] + (s.state === 'saving' && n ? ` ${got} of ${n}` : '') + (s.why && s.state !== 'held' ? `: ${s.why}` : '');
+  head.append(name, ' ', st);
+  const act = async (path, body) => { card.classList.add('ugq-busy'); const r = await helperPost(path, body); if (!r.ok && r.why) ctx.toast(r.why, 5000); showQueue(); };
+  if (['waiting', 'saving', 'held'].includes(s.state)) {
+    head.append(sureButton(s.state === 'waiting' && !n ? 'Cancel' : 'Cancel song', 'Delete its files?', () => act('/drop', { url: s.url })));
+  } else {
+    const x = button('×', 'ghost small ugq-x', () => { closed.add(s.url + '|' + s.state); showQueue(); });
+    x.title = 'Close';
+    head.append(x);
+  }
+  card.append(head);
+  if (n && (s.state === 'saving' || s.state === 'held' || s.state === 'failed')) {
+    const list = document.createElement('ul');
+    list.className = 'ugq-files';
+    for (const t of s.tracks) {
+      const li = document.createElement('li');
+      li.className = `ugq-${t.state}`;
+      li.append(`${t.name}: ${FILE_TEXT[t.state] || t.state}${t.why ? ` (${t.why})` : ''} `);
+      if (s.state === 'held' && t.state === 'failed') {
+        const again = button('Retry', 'ghost small', () => act('/retry', { url: s.url, track: t.name }));
+        const other = button('Try another way', 'ghost small', () => act('/retry', { url: s.url, track: t.name, shots: true }));
+        other.title = 'Saves it from pictures of the score instead of UG’s Print';
+        const out = button('Leave out', 'ghost small', () => act('/drop', { url: s.url, track: t.name }));
+        out.title = 'The song is added without this track';
+        li.append(again, other, out);
+      }
+      list.append(li);
+    }
+    card.append(list);
+  }
+  return card;
+}
+
+/** The UG downloads panel: shown while the helper has songs; looks again every 2 s while one saves. */
+export async function showQueue() {
+  clearTimeout(queueTimer);
+  if (!ctx || !helperPossible()) return;
+  const s = await ugHelper();
+  const songs = (s?.songs || []).filter((x) => !closed.has(x.url + '|' + x.state));
+  let el = $('ug-queue');
+  if (!el) {
+    el = document.createElement('aside');
+    el.id = 'ug-queue';
+    el.className = 'ug-queue';
+    el.setAttribute('aria-label', 'UG downloads');
+    document.body.append(el);
+  }
+  el.hidden = !songs.length;
+  el.replaceChildren();
+  if (songs.length) {
+    const h = button('', 'ugq-title', () => { queueSmall = !queueSmall; showQueue(); });
+    const need = songs.filter((x) => x.state === 'held' || x.state === 'failed').length;
+    const left = songs.filter((x) => x.state === 'waiting' || x.state === 'saving').length;
+    h.textContent = `UG downloads${left ? ` · ${left} to save` : ''}${need ? ` · ${need} need${need > 1 ? '' : 's'} you` : ''} ${queueSmall ? '▴' : '▾'}`;
+    h.title = queueSmall ? 'Show the songs' : 'Fold away';
+    el.append(h, ...(queueSmall ? [] : songs.map(songCard)));
+  }
+  for (const x of s?.songs || []) { // a song that needs you, or didn't save: said once
+    if (said.get(x.url) !== x.state && (x.state === 'held' || x.state === 'failed') && said.has(x.url)) {
+      ctx.toast(x.state === 'held' ? `“${x.song}”: a file wasn’t saved. Retry it or leave it out in UG downloads.` : `“${x.song}” didn’t save${x.why ? `: ${x.why}` : ''}.`, 8000);
+    }
+    said.set(x.url, x.state);
+  }
+  const going = songs.some((x) => x.state === 'waiting' || x.state === 'saving');
+  if (going || songs.some((x) => x.state === 'held')) { // songs still to come in: keep picking them up
+    if (runs) runs.until = Math.max(runs.until, Date.now() + 10 * 60e3); else watchRuns();
+  }
+  queueTimer = setTimeout(showQueue, going ? 2000 : s ? 8000 : 30000);
+}
+
+// After the helper's songs are added: which, with Open song (or why one couldn't be added).
+export function showAdded(added) {
+  let dlg = $('ug-added');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'ug-added';
+    document.body.append(dlg);
+  }
+  const ok = added.filter((a) => a.id), bad = added.filter((a) => !a.id);
+  const last = ok.at(-1);
+  dlg.replaceChildren();
+  const h = document.createElement('h2');
+  h.textContent = last ? `Added “${last.r.title || last.r.song}”` : `Couldn’t add “${bad[0].r.song}”`;
+  const p = document.createElement('p');
+  p.className = 'muted';
+  if (last) {
+    const n = last.r.tracks.length;
+    p.textContent = [last.r.artist, `${n} track${n > 1 ? 's' : ''}`, last.r.key && `key ${last.r.key}`].filter(Boolean).join(' · ');
+  } else {
+    p.textContent = 'Its files couldn’t be read. They may have been moved or deleted.';
+  }
+  dlg.append(h, p);
+  const more = [...ok.slice(0, -1).map((a) => `Also added: ${a.r.song}`), ...(last ? bad.map((a) => `Couldn’t add: ${a.r.song}`) : bad.slice(1).map((a) => `Couldn’t add: ${a.r.song}`))];
+  for (const m of more) { const q = document.createElement('p'); q.className = 'muted'; q.textContent = m; dlg.append(q); }
+  const row = document.createElement('div');
+  row.className = 'row spread';
+  row.append(button('Close', 'ghost', () => dlg.close()));
+  if (last) row.append(button('Open song', 'primary', () => { dlg.close(); ctx.openSong(last.id, { playAlong: false }); }));
+  dlg.append(row);
+  if (!dlg.open) dlg.showModal();
+  row.lastChild.focus();
+}
+
 // While you look for a song in the helper's Chrome, each song it finishes saving is made into one
 // song here and opened.
 const RUNS_MINUTES = 45;
@@ -379,12 +521,14 @@ async function checkRuns() {
   if (!dir) return;
   runsBusy = true;
   try {
-    const fresh = (await readyRuns(dir)).filter((r) => new Date(r.finished).getTime() >= runs.since).reverse(); // oldest first
+    // a held song (a file not saved) waits: it comes in once you Retry or leave out that file
+    const fresh = (await readyRuns(dir)).filter((r) => !r.held && new Date(r.finished).getTime() >= runs.since).reverse(); // oldest first
+    const added = [];
     for (const r of fresh) {
       ctx.toast(`Adding “${r.song}” from the UG helper…`, 6000);
-      const id = await importRun(r, true);
-      if (id && fresh.at(-1) === r) ctx.openSong(id, { playAlong: false });
+      added.push({ r, id: await importRun(r, true) });
     }
+    if (added.length) showAdded(added);
   } catch (err) { console.error(err); } finally { runsBusy = false; }
 }
 
@@ -504,6 +648,7 @@ export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
   ctx = { importFiles, toast, openSong };
   showAuto();
   showHelper();
+  showQueue();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); if (!helperState) showHelper(); } });
   window.addEventListener('focus', () => { autoImport(); checkRuns(); });
   window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector

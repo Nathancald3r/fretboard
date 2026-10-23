@@ -2279,3 +2279,26 @@ body.edit-mode .ed-close { display: none; }
 /* full screen keeps the track picker (and its mute / solo) */
 body.focus .playbar-end { display: flex; }
 body.focus .playbar-end > :not(.track-chip) { display: none; }
+
+/* UG downloads: the helper's songs, file by file (js/quickimport.js showQueue) */
+.ug-queue {
+  position: fixed; right: 1rem; bottom: 5.5rem; z-index: 40; width: min(26rem, calc(100vw - 2rem)); max-height: 50vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .7rem; font-size: .88rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .4);
+}
+.ugq-title { display: block; width: 100%; text-align: left; background: none; border: 0; padding: .1rem 0; cursor: pointer;
+  color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.ugq-song { padding: .35rem 0; border-top: 1px solid var(--line); }
+.ugq-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+.ugq-head strong { flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
+.ugq-state { color: var(--muted); }
+.ugq-held .ugq-state, .ugq-failed .ugq-state { color: var(--warn); font-weight: 600; }
+.ugq-done .ugq-state { color: var(--good); }
+.ugq-x { padding: 0 .45rem; }
+.ugq-busy { opacity: .6; pointer-events: none; }
+.ugq-files { list-style: none; margin: .25rem 0 0; padding: 0 0 0 .6rem; color: var(--muted); }
+.ugq-files li { padding: .1rem 0; }
+.ugq-files li button { margin: .15rem .3rem 0 0; }
+.ugq-files .ugq-saved { color: var(--good); }
+.ugq-files .ugq-failed { color: var(--warn); }
+.ugq-files .ugq-saving { color: var(--text); }

@@ -277,7 +277,7 @@ def settings():
         return {}
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io"} | {f"http://{h}:{p}" for h in ("localhost", "127.0.0.1") for p in (8420, 8421)}
-state = {"busy": "", "wait": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
+state = {"busy": "", "wait": "", "songs": {}, "queue": [], "jobs": [], "skip": set(), "drops": {}, "root": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
 
 
 def is_ug(url):
@@ -287,6 +287,216 @@ def is_ug(url):
         return False
     host = (u.hostname or "").lower()
     return u.scheme == "https" and (host == "ultimate-guitar.com" or host.endswith(".ultimate-guitar.com"))
+
+
+# ---------- the downloads: each song's files, for Fretboard's panel (Retry / Cancel) ----------
+SONG_STATES = ("waiting", "saving", "done", "held", "failed", "cancelled")
+
+
+def song_name_of(url):
+    """A name from the URL until the page has told it: /tab/hillsong/here-i-am-official-123 -> Here I Am."""
+    slug = url.rstrip("/").split("/")[-1]
+    slug = slug.rsplit("-", 1)[0] if slug.rsplit("-", 1)[-1].isdigit() else slug
+    for k in ("-official", "-guitar-pro", "-chords", "-tabs", "-bass", "-ukulele", "-drums", "-power", "-pro"):
+        slug = slug.split(k)[0]
+    return slug.replace("-", " ").title()
+
+
+def reported(got):
+    """A report from the collector. A retry reports only its own tracks: they're put into the song's list by name."""
+    url = got["url"].split("?")[0]
+    old = state["songs"].get(url)
+    tracks = [t for t in got.get("tracks", []) if isinstance(t, dict)]
+    if old and old.get("tracks") and state.get("retrying") == url:
+        merged, used = [dict(t) for t in old["tracks"]], set()
+        for t in tracks:
+            j = next((j for j, o in enumerate(merged) if o["name"] == t.get("name") and j not in used), None)
+            if j is None:
+                merged.append(t)
+            else:
+                used.add(j)
+                merged[j] = {**merged[j], **t}
+        tracks = merged
+    state["songs"][url] = {"url": url, "song": str(got.get("song") or (old or {}).get("song") or song_name_of(url)),
+                           "artist": str(got.get("artist") or (old or {}).get("artist") or ""),
+                           "folder": str(got.get("folder") or (old or {}).get("folder") or ""),
+                           "state": got.get("state") if got.get("state") in SONG_STATES else "saving",
+                           "why": str(got.get("why") or ""), "tracks": tracks, "t": time.time()}
+
+
+def song_list():
+    """The songs for Fretboard: waiting in the queue, being saved, held for you, and the ones just done."""
+    now = time.time()
+    for u, s in list(state["songs"].items()):  # finished ones stay a while, so Fretboard can show them
+        if s["state"] in ("done", "cancelled") and now - s["t"] > 600:
+            del state["songs"][u]
+    songs = [dict(s) for s in sorted(list(state["songs"].values()), key=lambda s: s["t"])]
+    have = {s["url"] for s in songs}
+    retries = {j["url"] for j in state["jobs"]}
+    for s in songs:
+        if s["url"] in retries and s["url"] != state["busy"]:
+            s["state"] = "waiting"
+    songs += [{"url": u, "song": song_name_of(u), "artist": "", "folder": "", "state": "waiting", "why": "", "tracks": []}
+              for u in state["queue"] if u not in have]
+    return songs
+
+
+def in_root(folder):
+    try:
+        f, root = Path(folder).resolve(), Path(state["root"]).resolve()
+        return f != root and root in f.parents
+    except (OSError, ValueError):
+        return False
+
+
+def manifest(folder):
+    try:
+        return json.loads((Path(folder) / "fretboard-run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def save_manifest(folder, m):
+    from ug_collect import write_manifest
+    write_manifest(Path(folder), "fretboard-run.json", {k: v for k, v in m.items() if k not in ("app", "version", "finished")})
+
+
+def retry(url, track, shots=False):
+    """A track that failed (or that you want again), saved once more into its song: in the queue, one at a time."""
+    s = state["songs"].get(url)
+    if not s or not track or not in_root(s["folder"]):
+        return False, "That song isn't in the downloads any more."
+    if any(j["url"] == url and j["track"] == track for j in state["jobs"]):
+        return True, ""
+    state["jobs"].append({"url": url, "track": track, "shots": shots})
+    for t in s["tracks"]:
+        if t["name"] == track and t["state"] != "saved":
+            t.update(state="waiting", why="")
+    print(f"Retry queued: {s['song']} - {track}" + (" (pictures of the score)" if shots else ""))
+    return True, ""
+
+
+def drop_track(s, track):
+    """One file out of the song: its PDF is deleted, and the song no longer waits for it."""
+    m = manifest(s["folder"])
+    if m is not None:
+        for t in [t for t in m.get("tracks", []) if t.get("name") == track]:
+            try:
+                (Path(s["folder"]) / Path(t["file"]).name).unlink(missing_ok=True)
+            except OSError:
+                pass
+            m["tracks"].remove(t)
+        m["missing"] = [n for n in m.get("missing", []) if n != track]
+        m["dropped"] = sorted(set(m.get("dropped", [])) | {track})
+        save_manifest(s["folder"], m)
+    for t in s["tracks"]:
+        if t["name"] == track:
+            t.update(state="dropped", why="")
+    if s["state"] == "held" and not any(t["state"] in ("failed", "waiting", "saving") for t in s["tracks"]):
+        s["state"] = "done" if any(t["state"] == "saved" for t in s["tracks"]) else "cancelled"
+    s["t"] = time.time()
+
+
+def drop_song(s):
+    """The whole song: the files the helper saved for it are deleted, and its folder if that leaves it empty."""
+    folder = Path(s["folder"])
+    m = manifest(folder) or {}
+    names = {Path(t["file"]).name for t in m.get("tracks", []) if isinstance(t.get("file"), str)}
+    names |= {Path(t["file"]).name for t in s["tracks"] if t.get("file")}
+    if isinstance(m.get("chords"), str):
+        names.add(Path(m["chords"]).name)
+    for f in list(folder.glob("fretboard-run*.json")):
+        names.add(f.name)
+    for n in names:
+        try:
+            (folder / n).unlink(missing_ok=True)
+        except OSError:
+            pass
+    try:
+        folder.rmdir()  # only when nothing else is in it
+    except OSError:
+        pass
+    s.update(state="cancelled", why="Deleted", t=time.time())
+
+
+def close_song_tab(url):
+    try:
+        port = state["chrome_port"]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+            for t in json.load(r):
+                if t.get("type") == "page" and t["url"].split("?")[0].split("#")[0] == url:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{t['id']}", timeout=3).read()
+    except (OSError, ValueError):
+        pass
+
+
+def drop(url, track=""):
+    """Cancel from Fretboard: one file (track), or the whole song (no track)."""
+    s = state["songs"].get(url)
+    if not track:
+        state["jobs"] = [j for j in state["jobs"] if j["url"] != url]
+        if url in state["queue"] and not s:  # not started yet: it just leaves the queue
+            state["skip"].add(url)
+            state["queue"].remove(url)
+            close_song_tab(url)
+            print(f"Taken out of the queue: {song_name_of(url)}")
+            return True, ""
+        if url == state["busy"]:  # being saved: the collector stops and takes back what it saved
+            from ug_collect import CANCEL_FLAG
+            CANCEL_FLAG.write_text("1")
+            state["drops"][url] = None
+            return True, ""
+        if s and in_root(s["folder"]):
+            drop_song(s)
+            state["skip"].add(url)
+            print(f"Deleted: {s['song']}")
+            return True, ""
+        if s:
+            s.update(state="cancelled", t=time.time())
+            return True, ""
+        return False, "That song isn't in the downloads any more."
+    if not s or not in_root(s["folder"]):
+        return False, "That song isn't in the downloads any more."
+    state["jobs"] = [j for j in state["jobs"] if not (j["url"] == url and j["track"] == track)]
+    if url == state["busy"]:  # done once this run ends (it may be writing that file now)
+        state["drops"].setdefault(url, set())
+        if state["drops"][url] is not None:
+            state["drops"][url].add(track)
+        return True, ""
+    drop_track(s, track)
+    print(f"Left out: {s['song']} - {track}")
+    return True, ""
+
+
+def after_run(url):
+    """Cancels pressed in Fretboard while that song was being saved."""
+    d = state["drops"].pop(url, False)
+    s = state["songs"].get(url)
+    if d is None and s:  # the whole song: the collector took its files back; anything left goes too
+        if in_root(s["folder"]) and s["state"] != "cancelled":
+            drop_song(s)
+        s.update(state="cancelled", t=time.time())
+    elif d and s:
+        for track in d:
+            drop_track(s, track)
+
+
+def held_songs(root):
+    """Songs saved before with a file that failed (in their fretboard-run.json): they still wait for you."""
+    try:
+        for d in Path(root).iterdir():
+            m = manifest(d) if d.is_dir() else None
+            if not m or not m.get("missing") or not isinstance(m.get("url"), str):
+                continue
+            url = m["url"].split("?")[0]
+            tracks = [{"name": t.get("name", ""), "state": "saved", "why": "", "file": t.get("file", "")} for t in m.get("tracks", [])]
+            tracks += [{"name": n, "state": "failed", "why": "Not saved", "file": ""} for n in m["missing"]]
+            order = m.get("order") or []
+            tracks.sort(key=lambda t: order.index(t["name"]) if t["name"] in order else len(order))
+            state["songs"][url] = {"url": url, "song": str(m.get("song") or d.name), "artist": str(m.get("artist") or ""),
+                                   "folder": str(d), "state": "held", "why": "", "tracks": tracks, "t": time.time()}
+    except OSError:
+        pass
 
 
 def back_to_app(port):
@@ -343,8 +553,8 @@ class Helper(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/status":
-            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 4,
-                                    "chrome": state["chrome"], "busy": state["busy"], "wait": state["wait"], "notation": bool(settings().get("notation"))})
+            return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 5,
+                                    "chrome": state["chrome"], "busy": state["busy"], "wait": state["wait"], "songs": song_list(), "notation": bool(settings().get("notation"))})
         self._send(404, {"ok": False})
 
     def do_POST(self):
@@ -353,6 +563,18 @@ class Helper(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/show":  # the collector window asks too (no Origin: not a web page)
             ok = show_window()
             return self._send(200, {"ok": ok})
+        if self.path.split("?")[0] == "/report":  # the collector: each file's state
+            if self.headers.get("Origin") is not None:
+                return self._send(403, {"ok": False})
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 65536)
+                got = json.loads(self.rfile.read(n) or b"{}")
+                if not isinstance(got, dict) or not isinstance(got.get("url"), str):
+                    raise ValueError
+            except (ValueError, AttributeError):
+                return self._send(400, {"ok": False})
+            reported(got)
+            return self._send(200, {"ok": True})
         if self.path.split("?")[0] == "/wait":  # the collector: what it waits on (UG's player not loading), for Fretboard
             if self.headers.get("Origin") is not None:
                 return self._send(403, {"ok": False})
@@ -370,6 +592,18 @@ class Helper(BaseHTTPRequestHandler):
             self._send(200, {"ok": True})
             threading.Thread(target=quit_helper, daemon=True).start()
             return
+        if self.path.split("?")[0] in ("/retry", "/drop"):
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 8192)
+                got = json.loads(self.rfile.read(n) or b"{}")
+                url, track = str(got.get("url") or ""), got.get("track")
+            except (ValueError, AttributeError):
+                return self._send(400, {"ok": False})
+            if self.path.startswith("/retry"):
+                ok, why = retry(url, str(track or ""), bool(got.get("shots")))
+            else:
+                ok, why = drop(url, str(track) if track else "")
+            return self._send(200, {"ok": ok, "why": why})
         if self.path.split("?")[0] == "/settings":
             try:
                 n = min(int(self.headers.get("Content-Length") or 0), 8192)
@@ -470,6 +704,8 @@ def main():
         if not a.hidden:
             time.sleep(4)
         return
+    state["root"] = a.root
+    held_songs(a.root)
     DONE_FILE = Path(a.root) / "collected.txt"
     DONE_FILE.parent.mkdir(parents=True, exist_ok=True)
     done = set(DONE_FILE.read_text(encoding="utf-8").split()) if DONE_FILE.exists() else set()
@@ -507,6 +743,23 @@ def main():
                 time.sleep(5)
                 continue
             warned = False
+            if state["jobs"]:  # a retry from Fretboard: before the next song
+                j = state["jobs"].pop(0)
+                s = state["songs"].get(j["url"])
+                if s and in_root(s["folder"]):
+                    print(f"\n=== Again: {s['song']} - {j['track']}")
+                    cmd = [sys.executable, "-u", str(COLLECT), j["url"], "--port", str(a.port), "--root", a.root, "--only", j["track"],
+                           "--out", s["folder"], "--yes", "--add"] + (["--shots"] if j["shots"] else [])
+                    if settings().get("notation"):
+                        cmd.append("--notation")
+                    state["busy"], state["retrying"] = j["url"], j["url"]
+                    try:
+                        code = subprocess.run(cmd).returncode
+                    finally:
+                        state["busy"] = state["wait"] = state["retrying"] = ""
+                    after_run(j["url"])
+                    print("Saved." if code == DONE else "Still not saved.")
+                continue
             now = time.time()
             if now - state["picking"] < 900:  # a song opened after a search from Fretboard: you picked it
                 for u in urls:
@@ -516,10 +769,13 @@ def main():
                             threading.Thread(target=back_to_app, args=(a.port,), daemon=True).start()
             seen = {u: seen.get(u, now) for u in urls}
             passed &= set(urls)  # a song closed and opened again is asked again
+            state["skip"] &= set(urls)
+            state["queue"] = [u for u in urls if (u not in done or now - state["asked"].get(u.split("?")[0], 0) < 120)
+                              and u not in passed and u not in state["skip"] and u != state["busy"]]
             for u in urls:
                 # saved before and opened again from Fretboard (within the last 2 minutes): a window asks what to do
                 again = u in done and now - state["asked"].get(u.split("?")[0], 0) < 120
-                if (u in done and not again) or u in passed or now - seen[u] < a.settle:
+                if (u in done and not again) or u in passed or u in state["skip"] or now - seen[u] < a.settle:
                     continue
                 state["asked"].pop(u.split("?")[0], None)
                 print(f"\n=== {u}")
@@ -532,10 +788,12 @@ def main():
                 else:
                     cmd.append("--auto-official")
                 state["busy"] = u
+                state["queue"] = [x for x in state["queue"] if x != u]
                 try:
                     code = subprocess.run(cmd).returncode
                 finally:
                     state["busy"] = state["wait"] = ""
+                after_run(u)
                 if code == DONE:
                     done.add(u)
                     with DONE_FILE.open("a", encoding="utf-8") as f:

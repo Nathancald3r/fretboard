@@ -32,6 +32,9 @@ PORT = 9222
 # --notation: fretted tracks also get their "Standard + Tablature" pages (Fretboard reads only the
 # dynamics and words from them). Off, a save is ~15 s quicker: those are the longest prints.
 NOTATION = False
+SHOTS = False  # --shots: pictures of the score, not UG's Print (the other way, for a track Print gets wrong)
+HELPER = f"http://127.0.0.1:{os.environ.get('FB_HELPER_PORT') or 9231}"
+CANCEL_FLAG = Path(__file__).with_name("cancel.flag")  # the helper's Cancel song (from Fretboard)
 DIALOG = Path(__file__).with_name("ug_save_dialog.ps1")
 DONE, FAILED, SKIPPED, CANCELLED = 0, 1, 2, 3
 SECONDS_PER_TRACK = 14  # first guess for the time left; then measured
@@ -45,6 +48,8 @@ def hold(ui):
     """Waits here while the run is paused; stops the run when it's cancelled."""
     paused = getattr(ui, "paused", None)
     ui.beat = time.time()  # still going (the window's watchdog looks at this)
+    if CANCEL_FLAG.exists():
+        ui.cancel.set()
     while paused is not None and paused.is_set() and not ui.cancel.is_set():
         ui.beat = time.time()
         time.sleep(0.25)
@@ -233,14 +238,41 @@ CHECK_JS = """() => /just a moment|verify you are human|checking your browser/i.
   || !!document.querySelector('iframe[src*="challenges.cloudflare.com"]')"""
 
 
-def tell_helper(text):
-    """What the run waits on, for Fretboard's UG helper line ("" when it isn't waiting)."""
+def to_helper(path, body):
     try:
-        req = urllib.request.Request("http://127.0.0.1:9231/wait", data=json.dumps({"text": text}).encode(),
-                                     headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(HELPER + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=2).read()
     except Exception:
-        pass
+        pass  # run without the helper: nobody to tell
+
+
+def tell_helper(text):
+    """What the run waits on, for Fretboard's UG helper line ("" when it isn't waiting)."""
+    to_helper("/wait", {"text": text})
+
+
+class Report:
+    """Each file's state, sent to the helper for Fretboard's downloads panel (and its Retry / Cancel):
+    waiting, saving, saved, failed. The song: saving, done, held (a file failed: it waits for you), failed, cancelled."""
+    def __init__(self, url):
+        self.d = {"url": url, "song": "", "artist": "", "folder": "", "state": "saving", "why": "", "tracks": []}
+
+    def song(self, song, artist, folder, names, state="waiting"):
+        self.d.update(song=song, artist=artist, folder=str(folder))
+        self.d["tracks"] = [{"name": n, "state": state, "why": "", "file": ""} for n in names]
+        self.send()
+
+    def track(self, i, state, why="", file=""):
+        if 0 <= i < len(self.d["tracks"]):
+            self.d["tracks"][i].update(state=state, why=why, file=file)
+            self.send()
+
+    def end(self, state, why=""):
+        self.d.update(state=state, why=why)
+        self.send()
+
+    def send(self):
+        to_helper("/report", self.d)
 
 
 def wait_player(ui, pg, limit=300):
@@ -684,6 +716,24 @@ def take_place(new, old):
         return old.name
     except OSError:
         return new.name  # the old one is open somewhere: both are kept
+
+
+def merge_run(out, saved, missing, every):
+    """--add: the tracks just saved go into the song's fretboard-run.json (taking a failed one's place,
+    or an old copy's); (tracks, missing, the rest of the old manifest)."""
+    try:
+        old = json.loads((out / "fretboard-run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    order = old.get("order") or every
+    got = {t["name"]: t for t in old.get("tracks", [])}
+    for t in saved:
+        got[t["name"]] = t
+    gone = set(old.get("missing", [])) | set(missing)
+    tracks = sorted(got.values(), key=lambda t: order.index(t["name"]) if t["name"] in order else len(order))
+    still = [n for n in order if n in gone and n not in got] + [n for n in gone if n not in order and n not in got]
+    keep = {k: v for k, v in old.items() if k in ("chords", "video", "key", "dropped")}
+    return tracks, still, keep
 
 
 def write_manifest(out, name, data):
@@ -1677,7 +1727,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
         return printed_lines(ui, pg)
     order = [NOTES_VIEW, "Tablature"] if noted and view[0] == NOTES_VIEW else ["Tablature", NOTES_VIEW]
     got = {}
-    for v in order:
+    for v in ([] if SHOTS else order):
         if v == NOTES_VIEW and not noted:
             continue
         got[v] = printed(v)
@@ -1691,7 +1741,8 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=N
         view[1] = tab
         job = lay_out(None, [], tab, notes if notes != tab else [])
     else:
-        print(f"  ({n}: UG's Print gave no pictures; taking pictures of the score instead)")
+        if not SHOTS:
+            print(f"  ({n}: UG's Print gave no pictures; taking pictures of the score instead)")
         job = shots_pdf()
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
@@ -1900,8 +1951,10 @@ def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, w
         return
     stem = " - ".join(x for x in (song, artist, label) if x)
     run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
+    report = getattr(ui, "report", None) or Report(url)
     try:
         run.start()
+        report.song(song, artist, out, [label], "saving")
         ui.progress(0, 1, label)
         hold(ui)
         if kind == "text":
@@ -1937,6 +1990,7 @@ def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, w
         write_manifest(out, man.name, {"song": song, "artist": artist, "key": key, "url": url, "kind": kind,
                                        "tracks": [{"name": label, "file": dest.name}], "missing": [], **extra, **({"replace": True} if replace else {})})
         run.files.append(man)
+        report.track(0, "saved", "", dest.name)
     except Cancelled:
         if getattr(ui, "aborted", False):  # the window's watchdog already tidied up
             if ui.code == CANCELLED:
@@ -1960,6 +2014,7 @@ def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, w
 def work(ui, a, result):
     from playwright.sync_api import sync_playwright
     run = p = None
+    rep = ui.report = Report(a.url)
     try:
         close_prints()
         p = sync_playwright().start()  # one connection for the whole run (each new one costs ~0.4 s)
@@ -1970,7 +2025,9 @@ def work(ui, a, result):
         wait_player(ui, pg)
         kind, label = page_kind(pg)
         if kind != "official":
-            return save_single(ui, a, result, pg, kind, label)
+            save_single(ui, a, result, pg, kind, label)
+            rep.end({DONE: "done", SKIPPED: "cancelled", CANCELLED: "cancelled"}.get(result["code"], "failed"))
+            return
         open_instruments(pg)
         names = track_names(pg)
         song, artist = song_name(pg)
@@ -2002,8 +2059,11 @@ def work(ui, a, result):
             return
         run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
         run.start()
+        rep.song(song, artist, out, names)
         saved, missing, took = [], [], []
         chords = {}
+        if a.add:  # a retry of some tracks: the song's chords and video are there already
+            has_chords = True
 
         def find_chords():  # in a connection of its own: the run's can't be used from another thread
             try:
@@ -2028,6 +2088,7 @@ def work(ui, a, result):
                     run.files.append(dest)
                 done[i] = (ok, why, dest, res)
             print(f"  {dest.name}: saved ({res.get('pages')} pages)" if ok else f"  {dest.name}: NOT saved ({why})")
+            rep.track(i, "saved" if ok else "failed", why, dest.name if ok else "")
         writer = run.writer = PdfWriter(written)
         try:
             sharp_screen(cdp, pg, height=PRINT_H)
@@ -2044,6 +2105,7 @@ def work(ui, a, result):
                 ui.progress(step, len(names), n, eta, "" if attempt == 1 else "Trying this track again.")
                 t0 = time.time()
                 writing[dest] = (i, n)
+                rep.track(i, "saving")
                 try:
                     ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n), view, w)
                 except Cancelled:
@@ -2057,6 +2119,7 @@ def work(ui, a, result):
                 if ok is not None:  # written here (not by the writer)
                     done[i] = (ok, why, dest, res)
                     print(f"  {dest.name}: saved ({res.get('pages')} pages)" if ok else f"  {dest.name}: NOT saved ({why})")
+                    rep.track(i, "saved" if ok else "failed", why, dest.name if ok else "")
 
             # the tracks without tab first, then the fretted ones: each of those needs both views, so
             # taken in this order the player's view changes once per fretted track and no more
@@ -2070,7 +2133,7 @@ def work(ui, a, result):
                         time.sleep(0.25)
             hold(ui)
             ui.progress(len(names), len(names), "chords", 0)
-            chords_text = official_chords(pg) if has_chords else ""  # while the last PDFs are written
+            chords_text = official_chords(pg) if has_chords and not a.add else ""  # while the last PDFs are written
             writer.finish()
             for i, n in enumerate(names):  # a track that didn't save is tried once more
                 if not done.get(i, (False,))[0]:
@@ -2090,7 +2153,7 @@ def work(ui, a, result):
             if was and back != view[0]:  # the player's own notation choice back
                 notation(pg, back)
         video = page_video(pg)
-        if not chords_text:
+        if not chords_text and not a.add:
             if hunt:
                 hunt.join()
             chords_text, v2 = chords.get("found") or search_chords(ctx, song, artist)
@@ -2107,7 +2170,10 @@ def work(ui, a, result):
             # the tracks not saved again stay in the song as they were
             saved += [{"name": n, "file": base_pdf(out, song, artist, n).name} for n in dict.fromkeys(every)
                       if n not in placed and base_pdf(out, song, artist, n).exists()]
-        extra = {}
+        extra = {"order": every}
+        if a.add:  # a retry: into the song's list, in the song's own track order (the first part sets the bar count)
+            saved, missing, old = merge_run(out, saved, missing, every)
+            extra = {**old, **extra}
         try:
             name = save_chords(out, song, artist, chords_text, run, replace)
             if name:
@@ -2119,6 +2185,7 @@ def work(ui, a, result):
         write_manifest(out, "fretboard-run.json", {"song": song, "artist": artist, "key": key, "url": a.url,
                                                     "tracks": saved, "missing": missing, **extra, **({"replace": True} if replace else {})})
         result["code"] = DONE if saved else FAILED
+        rep.end("held" if missing else "done", f"{len(missing)} not saved" if missing else "")
         text = (f"Done: saved {len(saved)} of {len(names)} tracks of {song} into\n{out}"
                 + (f"\n\nNot saved: {', '.join(missing)} (open the song again later to fetch them)." if missing else "")
                 + "\n\nNext, in Fretboard: Import files (it opens in this folder), select all, check the tracks, Create song.")
@@ -2142,6 +2209,7 @@ def work(ui, a, result):
                     run.files.append(p)
             run.undo()
         result["code"] = CANCELLED
+        rep.end("cancelled")
         print("Cancelled: everything this run saved was removed.")
         ui.finish("Cancelled. Everything this run saved was removed; your other files weren't touched.")
     except Exception as err:
@@ -2150,6 +2218,7 @@ def work(ui, a, result):
                 run.undo()
             return
         result["code"] = FAILED
+        rep.end("failed", str(err).splitlines()[0][:200])
         print(f"Failed: {err}")
         try:
             close_prints()
@@ -2166,7 +2235,7 @@ def work(ui, a, result):
 
 
 def main():
-    global PORT, NOTATION
+    global PORT, NOTATION, SHOTS
     ap = argparse.ArgumentParser()
     ap.add_argument("url")
     ap.add_argument("--port", type=int, default=9222)
@@ -2178,11 +2247,15 @@ def main():
     ap.add_argument("--yes", action="store_true", help="start without asking which tracks")
     ap.add_argument("--again", action="store_true", help="saved before: ask whether to replace it or save a new copy")
     ap.add_argument("--notation", action="store_true", help="fretted tracks: also the pages with the music staff (dynamics, words); a slower save")
+    ap.add_argument("--add", action="store_true", help="with --only and --out: a retry, the tracks go into the song's fretboard-run.json")
+    ap.add_argument("--shots", action="store_true", help="pictures of the score instead of UG's Print (the other way, for a retry)")
     ap.add_argument("--gp", action="store_true", help="official songs: their Guitar Pro version instead of the PDFs, when UG has one")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
     a = ap.parse_args()
     PORT = a.port
     NOTATION = a.notation
+    SHOTS = a.shots
+    CANCEL_FLAG.unlink(missing_ok=True)
     result = {"code": FAILED}
     ui = None
     if not a.no_ui:
