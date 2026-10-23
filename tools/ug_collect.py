@@ -318,6 +318,8 @@ TEXT_KINDS = [("-chords-", "Chords"), ("-ukulele-", "Ukulele Chords"), ("-bass-"
 
 def page_kind(pg):
     url = pg.url.split("?")[0]
+    if "-guitar-pro-" in url:  # a Guitar Pro tab (its URL also has "-pro-"): just its Download button
+        return "gp", "Guitar Pro"
     if "-official-" in url or "-pro-" in url:  # Official and Pro songs: a PDF per instrument
         return "official", ""
     if gp_button(pg) is not None:
@@ -1182,11 +1184,11 @@ def shoot(cdp, pg, end=False):
     down as the page scrolls it."""
     try:
         if pg.evaluate(SCROLL_JS, end):
-            pg.wait_for_timeout(1500)  # redrawn where it scrolled to
+            pg.wait_for_timeout(700)  # redrawn where it scrolled to (steady() checks it's done)
         v = pg.evaluate(VISIBLE_JS)
         if not v or v["h"] < 50:
             raise RuntimeError("Couldn't find the score on the page.")
-        pg.wait_for_timeout(300)
+        pg.wait_for_timeout(150)
         z = v["dpr"] / SHOT_DSF  # the site's own zoom in this Chrome
         shot = cdp.send("Page.captureScreenshot", {"format": "png", "clip": {
             "x": v["x"] * z, "y": v["y"] * z, "width": v["w"] * z, "height": v["h"] * z, "scale": 1}, "optimizeForSpeed": True})  # same pixels, quicker to pack
@@ -1285,7 +1287,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
             if shot == last:
                 break
             last = shot
-            pg.wait_for_timeout(1000)
+            pg.wait_for_timeout(400)
         return shot
 
     def lay_out(shots, notes):
@@ -1304,7 +1306,7 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
         if notation(pg, to) is None:
             return False
         view[0] = to
-        pg.wait_for_timeout(1500)
+        pg.wait_for_timeout(700)
         return showing(pg, n, k) is not False
 
     # the same score with its music staff too: only there does the player draw the dynamics (mf, f)
@@ -1358,7 +1360,15 @@ def save_gp(pg, out, stem):
     cdp = pg.context.browser.new_browser_cdp_session()
     try:
         cdp.send("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": str(tmp)})
-        gp_button(pg).click(timeout=5000)
+        btn = None
+        for _ in range(40):  # the button can show up a few seconds after the page
+            btn = gp_button(pg)
+            if btn:
+                break
+            time.sleep(0.25)
+        if not btn:
+            return None
+        btn.click(timeout=5000)
         got = None
         for _ in range(120):  # up to a minute
             files = [f for f in tmp.iterdir() if f.is_file()]
