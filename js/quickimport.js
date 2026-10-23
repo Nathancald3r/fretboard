@@ -141,7 +141,7 @@ export async function readyRuns(dir) {
       // and was added again every 4 s (Rest On Us, 8 times)
       runs.push({ id: key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
         title: String(m.song || ''), artist: String(m.artist || ''), key: String(m.key || ''), replace: m.replace === true, missing, held: missing.length > 0,
-        chords: typeof m.chords === 'string' ? m.chords : '', video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
+        chords: typeof m.chords === 'string' ? m.chords : '', strum: Array.isArray(m.strum) ? m.strum : [], video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
     }
   }
   return runs.sort((a, b) => b.finished.localeCompare(a.finished));
@@ -211,15 +211,17 @@ async function importRun(r, auto = false) {
   return ids?.[0] ?? null;
 }
 
-// The song's chord sheet (lined up with the words in the player) and UG's linked video.
+// The song's chord sheet (lined up with the words in the player), UG's linked video and a chords
+// page's strumming pattern (shown above the sheet, its bpm the song's tempo).
 async function addExtras(r, id) {
   try {
     const changes = {};
     if (r.chords) {
       try { changes.chordSheet = await (await (await r.dir.getFileHandle(r.chords)).getFile()).text(); } catch { /* not there: chords are guessed */ }
     }
-    const song = r.video ? await getSong(id) : null;
-    if (song && !song.recording) changes.recording = { kind: 'youtube', id: r.video, title: '', author: '' };
+    const song = r.video || r.strum.length ? await getSong(id) : null;
+    if (song && r.video && !song.recording) changes.recording = { kind: 'youtube', id: r.video, title: '', author: '' };
+    if (song && r.strum.length) changes.strum = r.strum;
     if (Object.keys(changes).length) await updateSong(id, changes);
   } catch (err) {
     console.warn('Chords or video not added', err);

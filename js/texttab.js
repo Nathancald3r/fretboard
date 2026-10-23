@@ -1,8 +1,11 @@
-// Viewer for pasted plain-text tabs and chord sheets: highlighting, text size, auto-scroll.
+// Viewer for pasted plain-text tabs and chord sheets: highlighting, text size, auto-scroll,
+// transpose, the strumming pattern, the song's video, and Perform (just the song, big).
 import { updateSong } from './db.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
-import { detectKey, keyLabel, toNashville } from './theory.js';
+import { detectKey, keyLabel, toNashville, pitchClass, noteName } from './theory.js';
+import { shiftChordName } from './transpose.js';
+import { findRecording } from './ytsearch.js';
 
 const $ = (id) => document.getElementById(id);
 const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d|add\d+|b\d+|#\d+)*(\/[A-G][#b]?)?\)?$/;
@@ -10,6 +13,8 @@ const TAB_LINE = /^\s*[A-Ga-g]?[#b]?\s*[|:]?[-0-9|hpbrx/\\~^().<>*=sv ]*-{3,}[-0
 
 let song = null;
 let scrolling = false;
+let performing = false;
+let tempo = 100;
 let lastFrame = 0;
 let carry = 0;
 
@@ -23,14 +28,16 @@ const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', 
 // Ultimate Guitar's raw format wraps chords and tabs in [ch]..[/ch] and [tab]..[/tab].
 export const cleanTabText = (text) => text.replace(/\[\/?(ch|tab)\]/g, '').replace(/\r\n?/g, '\n');
 
+// Also on a chord line: repeats and bar marks ("G  C/G  (x2)", "| G | D |", "N.C.").
+const EXTRA = /^(\(?x\d+\)?|\(?\d+x\)?|\|+|-+|N\.?C\.?)$/i;
 const chordTokens = (line) => {
   const tokens = line.trim().split(/\s+/).filter(Boolean);
-  return tokens.length && tokens.every((t) => CHORD.test(t)) ? tokens : null;
+  return tokens.some((t) => CHORD.test(t)) && tokens.every((t) => CHORD.test(t) || EXTRA.test(t)) ? tokens : null;
 };
 
 function songChords(text) {
   return cleanTabText(text).split('\n').flatMap((line) =>
-    TAB_LINE.test(line) ? [] : (chordTokens(line) || []).map((t) => t.replace(/[()]/g, '')));
+    TAB_LINE.test(line) ? [] : (chordTokens(line) || []).filter((t) => CHORD.test(t)).map((t) => t.replace(/[()]/g, '')));
 }
 
 // Rewrites a chord line, keeping each chord at its original column where possible
@@ -39,9 +46,10 @@ function chordLine(line, rename) {
   let html = '';
   let col = 0;
   for (const m of line.matchAll(/\S+/g)) {
-    const shown = rename ? m[0].replace(/[^()]+/, rename) : m[0];
+    const chord = CHORD.test(m[0]);
+    const shown = rename && chord ? m[0].replace(/[^()]+/, rename) : m[0];
     const gap = Math.max(col ? 1 : 0, m.index - col);
-    html += ' '.repeat(gap) + `<span class="chord" title="${escape(m[0])}">${escape(shown)}</span>`;
+    html += ' '.repeat(gap) + (chord ? `<span class="chord" title="${escape(m[0])}">${escape(shown)}</span>` : escape(shown));
     col += gap + shown.length;
   }
   return html;
@@ -57,10 +65,46 @@ export function highlight(text, rename) {
   }).join('\n');
 }
 
-// Key for Nashville numbers: the saved choice, or detected from the chords.
+// The UG helper's text files start with "Song - Artist", "Chords · Key: Bb · Capo: 3rd fret · Tuning: …"
+// and "From: <url>". Those lines become the facts over the sheet; body is the sheet without them (null: not one).
+export function sheetHead(text) {
+  const lines = cleanTabText(text).split('\n');
+  const from = /^From:\s*(https?:\S+)/.exec(lines[2] || '');
+  const head = lines.slice(0, from ? 3 : 4).join('\n');
+  return {
+    key: /\bKey:\s*([A-G][#b]?m?)(?![\w#])/.exec(head)?.[1] || '',
+    capo: Number(/\bCapo:\s*(\d+)/.exec(head)?.[1]) || 0,
+    tuning: (/\bTuning:\s*([^·\n]+)/.exec(head)?.[1] || '').trim(),
+    url: from?.[1] || '',
+    body: from ? lines.slice(3).join('\n').replace(/^\n+/, '') : null,
+  };
+}
+
+const FLAT_MAJORS = [5, 10, 3, 8, 1]; // F Bb Eb Ab Db
+const flatKey = (k) => FLAT_MAJORS.includes(k.minor ? (k.tonic + 3) % 12 : k.tonic);
+const keyName = (k) => noteName(k.tonic, flatKey(k)) + (k.minor ? 'm' : '');
+const moveKey = (k, n) => k && { tonic: (((k.tonic + n) % 12) + 12) % 12, minor: k.minor };
+const keyOf = (name) => (name ? { tonic: pitchClass(name), minor: /m$/.test(name) } : null);
+
+// UG's strokes: 1 down, 101 up, 3 / 103 accented, 2 / 102 muted, 0 none.
+const STROKE = { 1: ['↓', ''], 2: ['↓', 'mute'], 3: ['↓', 'acc'], 101: ['↑', ''], 102: ['↑', 'mute'], 103: ['↑', 'acc'] };
+export function strumHtml(p) {
+  const perBeat = p.triplet ? 3 : Math.max(1, (p.per || 8) / 4);
+  const cells = p.strokes.map((n, i) => {
+    const [arrow, kind] = STROKE[n] || ['', 'rest'];
+    const pos = i % perBeat;
+    const count = pos === 0 ? String((Math.floor(i / perBeat) % 4) + 1) : !p.triplet && pos === perBeat / 2 ? '&' : '';
+    const mark = kind === 'acc' ? '>' : kind === 'mute' ? '×' : '';
+    return `<span class="st ${kind}${pos === 0 ? ' beat' : ''}"><i>${mark}</i><b>${arrow}</b><small>${count}</small></span>`;
+  }).join('');
+  return `<div class="tx-strum-row"><div class="muted">${escape(p.part || 'Strumming')}${p.bpm ? ` · ${p.bpm} bpm` : ''}</div>`
+    + `<div class="tx-strokes">${cells}</div></div>`;
+}
+
 function render() {
+  const head = sheetHead(song.data);
   // a combined song shows each tab in turn, under its instrument's name
-  const text = [song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
+  const text = [head.body ?? song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
   const detected = detectKey(songChords(text));
   const keySelect = $('tx-key');
   keySelect.innerHTML = '';
@@ -70,12 +114,80 @@ function render() {
   }
   keySelect.value = song.key || 'auto';
   $('tx-chords').value = song.chordMode || 'letters';
+  // Key for Nashville numbers: the saved choice, or detected from the chords.
   const key = song.key && song.key !== 'auto'
     ? { tonic: parseInt(song.key, 10), minor: song.key.endsWith('m') }
     : detected;
   const nashville = song.chordMode === 'nashville';
   keySelect.disabled = !nashville;
-  $('tx-body').innerHTML = highlight(text, nashville && key ? (c) => toNashville(c, key) : null);
+  // transpose: the chords as written (shapes) move; the key it sounds in is the page's, else the shapes' plus the capo
+  const shift = song.transpose || 0;
+  const shapes = moveKey(detected, shift);
+  const sounds = moveKey(keyOf(head.key) || moveKey(detected, head.capo), shift);
+  const rename = nashville && key ? (c) => toNashville(c, key)
+    : shift ? (c) => shiftChordName(c, shift, shapes ? flatKey(shapes) : false) : null;
+  $('tx-body').innerHTML = highlight(text, rename);
+  $('tx-shift').textContent = `Tr. ${shift > 0 ? '+' : ''}${shift}`;
+  const facts = [
+    sounds && `Key <b>${keyName(sounds)}</b>`,
+    head.capo && `Capo <b>${head.capo}</b>${shapes ? ` · ${keyName(shapes)} shapes` : ''}`,
+    `<b>${tempo}</b> bpm`,
+    head.tuning && !/^E A D G B E$/.test(head.tuning) && `Tuning <b>${escape(head.tuning)}</b>`,
+  ].filter(Boolean).map((f) => `<span class="chip">${f}</span>`);
+  if (head.url) facts.push(`<a class="chip tx-more" href="${escape(head.url)}" target="_blank" rel="noopener">UG page</a>`);
+  $('tx-facts').innerHTML = facts.join('');
+  const strum = (song.strum || []).filter((p) => p.strokes?.length);
+  $('tx-strum').hidden = !strum.length;
+  $('tx-strum').innerHTML = strum.map(strumHtml).join('');
+}
+
+/* ---------- video: the song's recording, beside the sheet ---------- */
+
+const videoId = () => (song?.recording?.kind === 'youtube' && /^[\w-]{11}$/.test(song.recording.id) ? song.recording.id : '');
+function videoLabel() {
+  $('tx-video').textContent = !$('tx-vid').hidden ? 'Hide video' : videoId() ? '▶ Video' : 'Find video';
+}
+
+function showVideo(on) {
+  const id = videoId();
+  if (on && !id) { findVideo(); return; }
+  $('tx-vid').hidden = !on;
+  $('tx-vid-frame').innerHTML = on
+    ? `<iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1" title="Video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
+    : '';
+  videoLabel();
+}
+
+// No video from UG: the best match on YouTube, kept as the song's recording.
+async function findVideo() {
+  const s = song;
+  const btn = $('tx-video');
+  btn.disabled = true;
+  btn.textContent = 'Finding video…';
+  try {
+    const list = await findRecording({ ...s, title: s.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '') });
+    const r = list.find((x) => x.id);
+    if (!r) throw new Error('none');
+    const saved = await updateSong(s.id, { recording: { kind: 'youtube', id: r.id, title: r.title || '', author: r.author || '' } });
+    if (song?.id !== s.id) return;
+    song = saved;
+    showVideo(true);
+  } catch {
+    if (song?.id === s.id) btn.textContent = 'No video found';
+    setTimeout(videoLabel, 3000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- perform: just the song, big ---------- */
+
+function setPerform(on) {
+  performing = on;
+  document.body.classList.toggle('performing', on);
+  $('tx-perform').textContent = on ? 'Leave perform' : 'Perform';
+  if (on) document.documentElement.requestFullscreen?.().catch(() => { /* not allowed here: still perform mode */ });
+  else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
 function frame(now) {
@@ -104,18 +216,21 @@ export function openText(s) {
   song = s;
   $('tx-title').textContent = s.title;
   $('tx-artist').textContent = s.artist || '';
-  render();
   $('tx-size').value = s.textSize || 15;
   $('tx-body').style.fontSize = $('tx-size').value + 'px';
   $('tx-speed').value = s.scrollSpeed || 5;
   $('tx-time').textContent = '';
   const playable = asciiTabToAlphaTex(s.data);
-  $('tx-tempo').value = s.tempo || playable?.tempo || 100; // the tab's own "Tempo:" line unless you set one
+  // the tempo you set, else the strumming pattern's bpm, else the tab's own "Tempo:" line
+  tempo = s.tempo || s.strum?.find((p) => p.bpm)?.bpm || playable?.tempo || 100;
+  $('tx-tempo').value = tempo;
+  render();
   $('tx-play').disabled = !playable;
   $('tx-play').title = playable
     ? `Play ${playable.bars} bars as a score (rhythm is guessed from spacing)`
     : 'No tab lines found — chord sheets can’t be played';
   setScrolling(false);
+  showVideo(false);
   window.scrollTo(0, 0);
   timer.begin(s);
   updateSong(s.id, { lastOpened: Date.now() });
@@ -123,6 +238,8 @@ export function openText(s) {
 
 export function closeText() {
   setScrolling(false);
+  showVideo(false);
+  if (performing) setPerform(false);
   timer.end();
 }
 
@@ -135,9 +252,23 @@ export function initText({ onEdit }) {
   $('tx-speed').addEventListener('change', (e) => { if (song) updateSong(song.id, { scrollSpeed: Number(e.target.value) }); });
   $('tx-edit').addEventListener('click', () => song && onEdit(song));
   $('tx-tempo').addEventListener('change', async (e) => {
-    const tempo = Math.max(30, Math.min(260, Number(e.target.value) || 100));
-    if (song) song = await updateSong(song.id, { tempo });
+    tempo = Math.max(30, Math.min(260, Number(e.target.value) || 100));
+    if (!song) return;
+    song = await updateSong(song.id, { tempo });
+    render();
   });
+  const transpose = async (n) => {
+    if (!song) return;
+    const t = (song.transpose || 0) + n;
+    song = await updateSong(song.id, { transpose: Math.abs(t) > 11 ? 0 : t });
+    render();
+  };
+  $('tx-down').addEventListener('click', () => transpose(-1));
+  $('tx-up').addEventListener('click', () => transpose(1));
+  $('tx-video').addEventListener('click', () => showVideo($('tx-vid').hidden));
+  $('tx-vid-close').addEventListener('click', () => showVideo(false));
+  $('tx-perform').addEventListener('click', () => setPerform(!performing));
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && performing) setPerform(false); });
   $('tx-chords').addEventListener('change', async (e) => {
     if (!song) return;
     song = await updateSong(song.id, { chordMode: e.target.value });
@@ -150,6 +281,7 @@ export function initText({ onEdit }) {
   });
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && performing) { setPerform(false); return; }
     if ($('view-text').hidden || e.target.closest('input, select, textarea, button, dialog')) return;
     if (e.code === 'Space') { e.preventDefault(); setScrolling(!scrolling); }
   });

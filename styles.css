@@ -2313,3 +2313,29 @@ body.focus .playbar-end > :not(.track-chip) { display: none; }
 .ugs-kinds { margin: .3rem 0; padding-left: 1.2rem; color: var(--muted); }
 .ugs-kinds li { margin: .2rem 0; }
 .ugs-kinds strong { color: var(--text); }
+/* chord sheet: facts, transpose, strumming pattern, video, perform */
+#view-text .player-head h1 { white-space: normal; }
+.tx-facts { display: flex; flex-wrap: wrap; gap: .35rem; flex-basis: 100%; }
+.tx-facts .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: .15rem .65rem; color: var(--muted); font-size: .9rem; text-decoration: none; }
+.tx-facts .chip b { color: var(--text); }
+.tx-bar { flex-wrap: wrap; gap: .4rem .9rem; }
+.tx-shift { display: inline-flex; align-items: center; gap: .3rem; }
+.tx-shift #tx-shift { min-width: 3.2em; text-align: center; font-variant-numeric: tabular-nums; }
+.tx-strum { display: grid; gap: .6rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem 1rem; }
+.tx-strokes { display: flex; flex-wrap: wrap; gap: 0 .15rem; margin-top: .2rem; }
+.tx-strokes .st { display: grid; grid-template-rows: 1em 1.5em 1em; justify-items: center; width: 1.5em; line-height: 1; }
+.tx-strokes .st.beat { margin-left: .5em; }
+.tx-strokes .st:first-child { margin-left: 0; }
+.tx-strokes .st i { font-style: normal; font-size: .8rem; color: var(--accent); }
+.tx-strokes .st b { font-size: 1.35rem; color: var(--text); }
+.tx-strokes .st.acc b { color: var(--accent); }
+.tx-strokes .st.mute b { color: var(--muted); }
+.tx-strokes .st.mute i { color: var(--muted); }
+.tx-strokes .st small { font-size: .8rem; color: var(--muted); }
+.tx-vid { position: fixed; right: 1rem; bottom: 1rem; z-index: 30; width: min(380px, calc(100vw - 2rem)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; overflow: hidden; }
+.tx-vid[hidden] { display: none; }
+.tx-vid-head { display: flex; justify-content: space-between; align-items: center; padding: .25rem .4rem .25rem .8rem; color: var(--muted); }
+.tx-vid-frame iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; }
+body.performing .topbar, body.performing .tx-tools, body.performing .tx-more { display: none; }
+body.performing #view-text { max-width: none; }
+body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: .4rem 0; border-bottom: 1px solid var(--line); }

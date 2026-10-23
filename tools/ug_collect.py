@@ -500,6 +500,54 @@ def page_video(pg):
     return m.group(1) if m else ""
 
 
+# The video in a chords page's Video panel: its thumbnail is the only place the id shows.
+THUMB_JS = r"""() => {
+  for (const e of document.querySelectorAll('[style*="ytimg.com/vi"]')) {
+    const m = /ytimg\.com\/vi(?:_webp)?\/([A-Za-z0-9_-]{11})\//.exec(e.style.backgroundImage);
+    if (m) return m[1];
+  }
+  return '';
+}"""
+
+
+def panel_video(pg):
+    """The video in UG's Video panel (chords and tab pages), or "". A closed panel is opened for
+    the moment it takes and closed again."""
+    try:
+        v = pg.evaluate(THUMB_JS)
+        if v:
+            return v
+        b = pg.get_by_role("button", name="Video", exact=True)
+        if not b.count():
+            return ""
+        b.first.click(timeout=3000)
+        try:
+            pg.wait_for_function(THUMB_JS, timeout=4000)
+            v = pg.evaluate(THUMB_JS)
+        except Exception:
+            v = ""
+        b.first.click(timeout=3000)  # closed again, as it was
+        return v
+    except Exception:
+        return ""
+
+
+def page_strum(pg):
+    """The page's strumming patterns: [{part, bpm, per (notes per bar: 8, 16), triplet, strokes}].
+    A stroke is UG's number: 1 down, 101 up, 3 / 103 accented, 2 / 102 muted, 0 none."""
+    try:
+        got = pg.evaluate("()=>window.UGAPP?.store?.page?.data?.tab_view?.strummings||[]")
+    except Exception:
+        return []
+    out = []
+    for x in got if isinstance(got, list) else []:
+        strokes = [m.get("measure") for m in x.get("measures") or [] if isinstance(m, dict) and isinstance(m.get("measure"), int)]
+        if strokes:
+            out.append({"part": str(x.get("part") or ""), "bpm": int(x.get("bpm") or 0), "per": int(x.get("denuminator") or 0),
+                        "triplet": bool(x.get("is_triplet")), "strokes": strokes})
+    return out
+
+
 def official_chords(pg):
     """An official song's Chords view: its chords over the words, in the song's own order. "" when it has none."""
     pressed = False
@@ -1972,6 +2020,11 @@ def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, w
         replace = a.again and getattr(ui, "mode", "") == "replace"
         extra = {}
         video = page_video(pg)
+        if kind == "text":  # the strumming pattern (with its bpm) and the Video panel's video, for perform mode
+            strum = page_strum(pg)
+            if strum:
+                extra["strum"] = strum
+            video = video or panel_video(pg)
         if kind == "gp":  # its chords over the words, from the song's Chords page
             ui.progress(0, 1, "chords")
             text, v2 = (chords, "") if chords else search_chords(pg.context, song, artist)
