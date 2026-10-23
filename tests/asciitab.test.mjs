@@ -90,6 +90,52 @@ A|--------3--5----|
 E|--0--0----------|`,
     expect: (n, score) => assert.equal(score.tracks[0].staves[0].tuning.length, 4),
   },
+  'header: tempo, capo, tuning as it sounds with the capo': {
+    text: `Candlelight - Relient K - 1st Electric Guitar
+Symbols Used:
+2222 : 16th notes / One note trill
+
+Tuning: Capo on the 1st fret (F, Bb, Eb, Ab, C, f)
+Tempo: 196 (98)
+
+e|-------------|
+B|-------------|
+G|-------------|
+D|-----2---0---|
+A|---3-----3---|
+E|-0-----------|`,
+    expect: (n, score) => {
+      assert.equal(score.tempo, 98);
+      assert.equal(score.tracks[0].staves[0].capo, 1);
+      assert.deepEqual(score.tracks[0].staves[0].tuning, [64, 59, 55, 50, 45, 40]);
+    },
+  },
+  'header: drop D, half-step-down list': {
+    text: `Tuning: Drop D
+Tempo: 140
+
+e|---------|
+B|---------|
+G|---------|
+D|---------|
+A|---------|
+D|-0-0-0-0-|`,
+    expect: (n, score) => {
+      assert.equal(score.tempo, 140);
+      assert.deepEqual(score.tracks[0].staves[0].tuning, [64, 59, 55, 50, 45, 38]);
+    },
+  },
+  'header: tuning list low to high': {
+    text: `Tuning: Eb Ab Db Gb Bb Eb
+
+e|-0---1---|
+B|---------|
+G|---------|
+D|---------|
+A|---------|
+E|-0-------|`,
+    expect: (n, score) => assert.deepEqual(score.tracks[0].staves[0].tuning, [63, 58, 54, 49, 44, 39]),
+  },
 };
 
 let failed = 0;

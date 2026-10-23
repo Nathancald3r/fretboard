@@ -1087,7 +1087,7 @@ function parseScore(s) {
   if (s.kind === 'text' || s.kind === 'tex') {
     let tex = s.data;
     if (s.kind === 'text') {
-      const converted = asciiTabToAlphaTex(s.data, { title: s.title, artist: s.artist, tempo: s.tempo || 100 });
+      const converted = asciiTabToAlphaTex(s.data, { title: s.title, artist: s.artist, tempo: s.tempo });
       if (!converted) throw new Error('No tab lines found in this text (chord sheets can’t be played).');
       tex = converted.tex;
     }

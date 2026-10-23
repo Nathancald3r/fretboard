@@ -87,6 +87,55 @@ function readTuning(labels, count) {
 
 const midiName = (midi) => NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 
+const pcGap = (a, b) => Math.min((a - b + 12) % 12, (b - a + 12) % 12);
+
+// Tempo, capo and tuning written above the tab: "Tempo: 196 (98)", "Capo on the 1st fret",
+// "Tuning: Capo on the 1st fret (F, Bb, Eb, Ab, C, f)", "Tuning: Drop D".
+function readHeader(text, strings, labels) {
+  const out = {};
+  const lines = text.split(/\r?\n/).filter((l) => !isTabLine(l));
+  for (const line of lines) {
+    const t = line.match(/\b(?:tempo|bpm)\b\s*[:=-]?\s*(\d{2,3})(?:\s*\(\s*(\d{2,3})\s*\))?/i) || line.match(/\b(\d{2,3})\s*bpm\b/i);
+    if (t && out.tempo == null) {
+      const a = Number(t[1]);
+      const b = t[2] ? Number(t[2]) : 0;
+      // "196 (98)": the strum count and the beat. Strums are read as 8ths, so the beat is the smaller.
+      out.tempo = b && (Math.abs(a - 2 * b) <= 1 || Math.abs(b - 2 * a) <= 1) ? Math.min(a, b) : a;
+    }
+    const c = line.match(/\bcapo\b[^\d\n]{0,20}?(\d{1,2})/i);
+    if (c && out.capo == null && Number(c[1]) <= 12) out.capo = Number(c[1]);
+  }
+  const defaults = DEFAULT_TUNINGS[strings];
+  if (!defaults) return out;
+  const shapes = (readTuning(labels, strings) || defaults).map((m) => m % 12); // top line first
+  for (const line of lines) {
+    const at = line.search(/\btuning\b/i);
+    if (at < 0) continue;
+    const rest = line.slice(at + 6);
+    const drop = rest.match(/\bdrop\s*([A-G][#b]?)/i);
+    const paren = rest.match(/\(([^)]*)\)/);
+    const names = [...(paren ? paren[1] : rest).matchAll(/(?<![A-Za-z])([A-Ga-g](?:#|b(?![a-z]))?)(?![A-Za-z#])/g)].map((m) => m[1].toLowerCase());
+    let pcs = null;
+    if (names.length === strings && names.every((n) => NOTE_NAMES[n] !== undefined)) {
+      // written low to high or high to low: take the order that fits the tab's strings best
+      const asis = names.map((n) => NOTE_NAMES[n]);
+      const flip = [...asis].reverse();
+      const cost = (p) => p.reduce((s, x, i) => s + pcGap(x, shapes[i]), 0);
+      pcs = cost(flip) <= cost(asis) ? flip : asis;
+      // with a capo, the list is often what sounds (capo 1 on standard: F Bb Eb Ab C F)
+      if (out.capo) {
+        const down = pcs.map((x) => (x - out.capo + 12) % 12);
+        if (cost(down) < cost(pcs)) pcs = down;
+      }
+    } else if (drop && NOTE_NAMES[drop[1].toLowerCase()] !== undefined) {
+      pcs = [...shapes];
+      pcs[strings - 1] = NOTE_NAMES[drop[1].toLowerCase()];
+    }
+    if (pcs) { out.tuning = readTuning(pcs.map((x) => NAMES[x]), strings); break; }
+  }
+  return out;
+}
+
 // Whether the digits at columns c and c+1 of string s are two strums, not one two-digit fret.
 // Strummed chords are often written with no dashes between strums ("000-00000000"): a run of three
 // or more digits is strums, and so is a pair when another string starts a note at c+1.
@@ -233,7 +282,7 @@ const quote = (s) => `"${String(s || '').replace(/["\\]/g, '')}"`;
 /**
  * @returns {{ tex: string, bars: number, strings: number } | null} null when no tab lines are found.
  */
-export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = 100 } = {}) {
+export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = null } = {}) {
   const systems = findSystems(text).map(parseSystem).filter((s) => s.events.length);
   if (!systems.length) return null;
 
@@ -242,7 +291,9 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = 100 
   systems.forEach((s) => { counts[s.count] = (counts[s.count] || 0) + 1; });
   const strings = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
   const used = systems.filter((s) => s.count === strings);
-  const tuning = readTuning(used[0].labels, strings);
+  const head = readHeader(text, strings, used[0].labels);
+  const tuning = head.tuning || readTuning(used[0].labels, strings);
+  const bpm = Math.round(tempo || head.tempo || 100);
 
   // a bar of strums sets its own time signature; the bars after it go back to 4/4
   let ts = '4 4';
@@ -256,12 +307,13 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = 100 
   const header = [
     `\\title ${quote(title)}`,
     artist ? `\\artist ${quote(artist)}` : '',
-    `\\tempo ${Math.round(tempo)}`,
+    `\\tempo ${bpm}`,
     '.',
     `\\track ${quote(title || 'Guitar')}`,
     `\\staff {score tabs}`,
     `\\tuning ${tuning.map(midiName).join(' ')}`,
+    head.capo ? `\\capo ${head.capo}` : '',
     strings <= 5 ? '\\instrument 33' : '\\instrument 27',
   ].filter(Boolean).join('\n');
-  return { tex: `${header}\n${bars.join(' |\n')}`, bars: bars.length, strings };
+  return { tex: `${header}\n${bars.join(' |\n')}`, bars: bars.length, strings, tempo: bpm, capo: head.capo || 0 };
 }

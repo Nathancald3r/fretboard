@@ -107,8 +107,8 @@ export function openText(s) {
   $('tx-body').style.fontSize = $('tx-size').value + 'px';
   $('tx-speed').value = s.scrollSpeed || 5;
   $('tx-time').textContent = '';
-  $('tx-tempo').value = s.tempo || 100;
   const playable = asciiTabToAlphaTex(s.data);
+  $('tx-tempo').value = s.tempo || playable?.tempo || 100; // the tab's own "Tempo:" line unless you set one
   $('tx-play').disabled = !playable;
   $('tx-play').title = playable
     ? `Play ${playable.bars} bars as a score (rhythm is guessed from spacing)`
