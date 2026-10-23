@@ -207,7 +207,7 @@ export function readRests(comps, st) { // exported for tests
 
 /* ---------- rhythm row ---------- */
 
-function stemsBelow(ink, w, h, st) {
+export function stemsBelow(ink, w, h, st) { // exported for tests
   const u = st.u;
   const y0 = Math.round(st.ys[st.ys.length - 1] + 0.5 * u), y1 = Math.min(h - 1, Math.round(st.ys[st.ys.length - 1] + 3.2 * u));
   const cols = [];
@@ -217,7 +217,9 @@ function stemsBelow(ink, w, h, st) {
       cur = ink[y * w + x] ? cur + 1 : 0;
       if (cur > best) { best = cur; end = y; }
     }
-    if (best >= 0.7 * u) cols.push({ x, top: end - best + 1, bot: end });
+    // a half note's stem is about a space tall; the sung words' tall letters (b, d, H), which can sit
+    // just under the staff, are shorter
+    if (best >= 0.85 * u) cols.push({ x, top: end - best + 1, bot: end });
   }
   const groups = [];
   for (const c of cols) {
@@ -354,7 +356,14 @@ export function readStrip(ink, light, w, h, st) {
     cols.sort((a, b) => a.cx - b.cx);
     for (const c of cols) {
       const s = stems.reduce((best, q) => (!best || Math.abs(q.x - c.cx) < Math.abs(best.x - c.cx) ? q : best), null);
-      const r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false, guess: true };
+      let r = s && Math.abs(s.x - c.cx) < 0.6 * st.u ? stemLength(ink, w, s, st.u) : { len: 4, beamed: false, guess: true };
+      if (r.guess) { // a stem drawn only a pixel or two above its beam: the beam says the length
+        const x = Math.round(c.cx), lastLine = st.ys[st.ys.length - 1];
+        let bot = -1;
+        for (let y = Math.min(h - 1, Math.round(lastLine + 3.2 * st.u)); y > lastLine + 0.5 * st.u && bot < 0; y--) if (ink[y * w + x]) bot = y;
+        const b = bot > 0 && stemLength(ink, w, { x, top: bot - Math.round(st.u), bot }, st.u);
+        if (b?.beamed) r = b;
+      }
       c.len = r.len; c.beamed = r.beamed;
       if (r.guess) c.guess = true; // no rhythm row (the notes' lengths are in the music staff above)
     }

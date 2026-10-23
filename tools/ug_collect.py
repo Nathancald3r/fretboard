@@ -259,6 +259,38 @@ def open_instruments(pg):
         pg.wait_for_timeout(1200)
 
 
+NOTATION_JS = r"""() => {
+  const b = [...document.querySelectorAll('button')].find((e) => /^Notation/.test(e.textContent.trim()));
+  return b ? b.textContent.trim().replace(/^Notation/, '') : null;
+}"""
+
+
+def notation(pg, want=None):
+    """The player's Settings > Notation choice ("St. + Tab", "Tablature"...). With want ("Tablature",
+    "Standard + Tablature"), picks it first. Tablature alone draws each note's length under the tab,
+    which Fretboard reads; under a music staff the lengths are only in the staff. None: not found."""
+    gear = pg.locator("button[aria-label=Settings]").first
+    dismiss = "() => document.querySelectorAll('button[aria-label=Dismiss]').forEach((b) => b.click())"
+    try:
+        gear.click(timeout=4000)
+        pg.wait_for_timeout(600)
+        now = pg.evaluate(NOTATION_JS)
+        if want and now is not None:
+            pg.locator("button", has_text="Notation").first.click(timeout=4000)
+            pg.wait_for_timeout(500)
+            pg.locator("[role=option]", has_text=want).filter(has_text=re.compile(rf"^\s*{re.escape(want)}\s*$")).first.click(timeout=4000)
+            pg.wait_for_timeout(500)
+        return now
+    except Exception:
+        return None
+    finally:
+        try:
+            pg.evaluate(dismiss)
+            pg.wait_for_timeout(400)
+        except Exception:
+            pass
+
+
 def track_names(pg):
     return pg.evaluate("""()=>{const h=[...document.querySelectorAll('h2')].find(e=>e.innerText.trim()=='Instruments');
       if(!h)return [];const root=h.closest('[class*=ivABo]')||h.parentElement.parentElement;
@@ -1421,8 +1453,11 @@ def work(ui, a, result):
             pg = song_page(ctx, a.url)
             cdp = ctx.new_cdp_session(pg)
             park_chrome(cdp, pg)
+            was = None
             try:
                 sharp_screen(cdp, pg)
+                # tab alone: each note's length is drawn under its fret number
+                was = notation(pg, "Tablature")
                 open_instruments(pg)
                 for i, n in enumerate(names):
                     label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
@@ -1460,6 +1495,8 @@ def work(ui, a, result):
                             time.sleep(0.25)
             finally:
                 normal_screen(cdp)  # the song's tab back as it was
+                if was and was != "Tablature":  # the player's own notation choice back
+                    notation(pg, {"St. + Tab": "Standard + Tablature"}.get(was, was))
             hold(ui)
             ui.progress(len(names), len(names), "chords", 0)
             chords_text = official_chords(pg)
