@@ -221,11 +221,68 @@ def song_page(ctx, url):
     pg.set_viewport_size({"width": 1500, "height": 1000})
     pg.goto(url, wait_until="domcontentloaded")
     try:  # on once the player is up (its Print button shows)
-        pg.wait_for_function("() => [...document.querySelectorAll('button')].some((b) => b.innerText.trim() == 'Print')", timeout=15000, polling=100)
+        pg.wait_for_function(PLAYER_JS, timeout=15000, polling=100)
     except Exception:
         pass
     front(pg)
     return pg
+
+
+PLAYER_JS = "() => [...document.querySelectorAll('button')].some((b) => b.innerText.trim() == 'Print')"
+CHECK_JS = """() => /just a moment|verify you are human|checking your browser/i.test(document.title + ' ' + (document.body?.innerText || '').slice(0, 2000))
+  || !!document.querySelector('iframe[src*="challenges.cloudflare.com"]')"""
+
+
+def tell_helper(text):
+    """What the run waits on, for Fretboard's UG helper line ("" when it isn't waiting)."""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:9231/wait", data=json.dumps({"text": text}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=2).read()
+    except Exception:
+        pass
+
+
+def wait_player(ui, pg, limit=300):
+    """UG's player can hang while it loads the song: UG (Cloudflare) holds pages back on some networks,
+    public wifi above all. The UG window then comes up, so you can see why and finish UG's check yourself;
+    the run carries on by itself once the player shows. Nothing is clicked or got round for you."""
+    if "-official-" not in pg.url:
+        return
+    try:
+        pg.wait_for_function(PLAYER_JS, timeout=15000, polling=200)
+        return
+    except Exception:
+        pass
+    try:
+        check = pg.evaluate(CHECK_JS)
+    except Exception:
+        check = False
+    text = (("UG is checking this network before it shows the song (common on public wifi). "
+             "The UG window is open: finish UG's check there.") if check else
+            ("UG's player isn't loading the song. On public wifi UG often holds pages back. "
+             "The UG window is open: if UG shows a check, finish it there, or reload the page.")) \
+        + " Saving carries on by itself once the song shows."
+    print("  " + text)
+    show_chrome()
+    ui.waiting(text)
+    tell_helper(text)
+    try:
+        end = time.time() + limit
+        while time.time() < end:
+            hold(ui)
+            if pg.is_closed():
+                raise RuntimeError("The song's tab was closed while UG was loading it.")
+            try:
+                if pg.evaluate(PLAYER_JS):
+                    return
+            except Exception:
+                pass  # reloading
+            pg.wait_for_timeout(500)
+        raise RuntimeError("UG's player didn't load the song in 5 minutes. UG may be holding back this network "
+                           "(common on public wifi): try another network, such as your phone's hotspot, and open the song again.")
+    finally:
+        tell_helper("")
 
 
 def front(pg):
@@ -669,6 +726,9 @@ class ConsoleUI:
         if i < n:
             print(f"  [{i + 1}/{n}] {name}{' - ' + note if note else ''}")
 
+    def waiting(self, text):
+        pass  # wait_player prints it
+
     def finish(self, text, folder=None):
         print(text)
 
@@ -713,6 +773,9 @@ class TkUI:
     def progress(self, i, n, name, eta=None, note=""):
         self.working, self.beat = True, time.time()
         self.q.put(("progress", i, n, name, eta, note))
+
+    def waiting(self, text):
+        self.q.put(("waiting", text))
 
     def finish(self, text, folder=None):
         self.working = False
@@ -877,6 +940,18 @@ class TkUI:
         busy = self.ttk.Progressbar(self.body, style="fb.Horizontal.TProgressbar", length=380, mode="indeterminate")
         busy.pack(fill="x", pady=(2, 8))
         busy.start(12)
+        self._place(corner=True)
+
+    def _waiting(self, text):
+        """UG's player hasn't come up (wait_player): why, with Cancel."""
+        self._clear()
+        self.root.title("Waiting for UG")
+        self._label("Waiting for UG to show the song", 11, bold=True, color=self.ACCENT)
+        self._now = self._label(text, 9, color=self.MUTED)
+        row = self.tk.Frame(self.body, bg=self.BG)
+        row.pack(fill="x")
+        self._cancel_btn = self._button(row, "Cancel", self._cancel)
+        self._on_close = self._cancel
         self._place(corner=True)
 
     def _toggle_chrome(self):
@@ -1892,6 +1967,7 @@ def work(ui, a, result):
         pg = song_page(ctx, a.url)
         if "login" in pg.url.lower():
             raise RuntimeError("Not logged in: log in to UG Pro in that Chrome window and open the song again.")
+        wait_player(ui, pg)
         kind, label = page_kind(pg)
         if kind != "official":
             return save_single(ui, a, result, pg, kind, label)

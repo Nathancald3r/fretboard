@@ -93,6 +93,7 @@ label { display: inline-flex; gap: .35rem; align-items: center; color: var(--mut
 .find form input { flex: 1 1 220px; }
 .find-sources { margin-top: .5rem; }
 .find-auto-on { color: var(--good); }
+.find-wait { display: block; color: var(--accent); margin: 4px 0; font-weight: 600; }
 .drop-zone {
   margin: .8rem 0; padding: 1rem; border: 2px dashed var(--line); border-radius: var(--radius);
   text-align: center; color: var(--muted);

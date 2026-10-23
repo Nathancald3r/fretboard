@@ -246,6 +246,7 @@ const HELPER_SET = 'fretboard-ug-helper-set'; // it has answered in this browser
 const SETUP_URL = 'tools/ug_helper_setup.cmd';
 const helperKnown = () => { try { return localStorage.getItem(HELPER_SET) === '1'; } catch { return false; } };
 let helperState = ''; // '' | 'starting' | 'failed'
+let helperPoll = 0;
 
 /** Starts the helper through its link and waits for it; its status, or null when it didn't come up. */
 export async function startHelper(waitMs = 30000) {
@@ -289,6 +290,15 @@ export async function showHelper(status) {
     show.title = 'Brings the UG helper\'s Chrome up, full screen (clicking it in the taskbar does too)';
     show.addEventListener('click', showCollector);
     el.append(on, show);
+    if (s.wait) { // UG's player isn't loading the song (often UG checking a public wifi network)
+      const w = document.createElement('strong');
+      w.className = 'find-wait';
+      w.textContent = ' ⚠ ' + s.wait + ' ';
+      el.append(w);
+    }
+    // while a song saves, look again in a few seconds (a wait shows or clears)
+    clearTimeout(helperPoll);
+    if (s.busy) helperPoll = setTimeout(() => { if (el.offsetParent) showHelper(); }, 3000);
     if (typeof s.notation === 'boolean') { // older helpers have no such setting
       const lab = document.createElement('label');
       lab.title = 'Fretted tracks are also printed with the music staff, so Fretboard gets their dynamics (mf, ff) and words. Off, a save is about 15 s quicker';

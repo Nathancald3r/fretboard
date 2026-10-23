@@ -266,7 +266,7 @@ def settings():
         return {}
 # Only Fretboard's own pages may ask (the site, and the local copy while it's being worked on).
 ORIGINS = {"https://nathancald3r.github.io"} | {f"http://{h}:{p}" for h in ("localhost", "127.0.0.1") for p in (8420, 8421)}
-state = {"busy": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
+state = {"busy": "", "wait": "", "chrome": False, "chrome_port": 9222, "profile": "", "launched": 0, "asked": {}, "picking": 0}  # set from the command line in main()
 
 
 def is_ug(url):
@@ -318,7 +318,7 @@ class Helper(BaseHTTPRequestHandler):
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/status":
             return self._send(200, {"ok": True, "app": "fretboard-ug-helper", "version": 3,
-                                    "chrome": state["chrome"], "busy": state["busy"], "notation": bool(settings().get("notation"))})
+                                    "chrome": state["chrome"], "busy": state["busy"], "wait": state["wait"], "notation": bool(settings().get("notation"))})
         self._send(404, {"ok": False})
 
     def do_POST(self):
@@ -327,6 +327,15 @@ class Helper(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/show":  # the collector window asks too (no Origin: not a web page)
             ok = show_window()
             return self._send(200, {"ok": ok})
+        if self.path.split("?")[0] == "/wait":  # the collector: what it waits on (UG's player not loading), for Fretboard
+            if self.headers.get("Origin") is not None:
+                return self._send(403, {"ok": False})
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 8192)
+                state["wait"] = str(json.loads(self.rfile.read(n) or b"{}").get("text") or "")[:500]
+            except (ValueError, AttributeError):
+                return self._send(400, {"ok": False})
+            return self._send(200, {"ok": True})
         if self.headers.get("Origin") is None:
             return self._send(403, {"ok": False})
         if self.path.split("?")[0] == "/settings":
@@ -440,7 +449,7 @@ def main():
                 try:
                     code = subprocess.run(cmd).returncode
                 finally:
-                    state["busy"] = ""
+                    state["busy"] = state["wait"] = ""
                 if code == DONE:
                     done.add(u)
                     with DONE_FILE.open("a", encoding="utf-8") as f:
