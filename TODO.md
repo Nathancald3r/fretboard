@@ -59,6 +59,16 @@
 5. Move the pixel work (`findStaves`, `readStrip`, `notationMarks`) into a Web Worker so the page stays responsive and parts can overlap.
 6. Small one: the dialog's bar looks full at "1 of 10". Check that `progress.max` is set to the number of parts.
 
+7. **Bug: the dialog froze at "1 of 10: Vocal · page 4 of 4, line 1 of 2"**, and songs still seemed to be added in the background. Not reproduced yet. Likely causes:
+   - **Two imports running at once** (e.g. the UG helper's auto-import plus one the user started, or the same files imported twice). Both share the one Tesseract worker in `js/uglyrics.js`, and two `pdfToTab` calls at once are already known to hang. The songs "added in the background" would be the other import.
+   - **A Tesseract `recognize` that never returns:** `readLyricLine` has no timeout. "line 1 of 2" is shown after line 1, so it was stuck on line 2's words.
+   - **To fix:**
+     - allow one import at a time (queue the next one, or say "an import is already running")
+     - give `recognize` a timeout: drop that line's words, restart the worker, carry on
+     - make Cancel stop it even mid-`recognize`
+     - log which step each part is on
+   - **Done when:** importing the same 10 PDFs twice in a row (and while the helper auto-imports) never freezes, and Cancel always works.
+
 **Done when:** a full official song (8–10 PDFs) imports in a few seconds per part, and every part still reads the same bars, notes, lyrics and dynamics as before. Compare against the current output before and after.
 
 **Watch out:** run the tests after changing `js/ugtab.js` or `js/pdftab.js`. In the preview, run `pdfToTab` with `{ lyrics: false }` unless lyrics are what you're testing.
