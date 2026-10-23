@@ -234,6 +234,44 @@ def song_page(ctx, url):
 
 
 PLAYER_JS = "() => [...document.querySelectorAll('button')].some((b) => b.innerText.trim() == 'Print')"
+
+# UG's "Love this tab?" box (stars to rate it) comes up now and then over the song. It hides the rest of
+# the page from the helper (aria-hidden: "Couldn't read the Instruments list") and blocks clicks, so it's
+# closed with its own X: the button at the box's top, beside the heading. The stars are never pressed.
+# "closed", "esc" (no X found: Escape closes it), or "" (no box).
+POPUP_JS = r"""() => {
+  const head = [...document.querySelectorAll('h1,h2,h3,h4,h5,p,div,span')].find((e) =>
+    e.childElementCount === 0 && /^love this (tab|song)\??$/i.test(e.textContent.trim()) && e.getClientRects().length);
+  if (!head) return '';
+  const top = head.getBoundingClientRect();
+  for (let box = head.parentElement; box && box !== document.body; box = box.parentElement) {
+    const buttons = [...box.querySelectorAll('button,[role=button]')];
+    const x = buttons.find((b) => /close|dismiss/i.test(b.getAttribute('aria-label') || ''))
+      || buttons.find((b) => { const r = b.getBoundingClientRect();
+        return !b.textContent.trim() && r.width && r.top < top.bottom && r.left >= top.right - 2; }); // beside it, not under it
+    if (x) { x.click(); return 'closed'; }
+    if (box.matches('[role=dialog],[aria-modal=true]')) break;
+  }
+  return 'esc';
+}"""
+# The same, watched for in the page itself (every 0.5 s) for as long as the run works in it
+POPUP_WATCH_JS = "() => { if (!window.__fbPopups) window.__fbPopups = setInterval(() => { try { (" + POPUP_JS + ")(); } catch (e) {} }, 500); }"
+
+
+def close_popups(pg):
+    """Closes UG's rating box if it's up (see POPUP_JS); never fails."""
+    try:
+        if pg.evaluate(POPUP_JS) == "esc":
+            pg.keyboard.press("Escape")
+    except Exception:
+        pass
+
+
+def watch_popups(pg):
+    try:
+        pg.evaluate(POPUP_WATCH_JS)
+    except Exception:
+        pass
 CHECK_JS = """() => /just a moment|verify you are human|checking your browser/i.test(document.title + ' ' + (document.body?.innerText || '').slice(0, 2000))
   || !!document.querySelector('iframe[src*="challenges.cloudflare.com"]')"""
 
@@ -354,6 +392,7 @@ INSTRUMENTS_JS = """()=>{const h=[...document.querySelectorAll('h2')].find(e=>e.
 def open_instruments(pg):
     """Show the player's Instruments panel (track list) if it's folded away."""
     for _ in range(3):
+        close_popups(pg)
         if pg.evaluate(INSTRUMENTS_JS):
             return
         try:
@@ -1582,6 +1621,7 @@ def showing(pg, n, k=0):
 
 def pick_track(pg, n, k=0):
     """Show track n (the k-th of that name) in the player, as clicking its name in Instruments does."""
+    close_popups(pg)
     b = pg.get_by_text(n, exact=True)
     if b.count() > k and b.nth(k).is_visible():
         b.nth(k).click(timeout=8000)
@@ -2073,6 +2113,8 @@ def work(ui, a, result):
         p = sync_playwright().start()  # one connection for the whole run (each new one costs ~0.4 s)
         ctx = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0]
         pg = song_page(ctx, a.url)
+        watch_popups(pg)
+        close_popups(pg)
         if "login" in pg.url.lower():
             raise RuntimeError("Not logged in: log in to UG Pro in that Chrome window and open the song again.")
         wait_player(ui, pg)
@@ -2096,6 +2138,10 @@ def work(ui, a, result):
                 if done:
                     return
                 print("  (The Guitar Pro version has no Download button: saving the PDFs instead.)")
+        if not names:  # a box over the page (UG's rating) hides the list: closed, and read once more
+            close_popups(pg)
+            open_instruments(pg)
+            names = track_names(pg)
         if not names:
             raise RuntimeError("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, and try again.")
         every = list(names)  # all the song's tracks (a replaced song keeps the ones not saved again)
