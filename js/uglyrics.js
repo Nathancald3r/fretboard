@@ -40,7 +40,9 @@ async function recognize(wk, canvas) {
   let timer;
   try {
     return await Promise.race([
-      wk.recognize(canvas, {}, { blocks: true }),
+      // a data URL, not the canvas: Tesseract turns a canvas into a PNG with toBlob, which Chrome
+      // puts off to idle time, about 1 s a call (36 calls on a notation page)
+      wk.recognize(canvas.toDataURL(), {}, { blocks: true }),
       new Promise((_, bad) => { timer = setTimeout(() => bad(new Error('Tesseract timed out')), 20000); }),
     ]);
   } catch (err) {
@@ -134,12 +136,28 @@ export function syllables(words, xOffset = 0) {
 }
 
 /**
+ * A box of the page drawn once at K times, for several readWords calls inside it (src).
+ * @returns {Promise<{ canvas: HTMLCanvasElement, x0: number, y0: number, K: number }>}
+ */
+export async function drawBox(page, scale, x0, y0, x1, y1, K = 4) {
+  [x0, y0, x1, y1] = [x0, y0, x1, y1].map(Math.round);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, (x1 - x0) * K);
+  canvas.height = Math.max(1, (y1 - y0) * K);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
+  return { canvas, x0, y0, K };
+}
+
+/**
  * Every word printed in a box of the page (the marks between two tab staves on a "Notation"
  * page: dynamics such as mf, words such as "w/sustainer"). The long staff lines are wiped first,
  * as they would otherwise run through the words.
  * @returns {Promise<{ text: string, conf: number, x0: number, x1: number, y0: number, y1: number }[]>} in page pixels at scale
  */
-export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11', chars = '', wipe = [], lines = true } = {}) {
+export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11', chars = '', wipe = [], lines = true, src = null } = {}) {
   const wk = await getWorker();
   if (!wk || x1 - x0 < 10 || y1 - y0 < 6) return [];
   [x0, y0, x1, y1] = [x0, y0, x1, y1].map(Math.round);
@@ -149,7 +167,8 @@ export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11'
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
+  if (src && src.K === K) ctx.drawImage(src.canvas, (src.x0 - x0) * K, (src.y0 - y0) * K); // cut from a box drawn once (drawBox)
+  else await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data, W = canvas.width;
   for (let y = 0; y < canvas.height; y++) {

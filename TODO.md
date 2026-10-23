@@ -43,7 +43,16 @@
 
 ## Importing the PDFs ("Reading the PDFs" dialog): make it quicker
 
-**What the user saw:** the dialog "Reading the PDFs, 1 of 10: Vocal · page 4 of 4, line 1 of 2" takes a long time. The user wants the whole import quicker. Not measured yet.
+**What the user saw:** the dialog "Reading the PDFs, 1 of 10: Vocal · page 4 of 4, line 1 of 2" takes a long time. The user wants the whole import quicker.
+
+**Done (2026-10-23): How He Loves' 10 PDFs now read in 88 s in the preview** (each fretted part took several minutes):
+- Tesseract turned each canvas into a PNG with `toBlob`, which Chrome puts off to idle time: **~1 s per read**. It now gets `canvas.toDataURL()` (14 ms). A notation-heavy PDF: 108 s → 16 s.
+- `notationMarks` draws each staff's box once (`drawBox`) and cuts every read from it. It used to render the page again for each of its ~240 reads per part (~65 ms each). A fretted part: ~32 s → ~15 s.
+- The progress bar moves page by page within each part.
+- Results unchanged (bars, dynamics, words) on all of How He Loves' parts.
+
+**Still possible:** ~200 of a fretted part's ~240 reads are dynamics candidates (noteheads, symbols) that never come back as a dynamic; each costs ~50 ms of OCR. A cheaper test before reading them, or reading parts in parallel (below), would cut more.
+**Misread section names get through as words:** "Intrelude", "rre-vnorus" (Interlude, Pre-Chorus) are put on notes as text marks. `SECTION` in `notationText` only matches exact names.
 
 **How it works now** (`readParts` in `js/app.js` → `pdfToTab` in `js/pdftab.js`):
 - The parts are read **one after another**, each page in turn. Two `pdfToTab` calls at once hang, because they share one Tesseract worker (`js/uglyrics.js`).

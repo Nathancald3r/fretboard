@@ -402,14 +402,14 @@ async function readParts(files, title) {
   const singer = Math.max(0, items.findIndex((it) => /vocal|voice|sing/i.test(it.name)));
   try {
     for (const [i, it] of items.entries()) {
-      const say = (extra = '') => {
+      const say = (extra = '', done = 0) => {
         if (stop) throw new Cancelled();
-        dlg.querySelector('progress').value = i;
+        dlg.querySelector('progress').value = i + done; // done: the share of this part's pages read
         dlg.querySelector('.parts-now').textContent = `${i + 1} of ${items.length}: ${it.name}${extra}`;
       };
       say();
       try {
-        const read = pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name), drums: drumKind(it.name), signal: ctl.signal });
+        const read = pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`, (page - 1) / pages), { title, lyrics: i === singer, bass: /bass/i.test(it.name), drums: drumKind(it.name), signal: ctl.signal });
         read.catch(() => {});
         const r = await Promise.race([read, cancelled]);
         if (r.strips?.length) {

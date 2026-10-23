@@ -4,7 +4,7 @@
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
-import { readLyricLine, holdLyricReader, closeLyricReader, readWords } from './uglyrics.js';
+import { readLyricLine, holdLyricReader, closeLyricReader, readWords, drawBox } from './uglyrics.js';
 import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -372,8 +372,10 @@ async function notationMarks(page, scale, r, st, top) {
   const out = [];
   // words: above the music staff, with the wavy lines and ties wiped out first
   const tTop = Math.max(top, ms[0] - 6 * u), tBot = ms[0] - 0.2 * u;
+  // the whole box is drawn once; each read below is cut from it (a page render per read cost ~65 ms, 200+ reads a part)
+  const src = await drawBox(page, scale, x0 - u - 2, tTop - 2, x1 + u + 2, st.ys[0] + u + 2);
   const flat = inkBlobs(r.ink, r.w, x0, tTop, x1, tBot).filter((b) => b.y1 - b.y0 <= 0.6 * u && b.x1 - b.x0 >= 1.2 * u);
-  out.push(...notationText(await readWords(page, scale, x0, tTop, x1, tBot, { wipe: flat }), u));
+  out.push(...notationText(await readWords(page, scale, x0, tTop, x1, tBot, { wipe: flat, src }), u));
   // dynamics: bold letters under the music staff, each piece read on its own as p, m or f letters
   const dTop = ms[1] + 0.3 * u, dBot = st.ys[0] - 0.7 * u;
   const pieces = inkBlobs(r.ink, r.w, x0, dTop, x1, dBot).filter((b) => b.y1 - b.y0 >= 0.3 * u && b.x1 - b.x0 >= 0.25 * u);
@@ -387,7 +389,7 @@ async function notationMarks(page, scale, r, st, top) {
     const gw = g.x1 - g.x0, gh = g.y1 - g.y0;
     // a piece cut off at the top of the box is a note hanging from the staff (its stem), not a letter
     if (g.y0 <= dTop + 1 || gh < 0.6 * u || gh > 2.2 * u || gw > 4 * u || g.n < 0.18 * gw * gh) continue;
-    const ws = await readWords(page, scale, g.x0 - u, g.y0 - u, g.x1 + u, g.y1 + u, { psm: '8', chars: 'pmf', lines: false });
+    const ws = await readWords(page, scale, g.x0 - u, g.y0 - u, g.x1 + u, g.y1 + u, { psm: '8', chars: 'pmf', lines: false, src });
     const t = ws.map((w) => w.text.trim()).join('');
     const conf = ws.length ? Math.min(...ws.map((w) => w.conf)) : 0;
     // a lone f or p comes back with no confidence at all: its tall bold shape vouches for it
