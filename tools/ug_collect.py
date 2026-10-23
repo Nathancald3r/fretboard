@@ -1024,7 +1024,7 @@ def wait_idle(ui, i, n, name, eta):
 # which this Chrome writes to the PDF straight away (no Print or Save As window).
 
 SHOT_W, SHOT_H, SHOT_DSF = 1536, 7000, 2
-PRINT_H = 1000  # Print draws the whole score whatever the screen's height; a short one lays out quicker
+PRINT_H = 6000  # taller than Print's 10000 px page (at 2x), so the canvas has the words and notes of each page's last line (GRAB_JS)
 
 # Where the score's drawing is on the page. Anything lying over it (the player's bars, the
 # Instruments panel) is hidden for the moment of the picture, then shown again (SHOW_JS).
@@ -1191,8 +1191,8 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
     c.width = w; c.height = h;
     const g2 = c.getContext('2d', { willReadFrequently: true });
     g2.drawImage(img, 0, 0);
-    const d = g2.getImageData(0, 0, w, h).data;
-    const dark = (y, lim) => { let k = 0; for (let x = 0; x < w; x += 2) if (d[(y * w + x) * 4] < lim) k++; return k > 0.2 * w; };
+    const d = g2.getImageData(0, 0, w, h).data, lum = (i) => (d[i + 3] < 128 ? 255 : d[i]);  // see-through is paper
+    const dark = (y, lim) => { let k = 0; for (let x = 0; x < w; x += 2) if (lum((y * w + x) * 4) < lim) k++; return k > 0.2 * w; };
     if (!dark(h - 1, 245) || dark(h - 1, 160)) return img.src;
     const rows = [];
     for (let y = 0; y < h - 1; y++) if (dark(y, 160)) { if (rows.length && y - rows[rows.length - 1][1] <= 1) rows[rows.length - 1][1] = y; else rows.push([y, y]); }
@@ -1200,8 +1200,8 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
     const [a, b] = rows.slice(-2), gap = b[0] - a[0];
     if (gap < 8 || Math.abs(h - 1 - b[0] - gap) > 2) return img.src;
     let x0 = 0, x1 = w - 1;
-    while (x0 < w && d[(b[0] * w + x0) * 4] >= 160) x0++;
-    while (x1 > x0 && d[(b[0] * w + x1) * 4] >= 160) x1--;
+    while (x0 < w && lum((b[0] * w + x0) * 4) >= 160) x0++;
+    while (x1 > x0 && lum((b[0] * w + x1) * 4) >= 160) x1--;
     const out = document.createElement('canvas'), t = b[1] - b[0] + 1;
     out.width = w; out.height = b[0] + gap + Math.round(gap / 2);
     const o = out.getContext('2d');
@@ -1211,9 +1211,60 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
     return out.toDataURL('image/png');
   };
   const load = (s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; });
+  // The rows a print picture has ink in: the blank paper above and below is left off the page
+  // (Print spreads a page's lines out over the whole page, so its pictures can be half blank).
+  const pixels = (img) => {
+    const w = img.width, h = img.height, c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g2 = c.getContext('2d', { willReadFrequently: true });
+    g2.drawImage(img, 0, 0);
+    const d = g2.getImageData(0, 0, w, h).data, on = (x, y) => { const i = (y * w + x) * 4; return d[i + 3] >= 128 && d[i] < 200; };
+    const count = new Int32Array(h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (on(x, y)) count[y]++;
+    return { w, h, on, count };
+  };
+  const inked = ({ h, count }, from = 0, to = h) => {
+    let top = from, bottom = to - 1;
+    while (top < to && count[top] <= 1) top++;
+    while (bottom > top && count[bottom] <= 1) bottom--;
+    return top < to ? [top, bottom + 1] : [from, to];
+  };
+  // The last line on a page can run on into the top of the next line (Print's cut, carried on by
+  // GRAB_JS), and the next page then starts with that line drawn whole. Where a picture ends with
+  // the rows the next one starts with, it is cut off there (dropped when it is nothing else).
+  const repeats = (a, b) => {
+    if (a.px.w !== b.px.w) return -1;
+    const ca = a.px.count, cb = b.px.count, [at, ab] = a.ink, [bt, bb] = b.ink;
+    for (let t = at; t < ab - 2; t++) {
+      const m = ab - t;
+      if (m > bb - bt) continue;
+      let r = 0;
+      for (; r < m; r++) if (Math.abs(ca[t + r] - cb[bt + r]) > 2 + 0.02 * Math.max(ca[t + r], cb[bt + r])) break;
+      if (r < m) continue;
+      let all = 0, off = 0;
+      for (r = 0; r < m; r++) for (let x = 0; x < a.px.w; x += 2) {
+        const p = a.px.on(x, t + r), q = b.px.on(x, bt + r);
+        if (p || q) { all++; if (p !== q) off++; }
+      }
+      if (all >= 20 && off <= 0.02 * all) return t;
+    }
+    return -1;
+  };
   const given = async (srcs) => {
     const imgs = await Promise.all(srcs.map(async (s) => { const i = await load(s), m = mend(i); return m === i.src ? i : load(m); }));
-    return { parts: imgs.map((i) => ({ src: i.src, h: i.height, mm: 186 / i.width })), full: false, pictures: 0 };
+    const ps = imgs.map((i) => { const px = pixels(i); return { src: i.src, h: i.height, mm: 186 / i.width, ink: inked(px), px }; });
+    const parts = [];
+    ps.forEach((p, i) => {
+      const t = ps[i + 1] ? repeats(p, ps[i + 1]) : -1;
+      if (t >= 0) {
+        const left = inked(p.px, p.ink[0], t);
+        if (left[1] - left[0] < 20) return;
+        p.ink = left;
+      }
+      parts.push(p);
+    });
+    parts.forEach((p) => delete p.px);
+    return { parts, full: false, pictures: 0 };
   };
   const tab = printed ? await given(printed) : await cut(shots);
   if (tab.error) return tab;
@@ -1227,14 +1278,26 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   if (notesPrinted && notesPrinted.length) more = await given(notesPrinted);
   else if (notes && notes.length) { try { more = await cut(notes); } catch (e) { more = null; } }
   if (more && more.error) more = null;
-  // A4, 12 mm margins: 186 x 273 mm to fill
-  const pageW = 186, pageH = 272;
+  // A4, 12 mm margins: 186 x 273 mm to fill. The score is set 5 mm in from each side (side): what
+  // it has at its very edges (a bar line, the first bar's number) isn't on the page's edge.
+  const pageW = 186, pageH = 272, side = 5, k = (pageW - 2 * side) / pageW;
+  // a picture on the page, with a little paper over and under its ink (a print picture's own
+  // blank rows are left off)
+  const place = (p) => {
+    const w = 186 / p.mm;
+    const [t, b] = p.ink || [0, p.h], y0 = p.ink ? Math.max(0, t - Math.round(0.02 * w)) : 0, y1 = p.ink ? Math.min(p.h, b + Math.round(0.02 * w)) : p.h;
+    const hh = Math.min((y1 - y0) * p.mm * k, pageH);
+    const box = document.createElement('div'); box.className = 'pic'; box.style.height = hh + 'mm';
+    const el = document.createElement('img'); el.src = p.src; el.style.marginTop = (-y0 * p.mm * k) + 'mm';
+    box.append(el);
+    return [box, hh];
+  };
   document.title = title;
   const st = document.createElement('style');
   st.textContent = '@page{size:A4;margin:12mm}body{margin:0;font-family:Georgia,"Times New Roman",serif;color:#000}'
     + '.pg{height:' + pageH + 'mm;overflow:hidden;break-after:page}.pg:last-child{break-after:auto}'
     + 'h1{font-size:22pt;text-align:center;margin:0 0 1mm;font-weight:normal}.sub{text-align:center;font-size:13pt;margin:0 0 3mm}'
-    + '.info{font-size:10pt;margin:0 0 2mm}img{display:block;width:' + pageW + 'mm}';
+    + '.info{font-size:10pt;margin:0 0 2mm}.pic{overflow:hidden;margin:0 ' + side + 'mm}img{display:block;width:' + (pageW - 2 * side) + 'mm}';
   document.head.append(st);
   let page = document.createElement('div'); page.className = 'pg'; document.body.append(page);
   const head = [['h1', lines[0]], ['p.sub', lines[1]], ['p.info', lines[2]]];
@@ -1245,18 +1308,18 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   let used = page.lastChild ? (page.lastChild.getBoundingClientRect().bottom - page.getBoundingClientRect().top) * 25.4 / 96 + 2 : 0;  // mm the heading takes
   let pages = 1;
   for (const p of tab.parts) {
-    const hh = Math.min(p.h * p.mm, pageH);
+    const [el, hh] = place(p);
     if (used + hh > pageH && used > 0) { page = document.createElement('div'); page.className = 'pg'; document.body.append(page); used = 0; pages++; }
-    const el = document.createElement('img'); el.src = p.src; el.style.height = hh + 'mm'; page.append(el); used += hh;
+    page.append(el); used += hh;
   }
   if (more) {
     page = document.createElement('div'); page.className = 'pg'; document.body.append(page); pages++;
     const el = document.createElement('p'); el.className = 'info'; el.textContent = 'Notation'; page.append(el);
     used = (el.getBoundingClientRect().bottom - page.getBoundingClientRect().top) * 25.4 / 96 + 2;
     for (const p of more.parts) {
-      const hh = Math.min(p.h * p.mm, pageH);
+      const [el, hh] = place(p);
       if (used + hh > pageH && used > 0) { page = document.createElement('div'); page.className = 'pg'; document.body.append(page); used = 0; pages++; }
-      const im = document.createElement('img'); im.src = p.src; im.style.height = hh + 'mm'; page.append(im); used += hh;
+      page.append(el); used += hh;
     }
   }
   await Promise.all([...document.images].map((i) => i.decode()));
@@ -1374,6 +1437,34 @@ GRAB_JS = r"""() => {
     };
     const cw = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
     Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, get() { const w = cw.get.call(this); patch(w); return w; } });
+  }
+  // Print draws the score on its canvas (#canvas_print, as tall as the screen), lays it out in pages
+  // of up to 10000 px, and cuts each line out of a copy of it (getImageData, full width). The last
+  // line on a page comes out cut through its notes or words, though the canvas has them when it
+  // runs on below the page (a screen taller than 5000 px, see PRINT_H). While a take is wanted, a
+  // cut that ends on ink is carried on down to the next blank gap, and the line's picture is made
+  // tall enough to hold it.
+  if (!window.__fbSlices) {
+    window.__fbSlices = true;
+    const P = CanvasRenderingContext2D.prototype, gi = P.getImageData, pi = P.putImageData;
+    P.getImageData = function (x, y, w, h, ...r) {
+      const c = this.canvas, end = Math.round(y + h), most = Math.min(c.height, end + Math.round(h)), W = c.width * 4;
+      if (!window.__fbWant || x !== 0 || Math.round(w) !== c.width || h < 20 || most - end < 2) return gi.call(this, x, y, w, h, ...r);
+      // one read for the line and the rows under it (each read of Print's canvas costs ~0.1 s)
+      const top = Math.floor(y), all = gi.call(this, 0, top, c.width, most - top, ...r), d = all.data;
+      const ink = (row) => { for (let i = row * W + 3; i < (row + 1) * W; i += 4) if (d[i] > 128 && d[i - 3] < 200) return true; return false; };
+      let rows = Math.trunc(h);
+      if (ink(end - 1 - top)) {
+        let row = end - top, blank = 0;
+        for (; row < most - top && blank < 8; row++) blank = ink(row) ? 0 : blank + 1;
+        rows = row;
+      }
+      return new ImageData(new Uint8ClampedArray(d.buffer, 0, rows * W), c.width, rows);
+    };
+    P.putImageData = function (im, dx, dy, ...r) {
+      if (window.__fbWant && !dx && !dy && !r.length && im.height > this.canvas.height) this.canvas.height = im.height;
+      return pi.call(this, im, dx, dy, ...r);
+    };
   }
   const b = [...document.querySelectorAll('button')].find((e) => e.innerText.trim() == 'Print');
   if (!b) return false;
