@@ -108,3 +108,45 @@ export function syllables(words, xOffset = 0) {
   if (kept.length < 3) return [];
   return kept.map((s) => ({ x: s.x, x1: s.x1, text: s.joined ? s.text + '-' : s.text }));
 }
+
+/**
+ * Every word printed in a box of the page (the marks between two tab staves on a "Notation"
+ * page: dynamics such as mf, words such as "w/sustainer"). The long staff lines are wiped first,
+ * as they would otherwise run through the words.
+ * @returns {Promise<{ text: string, conf: number, x0: number, x1: number, y0: number, y1: number }[]>} in page pixels at scale
+ */
+export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11', chars = '', wipe = [], lines = true } = {}) {
+  const wk = await getWorker();
+  if (!wk || x1 - x0 < 10 || y1 - y0 < 6) return [];
+  [x0, y0, x1, y1] = [x0, y0, x1, y1].map(Math.round);
+  const canvas = document.createElement('canvas');
+  canvas.width = (x1 - x0) * K;
+  canvas.height = (y1 - y0) * K;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K] }).promise;
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data, W = canvas.width;
+  for (let y = 0; y < canvas.height; y++) {
+    let dark = 0;
+    for (let x = 0; x < W; x++) if (d[(y * W + x) * 4] < 205) dark++;
+    if (lines && dark > 0.4 * W) for (let x = 0; x < W; x++) d.fill(255, (y * W + x) * 4, (y * W + x) * 4 + 3);
+  }
+  for (const b of wipe) { // marks that aren't words (a wavy line), in page pixels
+    for (let y = Math.max(0, Math.floor((b.y0 - y0 - 1) * K)); y < Math.min(canvas.height, Math.ceil((b.y1 - y0 + 2) * K)); y++) {
+      for (let x = Math.max(0, Math.floor((b.x0 - x0 - 1) * K)); x < Math.min(W, Math.ceil((b.x1 - x0 + 2) * K)); x++) d.fill(255, (y * W + x) * 4, (y * W + x) * 4 + 3);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  let words = [];
+  try {
+    await wk.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: chars }); // 11: scattered words, 8: one word
+    words = (await wk.recognize(canvas, {}, { blocks: true })).data.words || [];
+  } catch {
+    words = [];
+  } finally {
+    await wk.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '' }).catch(() => {});
+  }
+  return words.map((w) => ({ text: w.text, conf: w.confidence, x0: x0 + w.bbox.x0 / K, x1: x0 + w.bbox.x1 / K, y0: y0 + w.bbox.y0 / K, y1: y0 + w.bbox.y1 / K }));
+}

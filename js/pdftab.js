@@ -4,7 +4,7 @@
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
-import { readLyricLine, closeLyricReader } from './uglyrics.js';
+import { readLyricLine, closeLyricReader, readWords } from './uglyrics.js';
 import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -280,6 +280,160 @@ function textLines(items) {
   });
 }
 
+/* ---------- the "Notation" pages ---------- */
+// The UG helper adds the same score drawn with its music staff after a page headed "Notation":
+// only there does the player print the dynamics (mf, f) and words such as "w/sustainer". Their
+// tab staves are read for where the bars and notes are; the words go on the same notes of the
+// tab pages, which hold the rhythm.
+
+const DYNAMICS = new Set(['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff']);
+const SECTION = /^(intro|verse|pre-?chorus|chorus|bridge|outro|interlude|instrumental|solo|tag|ending|turnaround|refrain|vamp|coda|break|riff|notation)\b/i;
+const CHORD = /^[A-G][#b♯♭]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d*|add\d*|maj\d*|b\d+|#\d+)*(\/[A-G][#b♯♭]?)?$/;
+
+/** Tesseract words from above a music staff -> [{ x, txt }] ("w/sustainer", "let ring"); exported for tests. */
+export function notationText(words, u) {
+  const out = [];
+  const lines = [];
+  for (const w of [...words].sort((a, b) => a.x0 - b.x0)) {
+    if (!w.text.trim()) continue;
+    // words in a row with small gaps make one phrase ("let ring")
+    const ln = lines.find((l) => Math.abs(l.y - (w.y0 + w.y1) / 2) < 0.6 * u && w.x0 - l.x1 < 1.6 * u);
+    if (ln) { ln.words.push(w); ln.x1 = w.x1; } else lines.push({ y: (w.y0 + w.y1) / 2, x1: w.x1, words: [w] });
+  }
+  for (const l of lines) {
+    let ws = l.words.map((w) => w.text.trim());
+    if (ws.some((t) => !/^[A-Za-z][A-Za-z./'-]*$/.test(t))) continue; // digits, symbols: a tempo mark, notes read as letters
+    if (ws.length > 1 && /^w[rl1|/]?$/i.test(ws[0])) ws = [`w/${ws[1]}`, ...ws.slice(2)]; // "w/" read as "wr"
+    const text = ws.join(' ');
+    const letters = text.replace(/[^A-Za-z]/g, '');
+    const conf = l.words.reduce((a, w) => a + w.conf, 0) / l.words.length;
+    // UPPER-case runs are noteheads and beams read as letters; real marks are words in lower case
+    if (letters.length < 5 || !/[a-z]{4}/.test(text) || letters.replace(/[^A-Z]/g, '').length > 1 || conf < 20) continue;
+    if (SECTION.test(text) || /tuning/i.test(text) || ws.some((t) => CHORD.test(t))) continue;
+    if (l.words.some((w) => w.y1 - w.y0 > 2 * u)) continue;
+    out.push({ x: l.words[0].x0, txt: text });
+  }
+  return out;
+}
+
+// Ink pieces (8-connected) in a box of the page.
+function inkBlobs(ink, w, x0, y0, x1, y1) {
+  [x0, y0, x1, y1] = [Math.max(0, Math.round(x0)), Math.max(0, Math.round(y0)), Math.min(w, Math.round(x1)), Math.round(y1)];
+  const bw = x1 - x0, bh = y1 - y0;
+  if (bw <= 0 || bh <= 0) return [];
+  const seen = new Uint8Array(bw * bh);
+  const out = [];
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      if (seen[y * bw + x] || !ink[(y + y0) * w + x + x0]) continue;
+      const b = { x0: x, y0: y, x1: x, y1: y, n: 0 };
+      const st = [y * bw + x];
+      seen[y * bw + x] = 1;
+      while (st.length) {
+        const i = st.pop(), cx = i % bw, cy = (i - cx) / bw;
+        b.n++;
+        if (cx < b.x0) b.x0 = cx; if (cx > b.x1) b.x1 = cx; if (cy < b.y0) b.y0 = cy; if (cy > b.y1) b.y1 = cy;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= bw || ny >= bh || seen[ny * bw + nx] || !ink[(ny + y0) * w + nx + x0]) continue;
+          seen[ny * bw + nx] = 1;
+          st.push(ny * bw + nx);
+        }
+      }
+      out.push({ x0: b.x0 + x0, y0: b.y0 + y0, x1: b.x1 + x0 + 1, y1: b.y1 + y0 + 1, n: b.n });
+    }
+  }
+  return out;
+}
+
+// The five lines of the music staff drawn above a tab staff (between y0 and y1): [top, bottom] or null.
+function musicStaff(light, w, x0, x1, y0, y1) {
+  const lines = [];
+  for (let y = Math.max(0, Math.round(y0)); y < Math.round(y1); y++) {
+    let n = 0;
+    for (let x = Math.round(x0); x < Math.round(x1); x++) n += light[y * w + x];
+    if (n < 0.6 * (x1 - x0)) continue;
+    const last = lines[lines.length - 1];
+    if (last && y - last.y1 <= 1) last.y1 = y; else lines.push({ y0: y, y1: y });
+  }
+  const ys = lines.map((l) => (l.y0 + l.y1) / 2);
+  for (let k = ys.length - 5; k >= 0; k--) {
+    const gaps = [1, 2, 3, 4].map((i) => ys[k + i] - ys[k + i - 1]);
+    if (Math.max(...gaps) - Math.min(...gaps) <= 2 && gaps[0] > 4) return [ys[k], ys[k + 4]];
+  }
+  return null;
+}
+
+/** The marks around one tab staff of a Notation page: dynamics under its music staff, words above it. */
+async function notationMarks(page, scale, r, st, top) {
+  const u = st.u, x0 = st.x0 - 2 * u, x1 = st.x1 + u;
+  const ms = musicStaff(r.light, r.w, st.x0, st.x1, top, st.ys[0] - u);
+  if (!ms) return [];
+  const out = [];
+  // words: above the music staff, with the wavy lines and ties wiped out first
+  const tTop = Math.max(top, ms[0] - 6 * u), tBot = ms[0] - 0.2 * u;
+  const flat = inkBlobs(r.ink, r.w, x0, tTop, x1, tBot).filter((b) => b.y1 - b.y0 <= 0.6 * u && b.x1 - b.x0 >= 1.2 * u);
+  out.push(...notationText(await readWords(page, scale, x0, tTop, x1, tBot, { wipe: flat }), u));
+  // dynamics: bold letters under the music staff, each piece read on its own as p, m or f letters
+  const dTop = ms[1] + 0.3 * u, dBot = st.ys[0] - 0.7 * u;
+  const pieces = inkBlobs(r.ink, r.w, x0, dTop, x1, dBot).filter((b) => b.y1 - b.y0 >= 0.3 * u && b.x1 - b.x0 >= 0.25 * u);
+  pieces.sort((a, b) => a.x0 - b.x0);
+  const groups = [];
+  for (const b of pieces) {
+    const g = groups[groups.length - 1];
+    if (g && b.x0 - g.x1 < 0.3 * u && b.y0 < g.y1 && b.y1 > g.y0) { g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1); g.n += b.n; } else groups.push({ ...b });
+  }
+  for (const g of groups) {
+    const gw = g.x1 - g.x0, gh = g.y1 - g.y0;
+    // a piece cut off at the top of the box is a note hanging from the staff (its stem), not a letter
+    if (g.y0 <= dTop + 1 || gh < 0.6 * u || gh > 2.2 * u || gw > 4 * u || g.n < 0.18 * gw * gh) continue;
+    const ws = await readWords(page, scale, g.x0 - u, g.y0 - u, g.x1 + u, g.y1 + u, { psm: '8', chars: 'pmf', lines: false });
+    const t = ws.map((w) => w.text.trim()).join('');
+    const conf = ws.length ? Math.min(...ws.map((w) => w.conf)) : 0;
+    // a lone f or p comes back with no confidence at all: its tall bold shape vouches for it
+    if (DYNAMICS.has(t) && (conf >= 40 || (/^(f+|p+)$/.test(t) && gh >= 1.3 * u && g.n >= 0.2 * gw * gh))) out.push({ x: g.x0, dy: t });
+  }
+  return out.sort((a, b) => a.x - b.x);
+}
+
+// The bars of some strips in play order, a multi-bar rest counting as that many bars.
+const playBars = (strips) => strips.flatMap((s) => s.bars.flatMap((b) => Array(Math.max(1, b.rest || 1)).fill(b)));
+const playedCols = (b) => b.cols.filter((c) => c.notes?.length);
+
+/** Puts the marks read on the Notation pages onto the same notes of the tab strips (as beat effects). */
+export function applyNotationMarks(strips, noted) {
+  const tab = playBars(strips);
+  const marks = [];
+  let at = 0;
+  for (const { strip, marks: ms } of noted) {
+    const bars = playBars([strip]);
+    for (const m of ms) {
+      let i = bars.findIndex((b) => m.x < b.x1);
+      if (i < 0) continue;
+      const cols = playedCols(bars[i]);
+      let k = cols.findIndex((c) => c.cx >= m.x - 0.8 * (strip.u || 10));
+      if (k < 0) { k = 0; i++; } // after the bar's last note: the next bar's first
+      marks.push({ bar: at + i, k, m });
+    }
+    at += bars.length;
+  }
+  marks.sort((a, b) => a.bar - b.bar || a.k - b.k);
+  let dyn = null;
+  for (const { bar, k, m } of marks) {
+    if (m.dy && m.dy === dyn) continue;
+    let i = bar, c = null;
+    while (i < tab.length && !c) { // a mark over a rest goes on the next note
+      const cols = playedCols(tab[i]);
+      c = i === bar ? cols[Math.min(k, cols.length - 1)] : cols[0];
+      i++;
+    }
+    if (!c) continue;
+    const fx = m.dy ? `dy ${m.dy}` : `txt "${m.txt.replace(/["\\]/g, '')}"`;
+    if (!(c.fx ||= []).includes(fx)) c.fx.push(fx);
+    if (m.dy) dyn = m.dy;
+  }
+}
+
 const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test(l)).length >= 6;
 
 /**
@@ -294,11 +448,14 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
   let how = 'image', unknown = 0, systems = 0;
   let tuning = null;
   const strips = [];
+  const noted = []; // tab staves of the Notation pages, with the marks above each
+  let notation = false;
   for (let n = 1; n <= pdf.numPages; n++) {
     onProgress(n, pdf.numPages);
     const page = await pdf.getPage(n);
     const items = (await page.getTextContent()).items;
     const lines = textLines(items);
+    if (!drums && strips.length && items.some((i) => i.str.trim() === 'Notation')) notation = true;
     tuning ||= parseTuning(items.map((i) => i.str).join(' ')); // "Tuning: E A D G" under the title
     if (looksLikeTab(lines)) {
       how = 'text';
@@ -349,6 +506,13 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
         const st = staves[i];
         const strip = readStrip(r.ink, r.light, r.w, r.h, st);
         if (!strip) continue;
+        if (notation) { // the gap from the staff above (or the page top) holds the music staff and the marks
+          strip.u = st.u;
+          const top = i ? staves[i - 1].ys[staves[i - 1].ys.length - 1] + 1.5 * st.u : 0;
+          const marks = await notationMarks(page, scale, r, st, top);
+          noted.push({ strip, marks });
+          continue;
+        }
         if (tuning?.length === strip.strings) strip.tuning = tuning;
         strip.lyr = lyrics ? await readLyricLine(page, scale, st, r.h) : []; // the line under the rhythm row
         strips.push(strip);
@@ -370,6 +534,7 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
   }
   if (strips.length) {
     await closeLyricReader();
+    if (noted.length) applyNotationMarks(strips, noted);
     const made = ugToAlphaTex(strips, { tempo, title, artist });
     return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, strips, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
   }

@@ -1013,7 +1013,9 @@ SCROLL_JS = r"""(end) => {
 }"""
 SHOW_JS = r"""()=>{ for (const [e, v] of (window.__fbHidden || []).reverse()) e.style.visibility = v; window.__fbHidden = []; }"""
 
-PAGES_JS = r"""async ({ shots, title, lines }) => {
+PAGES_JS = r"""async ({ shots, title, lines, notes }) => {
+  // the pictures of one view joined top to bottom and cut into lines of music
+  const cut = async (shots) => {
   const imgs = await Promise.all(shots.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
   // a song longer than the screen comes in pictures taken further down: each one is put where
   // its rows (ink per row) match the ones before it
@@ -1127,10 +1129,19 @@ PAGES_JS = r"""async ({ shots, title, lines }) => {
     const s = Math.max(0, u.s - pad), e = Math.min(h, u.e + pad);
     const k = document.createElement('canvas'); k.width = x1 - x0; k.height = e - s;
     k.getContext('2d').drawImage(c, x0, s, x1 - x0, e - s, 0, 0, x1 - x0, e - s);
-    return { src: k.toDataURL('image/png'), h: e - s };
+    return { src: k.toDataURL('image/png'), h: e - s, mm: 186 / (x1 - x0) };
   });
+  return { parts, full: last >= h - 3, pictures: at.length };
+  };
+  const tab = await cut(shots);
+  if (tab.error) return tab;
+  // the same score with its music staff (Standard + Tablature): Fretboard reads only the dynamics and
+  // the words ("w/sustainer", "let ring") from these pages, which come after a page headed "Notation"
+  let more = null;
+  if (notes && notes.length) { try { more = await cut(notes); } catch (e) { more = null; } }
+  if (more && more.error) more = null;
   // A4, 12 mm margins: 186 x 273 mm to fill
-  const pageW = 186, pageH = 272, mm = pageW / (x1 - x0);
+  const pageW = 186, pageH = 272;
   document.title = title;
   const st = document.createElement('style');
   st.textContent = '@page{size:A4;margin:12mm}body{margin:0;font-family:Georgia,"Times New Roman",serif;color:#000}'
@@ -1146,13 +1157,23 @@ PAGES_JS = r"""async ({ shots, title, lines }) => {
   }
   let used = page.lastChild ? (page.lastChild.getBoundingClientRect().bottom - page.getBoundingClientRect().top) * 25.4 / 96 + 2 : 0;  // mm the heading takes
   let pages = 1;
-  for (const p of parts) {
-    const hh = Math.min(p.h * mm, pageH);
+  for (const p of tab.parts) {
+    const hh = Math.min(p.h * p.mm, pageH);
     if (used + hh > pageH && used > 0) { page = document.createElement('div'); page.className = 'pg'; document.body.append(page); used = 0; pages++; }
     const el = document.createElement('img'); el.src = p.src; el.style.height = hh + 'mm'; page.append(el); used += hh;
   }
+  if (more) {
+    page = document.createElement('div'); page.className = 'pg'; document.body.append(page); pages++;
+    const el = document.createElement('p'); el.className = 'info'; el.textContent = 'Notation'; page.append(el);
+    used = (el.getBoundingClientRect().bottom - page.getBoundingClientRect().top) * 25.4 / 96 + 2;
+    for (const p of more.parts) {
+      const hh = Math.min(p.h * p.mm, pageH);
+      if (used + hh > pageH && used > 0) { page = document.createElement('div'); page.className = 'pg'; document.body.append(page); used = 0; pages++; }
+      const im = document.createElement('img'); im.src = p.src; im.style.height = hh + 'mm'; page.append(im); used += hh;
+    }
+  }
   await Promise.all([...document.images].map((i) => i.decode()));
-  return { lines: parts.length, pages, full: last >= h - 3, pictures: at.length };
+  return { lines: tab.parts.length, pages, full: tab.full, pictures: tab.pictures, notation: !!more };
 }"""
 
 
@@ -1257,10 +1278,10 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
             pg.wait_for_timeout(1000)
         return shot
 
-    def lay_out(shots):
+    def lay_out(shots, notes):
         out = ctx.new_page()
         try:
-            res = out.evaluate(PAGES_JS, {"shots": shots, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
+            res = out.evaluate(PAGES_JS, {"shots": shots, "notes": notes, "title": label, "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
             if res.get("error"):
                 return res, None
             hold(ui)
@@ -1272,7 +1293,27 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
     # ends below the first picture (it may end in the gap between two lines, so it's always taken)
     shots = [steady(False), steady(True)]
     pg.evaluate("scrollTo(0, 0)")
-    res, pdf = lay_out(shots)
+    # the same score with its music staff too: only there does the player draw the dynamics (mf, f)
+    # and words like "w/sustainer". Fretboard reads just those from these extra pages. A track with
+    # no tab staff (vocals, drums) looks the same either way and gets none.
+    notes = []
+    try:
+        if notation(pg, "Standard + Tablature") is not None:
+            pg.wait_for_timeout(1500)
+            if showing(pg, n, k) is not False:
+                notes = [steady(False), steady(True)]
+                if notes == shots:
+                    notes = []
+    except Cancelled:
+        raise
+    except Exception as err:
+        print(f"  (No notation pages for {n}: {str(err).splitlines()[0][:80]})")
+        notes = []
+    finally:
+        notation(pg, "Tablature")
+        pg.evaluate("scrollTo(0, 0)")
+        pg.wait_for_timeout(800)
+    res, pdf = lay_out(shots, notes)
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
     if res.get("error"):
