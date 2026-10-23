@@ -146,6 +146,19 @@ F |0-00-000|0-00-000|`,
       assert.equal(bar.masterBar.timeSignatureNumerator + '/' + bar.masterBar.timeSignatureDenominator, '4/4');
     },
   },
+  '22 in a chord of 2s and 0s is 2 twice, not fret 22': {
+    text: `f |0--0----|
+C |22---2--|
+Ab|2-------|
+Eb|2-------|
+Bb|0-------|
+F |0-------|`,
+    expect: (n, score) => {
+      const bar = score.tracks[0].staves[0].bars[0];
+      assert.ok(bar.voices[0].beats.every((b) => b.notes.every((m) => m.fret < 10)));
+      assert.equal(bar.masterBar.timeSignatureNumerator + '/' + bar.masterBar.timeSignatureDenominator, '4/4');
+    },
+  },
   'header: drop D, half-step-down list': {
     text: `Tuning: Drop D
 Tempo: 140

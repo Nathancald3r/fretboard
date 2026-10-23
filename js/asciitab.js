@@ -140,6 +140,10 @@ function single(rows, s, c) {
   if (!/\d/.test(row[c] || '') || !/\d/.test(row[c + 1] || '')) return false;
   if (/\d/.test(row[c + 2] || '') || /\d/.test(row[c - 1] || '')) return true;
   if (rows.some((r) => r[c] === '0' && /\d/.test(r[c + 1] || '') && !/\d/.test(r[c - 1] || ''))) return true;
+  // "22" in a chord of 2s and 0s: no hand reaches fret 22 and fret 2 at once, so it's 2 and 2 again
+  const two = Number(row[c] + row[c + 1]);
+  const others = rows.filter((r, k) => k !== s && /\d/.test(r[c] || '') && !/\d/.test(r[c - 1] || '')).map((r) => Number(r[c])).filter((f) => f > 0);
+  if (two >= 10 && others.length && Math.max(...others) <= two - 8) return true;
   return rows.some((r, k) => k !== s && /\d/.test(r[c + 1] || '') && !/\d/.test(r[c] || ''));
 }
 
