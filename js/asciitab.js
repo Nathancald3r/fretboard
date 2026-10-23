@@ -209,13 +209,17 @@ function systemBars(sys) {
     const [a, b] = [edges[i], edges[i + 1]];
     if (b - a < 3) continue; // "||" or a tiny edge piece
     const inBar = events.filter((e) => e.col > a && e.col < b);
-    // strums written side by side ("00000000000000000000"): one character is a 16th, and a bar
-    // wider than 20 characters goes on into more bars rather than being squeezed into 32nds
+    // strums written side by side ("000-00000000"): every strum is an 8th and the dashes between
+    // them only separate groups, so the bar is as long as its strums (11 strums: 11/8). A long run
+    // goes on into bars of 8.
     const close = inBar.filter((e, k) => k && e.col - inBar[k - 1].col === 1).length;
-    if (b - a - 1 > 20 && close >= inBar.length / 2) {
-      for (let s = a; s < b - 1; s += 16) {
-        const part = inBar.filter((e) => e.col > s && e.col <= s + 16);
-        if (part.length || s + 16 < b - 1) out.push(part.length ? barTex(part, s, s + 17) : 'r.1');
+    if (inBar.length > 2 && close >= inBar.length / 2) {
+      const n = inBar.length;
+      const sizes = n <= 16 ? [n] : Array.from({ length: Math.ceil(n / 8) }, (_, k) => Math.min(8, n - 8 * k));
+      let at = 0;
+      for (const size of sizes) {
+        out.push({ ts: [size, 8], tex: inBar.slice(at, at + size).map((e) => beatTex(e.notes, VALUES[6])).join(' ') });
+        at += size;
       }
       continue;
     }
@@ -240,7 +244,15 @@ export function asciiTabToAlphaTex(text, { title = '', artist = '', tempo = 100 
   const used = systems.filter((s) => s.count === strings);
   const tuning = readTuning(used[0].labels, strings);
 
-  const bars = used.flatMap(systemBars);
+  // a bar of strums sets its own time signature; the bars after it go back to 4/4
+  let ts = '4 4';
+  const bars = used.flatMap(systemBars).map((b) => {
+    const want = typeof b === 'string' ? '4 4' : b.ts.join(' ');
+    const tex = typeof b === 'string' ? b : b.tex;
+    const mark = want !== ts ? `\\ts ${want} ` : '';
+    ts = want;
+    return mark + tex;
+  });
   const header = [
     `\\title ${quote(title)}`,
     artist ? `\\artist ${quote(artist)}` : '',
