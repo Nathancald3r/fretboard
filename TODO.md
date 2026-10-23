@@ -42,6 +42,7 @@
      - Fall back to `detectKey` only when there's no key line.
      - Weigh the first and last chord more, and slash chords by their top chord.
    - **Show which key the numbers count from** next to them, e.g. "Roman in G".
+   - **Done 2026-10-23:** the key comes from `Key:` minus `Capo:` (`shapesKey` in `js/theory.js`), the Key menu says "Auto (G, from the page)", and a chip shows "Roman in G". Still to do: the spelling questions below, after the user says what looked wrong.
    - **Check the spelling** against what worship charts use:
      - minor lower case (vi) and diminished vii°; half-diminished as viiø7 or vii⌀7
      - slash basses: we write `IV/1`; charts may want `IV/I` or plain `IV` over a bass note

@@ -3,7 +3,7 @@
 import { updateSong } from './db.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
-import { detectKey, keyLabel, toNashville, toRoman, pitchClass, noteName } from './theory.js';
+import { shapesKey, keyLabel, toNashville, toRoman, pitchClass, noteName } from './theory.js';
 import { shiftChordName } from './transpose.js';
 import { findRecording } from './ytsearch.js';
 import { playStrum, stopStrum } from './strumplay.js';
@@ -109,10 +109,11 @@ function render() {
   const head = sheetHead(song.data);
   // a combined song shows each tab in turn, under its instrument's name
   const text = [head.body ?? song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
-  const detected = detectKey(songChords(text));
+  // the shapes' key: the page's Key: minus its capo, guessed from the chords only with no key line
+  const detected = shapesKey(head.key, head.capo, songChords(text));
   const keySelect = $('tx-key');
   keySelect.innerHTML = '';
-  keySelect.add(new Option(detected ? `Auto (${keyLabel(detected)})` : 'Auto (no chords found)', 'auto'));
+  keySelect.add(new Option(detected ? `Auto (${keyLabel(detected)}${detected.from === 'page' ? ', from the page' : ''})` : 'Auto (no chords found)', 'auto'));
   for (let pc = 0; pc < 12; pc++) {
     for (const minor of [false, true]) keySelect.add(new Option(keyLabel({ tonic: pc, minor }), `${pc}${minor ? 'm' : ''}`));
   }
@@ -137,6 +138,8 @@ function render() {
     head.capo && `Capo <b>${head.capo}</b>${shapes ? ` · ${keyName(shapes)} shapes` : ''}`,
     `<b>${tempo}</b> bpm`,
     head.tuning && !/^E A D G B E$/.test(head.tuning) && `Tuning <b>${escape(head.tuning)}</b>`,
+    // which key the numbers count from (the shapes as played, transposed too)
+    numbers && key && `${song.chordMode === 'roman' ? 'Roman' : 'Nashville'} in <b>${keyName(moveKey(key, shift))}</b>`,
   ].filter(Boolean).map((f) => `<span class="chip">${f}</span>`);
   if (head.url) facts.push(`<a class="chip tx-more" href="${escape(head.url)}" target="_blank" rel="noopener">UG page</a>`);
   $('tx-facts').innerHTML = facts.join('');

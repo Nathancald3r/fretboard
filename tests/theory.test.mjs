@@ -63,3 +63,16 @@ for (const scale of Object.keys(SCALES)) {
   }
 }
 console.log('scale exercises: all load in alphaTab');
+
+// Numbers count from the shapes' key: the page's Key: minus its capo, not a guess from the chords.
+{
+  const { shapesKey } = await import('../js/theory.js');
+  const chords = ['G', 'C/G', 'Em7', 'C/G', 'G'];
+  assert.deepEqual(shapesKey('G', 0, ['C/G', 'G', 'Em7']), { tonic: 7, minor: false, from: 'page' }, 'G sheet read as C before');
+  assert.deepEqual(shapesKey('Bb', 3, chords), { tonic: 7, minor: false, from: 'page' }, 'Key Bb, capo 3: G shapes');
+  assert.deepEqual(shapesKey('C#m', 4, []), { tonic: 9, minor: true, from: 'page' }, 'C#m capo 4: Am shapes');
+  assert.equal(shapesKey('', 0, chords).from, 'chords', 'no key line: guessed');
+  assert.equal(shapesKey('', 0, chords).tonic, 7);
+  assert.equal(toRoman('G', shapesKey('G', 0, ['C/G', 'G'])), 'I');
+  console.log('shapes key: from the page minus the capo');
+}

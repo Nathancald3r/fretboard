@@ -61,6 +61,18 @@ export function detectKey(chordNames) {
   return { tonic: best.tonic, minor: best.minor };
 }
 
+/**
+ * The key numbers count from: the shapes' key, since the numbers are written over the shapes.
+ * The page's "Key:" (how it sounds) minus its capo; only a sheet with no key line is guessed
+ * from its chords. Returns { tonic, minor, from: 'page' | 'chords' } or null.
+ */
+export function shapesKey(pageKey, capo, chordNames) {
+  const tonic = pageKey ? pitchClass(pageKey) : null;
+  if (tonic !== null) return { tonic: (((tonic - (capo || 0)) % 12) + 12) % 12, minor: /m$/.test(pageKey), from: 'page' };
+  const guess = detectKey(chordNames);
+  return guess && { ...guess, from: 'chords' };
+}
+
 /** "Em7/B" in G → "6m7/3". In a minor key numbers count from the minor tonic (Am in Am → "1m"). */
 export function toNashville(chordText, key) {
   const c = parseChord(chordText);
