@@ -57,9 +57,20 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ### How the helper captures a track (`save_track` / `PAGES_JS` in `ug_collect.py`)
 
+- **Speed (2026-10-23): a whole song (8 tracks + chords) takes about 33 s.** About 25 s of that is UG drawing its own print pictures (pure UG CPU work), the floor. Keep it fast:
+  - **Main route: UG's own Print pictures** (`GRAB_JS` / `printed_lines`). A patched `execCommand`/`print` in UG's print frame takes the line pictures, so no Print window opens. Screenshots (`shots_pdf`, the two pictures below) are only the fallback.
+  - **PDFs are written in the background** (`PdfWriter`, over raw CDP) while the next track is taken.
+  - **Always 127.0.0.1, never localhost**: on Windows each localhost connection costs 2 s.
+  - **One Playwright connection per run.** A new one costs ~0.4 s. Another thread needs its own (`find_chords` searches UG for chords while the tracks are taken, when the song has no Chords view).
+  - **Notation switch by page JS** (`SWITCH_JS`, ~0.1 s). Pointer clicks are the fallback. Track picks keep the locator click (JS presses were unreliable). The Instruments toggle needs a raw `pg.mouse.click`.
+  - **Untabbed tracks first** (vocals, drums, keys): they need no view switch.
+  - No fixed waits: wait for the change itself (`settle` in `ug_watch.py`, `wait_for_function`).
+  - Tried and slower: tabs in parallel. Never lower the picture scale (quality).
+- **Cut print pictures:** UG's Print can cut a line's picture right through its bottom staff line (a line with nothing under the staff). `mend` in `PAGES_JS` draws that line back. Without it the line read as five lines and was lost (Synth Pad: 78 bars, not 85).
+- **Official chords:** the JS in `official_chords` needs `'\\n'` in the Python string. A plain `'\n'` broke the JS, and official chords always came back empty.
 - **Switch the view first.** Before saving, it sets the player's Settings → Notation to **Tablature** (`notation(pg, "Tablature")`), then puts the user's own choice back afterwards. Settings shows the user's choice as "St. + Tab"; to restore it, pick the option "Standard + Tablature".
   - Why: in "Standard + Tablature" the note lengths exist only in the music staff, so the tab has no rhythm stems. Every note then reads as a quarter note, and the time signature comes out wrong (13/4 was seen).
-- **Take two pictures every time:** one at the top and one scrolled to the end. `PAGES_JS` matches the two by their ink-per-row profile and joins them.
+- **Screenshot fallback: take two pictures every time:** one at the top and one scrolled to the end. `PAGES_JS` matches the two by their ink-per-row profile and joins them.
   - The canvas (`#xtz_canvas`) is viewport-sized and sticky, so one picture never covers a long song.
   - Never skip the second picture on a "looks complete" check: the song can end in the gap between two lines.
 - **Wait for a steady picture:** `steady()` takes pictures until two in a row agree.
@@ -78,10 +89,13 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **`findStaves`:**
   - **Line detection:** a staff line covers 45% of the page width, *or* is one unbroken run of 15% of it. A one-bar last line is short, and missing it lost a bar.
   - **Thick bands are not staff lines.** A band more than twice the median line thickness (a beam, a block of words) is dropped. It shifted a staff a string down.
+  - **Broken lines:** a row's dark runs joined across small holes (≤ 2.5% of the width, ≥ 80% filled) count as one run. A one-bar last line with broken lines was lost (bar 85).
   - **Seven equally spaced lines** means a six-line staff plus a stray line. Keep the six whose gaps fit best.
   - **A five-line run is a music staff:** skip all of it. Don't step one line on, or its last four lines read as a bass staff (that gave 275 bars).
   - **All of a staff's lines start at the same x.** A beam over a music staff starts after the clef.
 - **`pdftab.js` `tabSize`:** keep only staves whose line spacing is within 20% of the page's median. A music staff with a ledger line or beam can pass as tab.
+- **`pdftab.js` rescale:** after the page is redrawn at tab size, a pale 1-px staff line can fall across two rows, both too pale to count, and its staff is lost. If staves went missing, it tries 1.01× and 0.99× and keeps whichever finds more.
+- **Testing `pdfToTab` in the preview:** run one at a time with `{ lyrics: false }` (two at once share the lyric reader and hang). Its signature is `pdfToTab(buf, onProgress, opts)`.
 - **`barLines`:**
   - **Final double bar:** bar lines closer than one staff space are one bar line. Otherwise the thin and thick lines of the final double bar add an empty bar.
   - **No closing bar line:** a line without one closes at the staff's end.

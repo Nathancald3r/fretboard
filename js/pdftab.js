@@ -498,9 +498,18 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
       how = 'staff';
       let scale = base;
       if (Math.abs(staves[0].u - UG_UNIT) > 0.6) {
+        const found = staves.length;
         scale = base * UG_UNIT / staves[0].u;
         r = await renderInk(page, scale);
         staves = tabSize(findStaves(r.light, r.w, r.h, r.ink, counts));
+        // at this size a pale staff line can fall across two pixel rows, both too pale to count, and
+        // its staff is lost: a hair larger or smaller puts it on one row
+        for (const k of [1.01, 0.99]) {
+          if (staves.length >= found) break;
+          const r2 = await renderInk(page, scale * k);
+          const st2 = tabSize(findStaves(r2.light, r2.w, r2.h, r2.ink, counts));
+          if (st2.length > staves.length) { r = r2; staves = st2; scale *= k; }
+        }
       }
       for (let i = 0; i < staves.length; i++) {
         const st = staves[i];

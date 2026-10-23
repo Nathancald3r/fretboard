@@ -15,16 +15,35 @@ const MAX_MISS = 40;
 // page's "Tuning:" line asks for (four for bass...). Five-line music staves are left alone.
 export function findStaves(light, w, h, ink, counts = [6]) {
   const lines = [];
+  // ink running up and down from (x0, y), a pixel or two either side: a staff's opening bar line
+  const barAt = (x0, y) => {
+    for (let x = Math.max(0, x0 - 2); x <= Math.min(w - 1, x0 + 2); x++) {
+      let up = 0, down = 0;
+      while (y - up - 1 >= 0 && light[(y - up - 1) * w + x]) up++;
+      while (y + down + 1 < h && light[(y + down + 1) * w + x]) down++;
+      if (up + down > 0.025 * w) return true;
+    }
+    return false;
+  };
   for (let y = 0; y < h; y++) {
-    let n = 0, run = 0, longest = 0;
+    let n = 0, run = 0, longest = 0, longX = 0;
+    let span = 0, fill = 0, hole = 0, bridged = 0, spanX = 0, bridgedX = 0; // a run across small holes, and the ink in it
     for (let x = 0; x < w; x++) {
-      n += light[y * w + x];
-      run = light[y * w + x] ? run + 1 : 0;
-      if (run > longest) longest = run;
+      const v = light[y * w + x];
+      n += v;
+      run = v ? run + 1 : 0;
+      if (run > longest) { longest = run; longX = x - run + 1; }
+      if (!v) { hole++; continue; }
+      if (span && hole <= 0.025 * w) { span += hole + 1; fill++; } else { span = 1; fill = 1; spanX = x; }
+      hole = 0;
+      if (fill >= 0.8 * span && span > bridged) { bridged = span; bridgedX = spanX; }
     }
     // staff lines span the page and are broken only by fret numbers; a text tab's dashes never join up.
-    // A last line holding a bar or two is shorter, but unbroken.
-    if ((n > 0.45 * w && longest > 20) || longest > 0.15 * w) {
+    // A last line holding a bar or two is shorter, but unbroken, or broken only by a fret number or
+    // two (mostly ink across the holes; a row of words is mostly gaps). One bar alone can be just 9%
+    // of the page: that short, it must start at a bar line (a long flat tie doesn't).
+    if ((n > 0.45 * w && longest > 20) || longest > 0.15 * w || bridged > 0.15 * w
+      || (longest > 0.07 * w && barAt(longX, y)) || (bridged > 0.07 * w && barAt(bridgedX, y))) {
       if (lines.length && y - lines[lines.length - 1].last <= 1) { const l = lines[lines.length - 1]; l.last = y; l.sum += y; l.n++; }
       else lines.push({ last: y, sum: y, n: 1 });
     }

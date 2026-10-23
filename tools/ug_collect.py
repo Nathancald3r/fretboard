@@ -24,7 +24,7 @@ lyrics off the last line of each page.)
 Then in Fretboard: Import files (it opens in this song's folder), select all, check, Create song.
 Exit codes: 0 done, 1 failed, 2 skipped, 3 cancelled.
 """
-import argparse, base64, ctypes, json, os, queue, re, subprocess, sys, threading, time, urllib.request
+import argparse, base64, ctypes, json, os, queue, re, subprocess, sys, threading, time, urllib.parse, urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -49,14 +49,16 @@ def hold(ui):
         raise Cancelled
 
 
-def park_chrome(cdp, pg):
+def park_chrome(cdp, pg, check=False):
     """Moves the collector Chrome off the screen while it works, so it doesn't sit in front of you.
-    A Chrome the helper didn't start stops drawing out of sight: that one is brought back."""
+    A Chrome the helper didn't start stops drawing out of sight: with check, that one is brought back
+    (only pictures of the screen need the drawing; UG's Print works out of sight)."""
     try:
         from ug_watch import hide_window, show_window
         hide_window(cdp)
-        pg.wait_for_timeout(800)
-        if pg.evaluate("document.visibilityState") != "visible":
+        if check:
+            pg.wait_for_timeout(800)
+        if check and pg.evaluate("document.visibilityState") != "visible":
             show_window(activate=False)
             print("  (This Chrome wasn't started by the UG helper, so it stays on the screen while it works.)")
     except Exception:
@@ -131,7 +133,7 @@ def idle_seconds():
 # ---------- Chrome ----------
 
 def targets():
-    with urllib.request.urlopen(f"http://localhost:{PORT}/json/list", timeout=5) as r:
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=5) as r:
         return json.load(r)
 
 
@@ -149,15 +151,22 @@ def close_prints(ctx=None, dialog=True):
         pass
 
 
+def save_as_open():
+    try:
+        return bool(ctypes.windll.user32.FindWindowW("#32770", "Save As"))
+    except Exception:
+        return True
+
+
 def _close_prints(dialog=True):
-    if dialog and DIALOG.exists():
+    if dialog and DIALOG.exists() and save_as_open():
         subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(DIALOG), "-CancelAll"],
                        capture_output=True, text=True)
     if not print_open():
         return
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        c = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
+        c = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0]
         for pr in [x for x in c.pages if x.url.startswith("chrome://print")]:
             try:
                 pr.locator("cr-button.cancel-button").first.click(no_wait_after=True, timeout=4000)
@@ -169,7 +178,7 @@ def _close_prints(dialog=True):
         time.sleep(0.1)
     for t in targets():  # last resort: close the Print window itself (never the song's tab)
         if t["url"].startswith("chrome://print") and t["type"] == "page":
-            urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/close/{t['id']}", timeout=5).read()
 
 
 def set_a4(pr):
@@ -208,7 +217,10 @@ def song_page(ctx, url):
     pg = ctx.new_page()  # the open tab is stuck (or gone): work in a fresh one, leave the user's tab be
     pg.set_viewport_size({"width": 1500, "height": 1000})
     pg.goto(url, wait_until="domcontentloaded")
-    pg.wait_for_timeout(4000)
+    try:  # on once the player is up (its Print button shows)
+        pg.wait_for_function("() => [...document.querySelectorAll('button')].some((b) => b.innerText.trim() == 'Print')", timeout=15000, polling=100)
+    except Exception:
+        pass
     front(pg)
     return pg
 
@@ -219,7 +231,6 @@ def front(pg):
     sight again straight after (park_chrome)."""
     try:
         pg.bring_to_front()
-        pg.wait_for_timeout(500)
     except Exception:
         pass
 
@@ -239,24 +250,31 @@ def keep_drawing(cdp, pg):
             return
         front(pg)
         if minimized:
-            park_chrome(cdp, pg)
+            park_chrome(cdp, pg, check=True)
     except Exception:
         pass
+
+
+INSTRUMENTS_JS = """()=>{const h=[...document.querySelectorAll('h2')].find(e=>e.innerText.trim()=='Instruments');
+  return !!(h&&h.getBoundingClientRect().width>0&&h.closest('[aria-hidden=true]')==null)}"""
 
 
 def open_instruments(pg):
     """Show the player's Instruments panel (track list) if it's folded away."""
     for _ in range(3):
-        shown = pg.evaluate("""()=>{const h=[...document.querySelectorAll('h2')].find(e=>e.innerText.trim()=='Instruments');
-          if(h&&h.getBoundingClientRect().width>0&&h.closest('[aria-hidden=true]')==null)return true;
-          return false}""")
-        if shown:
+        if pg.evaluate(INSTRUMENTS_JS):
             return
         try:
-            pg.locator('[class*=_0kBTe]').first.click(timeout=3000)  # the |<- tab at the score's right edge
+            # the |<- tab at the score's right edge, pressed with a plain mouse click at its middle: a
+            # locator click is reported as blocked (it lands all the same) and waits out its timeout,
+            # and a click() from the page doesn't open it
+            at = pg.evaluate("(()=>{const e=document.querySelector('[class*=_0kBTe]');if(!e)return null;"
+                             "const r=e.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
+            if at:
+                pg.mouse.click(*at)
+            pg.wait_for_function(INSTRUMENTS_JS, timeout=2000, polling=50)
         except Exception:
             pass
-        pg.wait_for_timeout(1200)
 
 
 NOTATION_JS = r"""() => {
@@ -265,10 +283,38 @@ NOTATION_JS = r"""() => {
 }"""
 
 
+# Settings > Notation > want, each press as soon as its menu shows. The choice before ("St. + Tab",
+# "Tablature"...) once the button shows label, the new choice's short name; null when a step didn't come.
+SWITCH_JS = r"""async ([want, label]) => {
+  const wait = async (f) => { const end = Date.now() + 3000; for (;;) { const v = f(); if (v || Date.now() > end) return v; await new Promise((r) => setTimeout(r, 20)); } };
+  const now = () => { const b = [...document.querySelectorAll('button')].find((e) => /^Notation/.test(e.textContent.trim())); return b ? b.textContent.trim().replace(/^Notation/, '') : null; };
+  const close = () => document.querySelectorAll('button[aria-label=Dismiss]').forEach((b) => b.click());
+  try {
+    const gear = document.querySelector('button[aria-label=Settings]');
+    if (!gear) return null;
+    gear.click();
+    const was = await wait(now);
+    if (!was || was === label) return was;
+    [...document.querySelectorAll('button')].find((e) => /^Notation/.test(e.textContent.trim())).click();
+    const op = await wait(() => [...document.querySelectorAll('[role=option]')].find((e) => e.textContent.trim() === want));
+    if (!op) return null;
+    op.click();
+    return (await wait(() => now() === label)) ? was : null;
+  } finally { close(); }
+}"""
+
+
 def notation(pg, want=None):
     """The player's Settings > Notation choice ("St. + Tab", "Tablature"...). With want ("Tablature",
     "Standard + Tablature"), picks it first. Tablature alone draws each note's length under the tab,
     which Fretboard reads; under a music staff the lengths are only in the staff. None: not found."""
+    if want:  # pressed from the page (~0.1 s); the pointer clicks below are the fallback (~0.5-1.4 s)
+        try:
+            was = pg.evaluate(SWITCH_JS, [want, {NOTES_VIEW: "St. + Tab"}.get(want, want)])
+            if was:
+                return was
+        except Exception:
+            pass
     gear = pg.locator("button[aria-label=Settings]").first
     dismiss = "() => document.querySelectorAll('button[aria-label=Dismiss]').forEach((b) => b.click())"
     try:
@@ -364,24 +410,26 @@ def page_video(pg):
 
 def official_chords(pg):
     """An official song's Chords view: its chords over the words, in the song's own order. "" when it has none."""
+    pressed = False
     try:
         b = pg.get_by_role("button", name="Chords", exact=True)
         if not b.count():
             return ""
+        pressed = True
         b.first.click(timeout=5000)
         text = ""
-        for _ in range(16):
-            pg.wait_for_timeout(500)
-            text = pg.evaluate("()=>[...document.querySelectorAll('pre')].filter(p=>p.offsetParent!==null).map(p=>p.innerText).join('\n').trim()")
+        for _ in range(80):
+            text = pg.evaluate("()=>[...document.querySelectorAll('pre')].filter(p=>p.offsetParent!==null).map(p=>p.innerText).join('\\n').trim()")
             if text:
                 break
+            pg.wait_for_timeout(100)
         return text.replace("\r\n", "\n")
     except Exception:
         return ""
     finally:
         try:
-            pg.get_by_role("button", name="Tab", exact=True).first.click(timeout=5000)
-            pg.wait_for_timeout(800)
+            if pressed:
+                pg.get_by_role("button", name="Tab", exact=True).first.click(timeout=5000)
         except Exception:
             pass
 
@@ -412,11 +460,11 @@ def search_url(pg, song, artist, type, code):
     pg.goto("https://www.ultimate-guitar.com/search.php?" + urllib.parse.urlencode({"search_type": "title", "value": q, "type": code}),
             wait_until="domcontentloaded", timeout=30000)
     url = None
-    for _ in range(20):
+    for _ in range(100):
         url = pg.evaluate(CHORDS_JS, [q, type])
         if url is not None:
             break
-        pg.wait_for_timeout(500)
+        pg.wait_for_timeout(100)
     return url or ""
 
 
@@ -496,7 +544,7 @@ def tidy_tabs(keep_url=""):
         close = close[1:]
     for t in close:
         try:
-            urllib.request.urlopen(f"http://localhost:{PORT}/json/close/{t['id']}", timeout=5).read()
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/close/{t['id']}", timeout=5).read()
         except Exception:
             pass
 
@@ -512,11 +560,11 @@ def search_chords(ctx, song, artist):
             return "", ""
         pg.goto(url, wait_until="domcontentloaded", timeout=30000)
         info = {}
-        for _ in range(20):
-            pg.wait_for_timeout(500)
+        for _ in range(100):
             info = page_text(pg)
             if info.get("text", "").strip():
                 break
+            pg.wait_for_timeout(100)
         return info.get("text", "").strip(), page_video(pg)
     except Exception as e:
         print(f"  (No chords page: {str(e).splitlines()[0][:100]})")
@@ -552,10 +600,10 @@ def song_folder(root, song, artist, key):
     return root / (base + (f" (Key {key})" if key else ""))
 
 
-def free_name(folder, stem, ext):
-    """<stem><ext>, or "<stem> (2)<ext>"... when that's taken: nothing is ever replaced."""
+def free_name(folder, stem, ext, taken=()):
+    """<stem><ext>, or "<stem> (2)<ext>"... when that's taken (or in taken: names about to be written)."""
     dest, k = folder / f"{stem}{ext}", 2
-    while dest.exists():
+    while dest.exists() or dest in taken:
         dest = folder / f"{stem} ({k}){ext}"
         k += 1
     return dest
@@ -976,6 +1024,7 @@ def wait_idle(ui, i, n, name, eta):
 # which this Chrome writes to the PDF straight away (no Print or Save As window).
 
 SHOT_W, SHOT_H, SHOT_DSF = 1536, 7000, 2
+PRINT_H = 1000  # Print draws the whole score whatever the screen's height; a short one lays out quicker
 
 # Where the score's drawing is on the page. Anything lying over it (the player's bars, the
 # Instruments panel) is hidden for the moment of the picture, then shown again (SHOW_JS).
@@ -1013,7 +1062,7 @@ SCROLL_JS = r"""(end) => {
 }"""
 SHOW_JS = r"""()=>{ for (const [e, v] of (window.__fbHidden || []).reverse()) e.style.visibility = v; window.__fbHidden = []; }"""
 
-PAGES_JS = r"""async ({ shots, title, lines, notes, printed }) => {
+PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => {
   // the pictures of one view joined top to bottom and cut into lines of music
   const cut = async (shots) => {
   const imgs = await Promise.all(shots.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
@@ -1134,8 +1183,36 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed }) => {
   return { parts, full: last >= h - 3, pictures: at.length };
   };
   // UG's own Print already comes cut into lines, one picture each
+  // UG's Print can cut a line's picture off right through its bottom staff line (a line with nothing
+  // under the staff): only a faint trace of it is left in the last row, so Fretboard sees five lines,
+  // not six, and loses the line. That line is drawn back in, one staff space under the one above.
+  const mend = (img) => {
+    const w = img.width, h = img.height, c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g2 = c.getContext('2d', { willReadFrequently: true });
+    g2.drawImage(img, 0, 0);
+    const d = g2.getImageData(0, 0, w, h).data;
+    const dark = (y, lim) => { let k = 0; for (let x = 0; x < w; x += 2) if (d[(y * w + x) * 4] < lim) k++; return k > 0.2 * w; };
+    if (!dark(h - 1, 245) || dark(h - 1, 160)) return img.src;
+    const rows = [];
+    for (let y = 0; y < h - 1; y++) if (dark(y, 160)) { if (rows.length && y - rows[rows.length - 1][1] <= 1) rows[rows.length - 1][1] = y; else rows.push([y, y]); }
+    if (rows.length < 5) return img.src;
+    const [a, b] = rows.slice(-2), gap = b[0] - a[0];
+    if (gap < 8 || Math.abs(h - 1 - b[0] - gap) > 2) return img.src;
+    let x0 = 0, x1 = w - 1;
+    while (x0 < w && d[(b[0] * w + x0) * 4] >= 160) x0++;
+    while (x1 > x0 && d[(b[0] * w + x1) * 4] >= 160) x1--;
+    const out = document.createElement('canvas'), t = b[1] - b[0] + 1;
+    out.width = w; out.height = b[0] + gap + Math.round(gap / 2);
+    const o = out.getContext('2d');
+    o.fillStyle = '#fff'; o.fillRect(0, 0, w, out.height);
+    o.drawImage(img, 0, 0);
+    o.fillStyle = '#000'; o.fillRect(x0, b[0] + gap, x1 - x0 + 1, t);
+    return out.toDataURL('image/png');
+  };
+  const load = (s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; });
   const given = async (srcs) => {
-    const imgs = await Promise.all(srcs.map((s) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = s; })));
+    const imgs = await Promise.all(srcs.map(async (s) => { const i = await load(s), m = mend(i); return m === i.src ? i : load(m); }));
     return { parts: imgs.map((i) => ({ src: i.src, h: i.height, mm: 186 / i.width })), full: false, pictures: 0 };
   };
   const tab = printed ? await given(printed) : await cut(shots);
@@ -1147,7 +1224,8 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed }) => {
   // the same score with its music staff (Standard + Tablature): Fretboard reads only the dynamics and
   // the words ("w/sustainer", "let ring") from these pages, which come after a page headed "Notation"
   let more = null;
-  if (notes && notes.length) { try { more = await cut(notes); } catch (e) { more = null; } }
+  if (notesPrinted && notesPrinted.length) more = await given(notesPrinted);
+  else if (notes && notes.length) { try { more = await cut(notes); } catch (e) { more = null; } }
   if (more && more.error) more = null;
   // A4, 12 mm margins: 186 x 273 mm to fill
   const pageW = 186, pageH = 272;
@@ -1273,51 +1351,61 @@ def pick_track(pg, n, k=0):
         raise RuntimeError(f"Couldn't find the track {n} in Instruments.")
 
 
-PRINT_JS = r"""() => {
+# UG's Print button draws the shown track one picture per line (PNG data URLs) into a frame of
+# its own, then asks Chrome to print the frame (document.execCommand("print")). While a take is
+# wanted (__fbWant), that call hands the frame's pictures over instead: no Print window opens,
+# and any other Print still prints. The frame's window is reached through the iframe's
+# contentWindow, which UG's code reads right before it prints.
+GRAB_JS = r"""() => {
+  if (!window.__fbHooked) {
+    window.__fbHooked = true;
+    const take = (d) => { window.__fbImgs = [...d.images].map((i) => i.src).filter((s) => s.startsWith('data:image/')); };
+    const patch = (w) => {
+      try {
+        if (!w || w === window || w.__fbPatched) return;
+        w.__fbPatched = true;
+        const d = w.document, ex = d.execCommand, pr = w.print;
+        d.execCommand = function (c, ...a) {
+          if (window.__fbWant && String(c).toLowerCase() === 'print') { window.__fbWant = false; take(w.document); return true; }
+          return ex.call(this, c, ...a);
+        };
+        w.print = function () { if (window.__fbWant) { window.__fbWant = false; take(w.document); return; } return pr.call(w); };
+      } catch (e) {}
+    };
+    const cw = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, get() { const w = cw.get.call(this); patch(w); return w; } });
+  }
   const b = [...document.querySelectorAll('button')].find((e) => e.innerText.trim() == 'Print');
   if (!b) return false;
-  setTimeout(() => b.click(), 0);  // after this call returns: the Print window then holds the page
+  window.__fbImgs = null; window.__fbWant = true;
+  b.click();
   return true;
 }"""
 
 
-def printed_lines(ui, ctx, pg, cdp):
-    """The shown track as UG's own Print draws it: one picture per line, as PNG data URLs. UG puts
-    them in a frame on the page and opens Chrome's Print window; the pictures are read from the
-    frame and the window is cancelled straight away (nothing is printed, no Save As). Chrome's own
-    page breaks are what cut lyrics off a UG printout; these lines are set on pages by PAGES_JS.
-    None when UG has no Print button or it didn't open."""
-    if not pg.evaluate(PRINT_JS):
+def printed_lines(ui, pg):
+    """The shown track, in the player's Notation view now, as UG's own Print draws it: one picture
+    per line (PNG data URLs, about 2200 px wide on the sharp screen). About 2 s for tab alone,
+    4 s with the music staff. Works with the tab behind others. None when UG has no Print button
+    or its print went another way (a Print window that opened anyway is cancelled)."""
+    if not pg.evaluate(GRAB_JS):
         return None
+    t0 = time.time()
     try:
-        for _ in range(300):  # UG draws its pages first: a few seconds for a long song
+        while time.time() - t0 < 30:
             hold(ui)
-            if print_open():
-                break
-            time.sleep(0.1)
-        else:
-            return None
-        root = cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})["root"]
-        srcs, todo = [], [root]
-        while todo:
-            node = todo.pop()
-            if node.get("nodeName") == "IFRAME" and node.get("contentDocument"):
-                frame = [node["contentDocument"]]
-                while frame:
-                    m = frame.pop()
-                    if m.get("nodeName") == "IMG":
-                        a = m.get("attributes", [])
-                        src = dict(zip(a[::2], a[1::2])).get("src", "")
-                        if src.startswith("data:image/"):
-                            srcs.append(src)
-                    frame += reversed(m.get("children", []) or [])  # in the page's order
-            todo += reversed(node.get("children", []) or [])
-        return srcs or None
+            if pg.evaluate("!!(window.__fbImgs && window.__fbImgs.length)"):
+                return pg.evaluate("window.__fbImgs")
+            if time.time() - t0 > 2 and print_open():  # printed without the frame's own call
+                cancel_print()
+                return None
+            pg.wait_for_timeout(25)
+        return None
     finally:
-        cancel_print(ctx)
+        pg.evaluate("window.__fbWant = false; window.__fbImgs = null")
 
 
-def cancel_print(ctx):
+def cancel_print():
     """The Print window's own Cancel: that frees the song's tab at once. Playwright's open
     connection never sees a Print window opened after it connected, so a fresh one in its
     own process clicks Cancel (a second connection can't run in this one)."""
@@ -1330,10 +1418,12 @@ NOTES_VIEW = "Standard + Tablature"
 NO_TAB = re.compile(r"drum|perc|shaker|tambourine|vocal|voice|sing|choir|piano|key|organ|synth(?!\s*bass)|pad|string|violin|cello|horn|sax|trumpet|flute", re.I)
 
 
-def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
-    """One track: show it, take the score once it has stopped changing, write the PDF.
-    view: a one-item list, the player's Notation view now; kept up to date for the next track."""
-    view = view if view is not None else ["Tablature"]
+def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None, writer=None):
+    """One track: show it, take the score, write the PDF.
+    view: [the player's Notation view now, the track before's Print pictures]; kept up to date for the next track.
+    writer: a PdfWriter, which writes the PDF while the next track is taken; (None, "", {}) comes back
+    at once and the writer reports the outcome. Without it the PDF is written here: (ok, why, res)."""
+    view = view if view is not None else ["Tablature", None]
     pick_track(pg, n, k)
     for _ in range(16):  # on as soon as the player shows it (steady() then waits for the drawing)
         if showing(pg, n, k):
@@ -1357,17 +1447,32 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
             pg.wait_for_timeout(400)
         return shot
 
-    def lay_out(shots, notes, printed=None):
-        out = ctx.new_page()
+    def lay_out(shots, notes, printed=None, notes_printed=None):  # what PAGES_JS sets on the pages
+        return {"shots": shots, "notes": notes, "printed": printed, "notesPrinted": notes_printed, "title": label,
+                "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]}
+
+    fretted = not NO_TAB.search(n)  # by the name: UG shows a Tuning line under every track, drums too
+
+    def shots_pdf():
+        front(pg)
+        park_chrome(cdp, pg, check=True)
+        keep_drawing(cdp, pg)
+        sharp_screen(cdp, pg)  # tall: as much of the score in one picture as it takes
         try:
-            res = out.evaluate(PAGES_JS, {"shots": shots, "notes": notes, "printed": printed, "title": label,
-                                          "lines": [lines[0], lines[1], f"{n}  ·  Tuning: {tuning}" if tuning else n]})
-            if res.get("error"):
-                return res, None
-            hold(ui)
-            return res, ctx.new_cdp_session(out).send("Page.printToPDF", {"preferCSSPageSize": True, "printBackground": True})
+            notes = notes_pages() if fretted and view[0] == NOTES_VIEW else None
+            if view[0] != "Tablature" and not switch("Tablature"):
+                raise RuntimeError("Couldn't switch the player to Tablature.")
+            # the score from its top, then scrolled down as far as it goes: a song longer than the screen
+            # ends below the first picture (it may end in the gap between two lines, so it's always taken)
+            shots = [steady(False), steady(True)]
+            if notes is None:
+                notes = notes_pages() if fretted else []
+            if notes == shots:
+                notes = []
+            pg.evaluate("scrollTo(0, 0)")
+            return lay_out(shots, notes)
         finally:
-            out.close()
+            sharp_screen(cdp, pg, height=PRINT_H)
 
     def switch(to):
         pg.evaluate("scrollTo(0, 0)")
@@ -1391,34 +1496,134 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
             print(f"  (No notation pages for {n}: {str(err).splitlines()[0][:80]})")
             return []
 
-    # Each track starts in the view the one before ended in, so the view switches once per track,
-    # not twice: tab view, then notation; the next track notation, then tab view.
-    fretted = bool(tuning) or not NO_TAB.search(n)
-    notes = notes_pages() if fretted and view[0] == NOTES_VIEW else None
-    if view[0] != "Tablature" and not switch("Tablature"):
-        raise RuntimeError("Couldn't switch the player to Tablature.")
-    # the score from its top, then scrolled down as far as it goes: a song longer than the screen
-    # ends below the first picture (it may end in the gap between two lines, so it's always taken)
-    shots = [steady(False), steady(True)]
-    if notes is None:
-        notes = notes_pages() if fretted else []
-    if notes == shots:
-        notes = []
-    pg.evaluate("scrollTo(0, 0)")
-    res, pdf = lay_out(shots, notes)
-    if res.get("glitch"):
-        # the pictures came out jumbled: the track is taken again from UG's own Print, in tab view
-        print(f"  ({n}: the pictures came out jumbled; taking it from UG's Print instead)")
-        if view[0] == "Tablature" or switch("Tablature"):
-            printed = printed_lines(ui, ctx, pg, cdp)
-            if printed:
-                res, pdf = lay_out(None, [], printed)
+    # UG's own Print pictures: tab view (the notes' lengths), then for a fretted track the view with
+    # its music staff (dynamics, words). Each track starts in the view the one before ended in, so
+    # the view switches once per track, not twice. No waits: Print draws the new view or track at once.
+    def printed(want):
+        if view[0] != want:
+            if notation(pg, want) is None:
+                return None
+            view[0] = want
+        return printed_lines(ui, pg)
+    order = [NOTES_VIEW, "Tablature"] if fretted and view[0] == NOTES_VIEW else ["Tablature", NOTES_VIEW]
+    got = {}
+    for v in order:
+        if v == NOTES_VIEW and not fretted:
+            continue
+        got[v] = printed(v)
+        if v == "Tablature" and not got[v]:
+            break
+    tab, notes = got.get("Tablature"), got.get(NOTES_VIEW) or []
+    if tab and tab == view[1] and showing(pg, n, k) is not True:  # still the track before's: once more
+        pick_track(pg, n, k)
+        tab = printed("Tablature")
+    if tab:
+        view[1] = tab
+        job = lay_out(None, [], tab, notes if notes != tab else [])
+    else:
+        print(f"  ({n}: UG's Print gave no pictures; taking pictures of the score instead)")
+        job = shots_pdf()
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
-    if res.get("error"):
-        return False, res["error"], res
-    if res.get("glitch"):  # UG's Print didn't come: the whole track is tried again (work())
-        return False, "the pictures came out jumbled", res
+    if writer and tab:
+        writer.add(job, dest)
+        return None, "", {}
+    return write_pdf(job, dest)
+
+
+class Cdp:
+    """One DevTools target over a websocket of its own (standard library only). Playwright's sync API
+    serves one thing at a time, so the PDFs are written over this, in a thread beside it."""
+    def __init__(self, url, timeout=120):
+        import socket
+        u = urllib.parse.urlparse(url)
+        self.s = socket.create_connection((u.hostname, u.port), timeout=timeout)
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.s.sendall((f"GET {u.path} HTTP/1.1\r\nHost: {u.hostname}:{u.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                        f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+        self.buf = b""
+        while b"\r\n\r\n" not in self.buf:
+            c = self.s.recv(65536)
+            if not c:
+                raise ConnectionError("DevTools closed the connection")
+            self.buf += c
+        head, self.buf = self.buf.split(b"\r\n\r\n", 1)
+        if b" 101 " not in head.split(b"\r\n")[0]:
+            raise ConnectionError("DevTools refused the connection")
+        self.id = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.s.close()
+
+    def _need(self, n):
+        while len(self.buf) < n:
+            c = self.s.recv(1 << 20)
+            if not c:
+                raise ConnectionError("DevTools closed the connection")
+            self.buf += c
+
+    def _frame(self):
+        self._need(2)
+        fin, op, n, o = self.buf[0] & 0x80, self.buf[0] & 0x0F, self.buf[1] & 0x7F, 2
+        if n == 126:
+            self._need(4); n = int.from_bytes(self.buf[2:4], "big"); o = 4
+        elif n == 127:
+            self._need(10); n = int.from_bytes(self.buf[2:10], "big"); o = 10
+        self._need(o + n)
+        data, self.buf = self.buf[o:o + n], self.buf[o + n:]
+        return fin, op, data
+
+    def send(self, method, params=None):
+        self.id += 1
+        msg = json.dumps({"id": self.id, "method": method, "params": params or {}}).encode()
+        n, mask = len(msg), os.urandom(4)
+        head = bytes([0x81]) + (bytes([0x80 | n]) if n < 126 else bytes([0xFE]) + n.to_bytes(2, "big") if n < 65536
+                                else bytes([0xFF]) + n.to_bytes(8, "big"))
+        keys = (mask * (n // 4 + 1))[:n]  # masked all at once, as one big number (a byte loop takes seconds)
+        self.s.sendall(head + mask + (int.from_bytes(msg, "big") ^ int.from_bytes(keys, "big")).to_bytes(n, "big"))
+        while True:
+            parts = []
+            while True:
+                fin, op, data = self._frame()
+                if op == 8:
+                    raise ConnectionError("DevTools closed the connection")
+                if op in (0, 1, 2):
+                    parts.append(data)
+                if fin and op in (0, 1, 2):
+                    break
+            r = json.loads(b"".join(parts))
+            if r.get("id") == self.id:
+                if "error" in r:
+                    raise RuntimeError(f"{method}: {r['error'].get('message', r['error'])}")
+                return r.get("result", {})
+
+
+def write_pdf(job, dest):
+    """One track's PDF: PAGES_JS sets its pictures on A4 pages in a background tab of this Chrome,
+    which writes them to the PDF (no Print or Save As window). (ok, why, res)"""
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/version", timeout=5) as r:
+        browser = json.load(r)["webSocketDebuggerUrl"]
+    with Cdp(browser) as b:
+        tid = b.send("Target.createTarget", {"url": "about:blank", "background": True})["targetId"]
+        try:
+            with Cdp(f"ws://127.0.0.1:{PORT}/devtools/page/{tid}") as c:
+                r = c.send("Runtime.evaluate", {"expression": f"({PAGES_JS})({json.dumps(job)})", "awaitPromise": True, "returnByValue": True})
+                if r.get("exceptionDetails"):
+                    return False, "the pages couldn't be laid out", {}
+                res = r["result"]["value"]
+                if res.get("error"):
+                    return False, res["error"], res
+                if res.get("glitch"):  # the pictures came out jumbled: the whole track is tried again (work())
+                    return False, "the pictures came out jumbled", res
+                pdf = c.send("Page.printToPDF", {"preferCSSPageSize": True, "printBackground": True})
+        finally:
+            try:
+                b.send("Target.closeTarget", {"targetId": tid})
+            except Exception:
+                pass
     tmp = dest.with_name(dest.name + ".part")
     tmp.write_bytes(base64.b64decode(pdf["data"]))
     if dest.exists():  # appeared meanwhile: never replaced
@@ -1426,6 +1631,34 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
         return False, "a file with that name appeared", res
     tmp.rename(dest)
     return True, "", res
+
+
+class PdfWriter:
+    """Writes the tracks' PDFs one after another in a thread of its own while the next track is taken
+    (setting one on pages and writing it takes 1 to 4 s, about as long as taking a track).
+    done(dest, ok, why, res) is called from that thread when each one is written."""
+    def __init__(self, done):
+        from concurrent.futures import ThreadPoolExecutor
+        self.pool, self.done, self.jobs = ThreadPoolExecutor(1), done, []
+
+    def add(self, job, dest):
+        self.jobs.append(self.pool.submit(self._write, job, dest))
+
+    def _write(self, job, dest):
+        try:
+            r = write_pdf(job, dest)
+        except Exception as err:
+            r = (False, str(err).splitlines()[0][:120], {})
+        try:
+            self.done(dest, *r)
+        except Exception as err:
+            print(f"  ({dest.name}: {err})")
+
+    def finish(self):
+        """Waits until every PDF handed over is written."""
+        for f in self.jobs:
+            f.result()
+        self.jobs = []
 
 
 def save_gp(pg, out, stem):
@@ -1556,31 +1789,32 @@ def save_single(ui, a, result, pg, kind, label, key="", url=None, chords=None, w
 
 def work(ui, a, result):
     from playwright.sync_api import sync_playwright
-    run = None
+    run = p = None
     try:
         close_prints()
-        with sync_playwright() as p:
-            ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
-            pg = song_page(ctx, a.url)
-            if "login" in pg.url.lower():
-                raise RuntimeError("Not logged in: log in to UG Pro in that Chrome window and open the song again.")
-            kind, label = page_kind(pg)
-            if kind != "official":
-                return save_single(ui, a, result, pg, kind, label)
-            open_instruments(pg)
-            names = track_names(pg)
-            song, artist = song_name(pg)
-            # original key from the "Tuning: ... · Key: Bb · Capo: ..." line
-            km = re.search(r"Key:\s*([A-G][#b♭♯]?m?)", pg.evaluate("document.body.innerText"))
-            key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
-            # --gp: its Guitar Pro version instead of the PDFs, when UG has one
-            if not a.only.strip() and a.gp:
-                gp_url = official_gp(pg) or search_gp(ctx, song, artist)
-                if gp_url:
-                    done = official_as_gp(ui, a, result, ctx, pg, gp_url, song, key, len(names))
-                    if done:
-                        return
-                    print("  (The Guitar Pro version has no Download button: saving the PDFs instead.)")
+        p = sync_playwright().start()  # one connection for the whole run (each new one costs ~0.4 s)
+        ctx = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0]
+        pg = song_page(ctx, a.url)
+        if "login" in pg.url.lower():
+            raise RuntimeError("Not logged in: log in to UG Pro in that Chrome window and open the song again.")
+        kind, label = page_kind(pg)
+        if kind != "official":
+            return save_single(ui, a, result, pg, kind, label)
+        open_instruments(pg)
+        names = track_names(pg)
+        song, artist = song_name(pg)
+        has_chords = pg.get_by_role("button", name="Chords", exact=True).count() > 0
+        # original key from the "Tuning: ... · Key: Bb · Capo: ..." line
+        km = re.search(r"Key:\s*([A-G][#b♭♯]?m?)", pg.evaluate("document.body.innerText"))
+        key = km.group(1).replace("♭", "b").replace("♯", "#") if km else ""
+        # --gp: its Guitar Pro version instead of the PDFs, when UG has one
+        if not a.only.strip() and a.gp:
+            gp_url = official_gp(pg) or search_gp(ctx, song, artist)
+            if gp_url:
+                done = official_as_gp(ui, a, result, ctx, pg, gp_url, song, key, len(names))
+                if done:
+                    return
+                print("  (The Guitar Pro version has no Download button: saving the PDFs instead.)")
         if not names:
             raise RuntimeError("Couldn't read the Instruments list. Open the song's player page, show the Instruments panel, and try again.")
         every = list(names)  # all the song's tracks (a replaced song keeps the ones not saved again)
@@ -1598,64 +1832,98 @@ def work(ui, a, result):
         run = ui.run_obj = Run(out, a.root, set_latest=not a.out)
         run.start()
         saved, missing, took = [], [], []
-        with sync_playwright() as p:
-            ctx = p.chromium.connect_over_cdp(f"http://localhost:{PORT}").contexts[0]
-            pg = song_page(ctx, a.url)
-            cdp = ctx.new_cdp_session(pg)
-            park_chrome(cdp, pg)
-            was = None
-            view = ["Tablature"]
+        chords = {}
+
+        def find_chords():  # in a connection of its own: the run's can't be used from another thread
             try:
-                sharp_screen(cdp, pg)
-                # tab alone: each note's length is drawn under its fret number
-                was = notation(pg, "Tablature")
-                open_instruments(pg)
-                for i, n in enumerate(names):
-                    label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
-                    for attempt in (1, 2):  # a track that didn't save is tried once more
-                        dest = free_name(out, label, ".pdf")  # an existing file is never replaced
-                        run.pending = dest
-                        eta = (sum(took) / len(took) if took else SECONDS_PER_TRACK) * (len(names) - i)
+                with sync_playwright() as p2:
+                    chords["found"] = search_chords(p2.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0], song, artist)
+            except Exception:
+                pass
+        hunt = None if has_chords else threading.Thread(target=find_chords, daemon=True)
+        if hunt:
+            hunt.start()
+        pg = song_page(ctx, a.url)
+        cdp = ctx.new_cdp_session(pg)
+        park_chrome(cdp, pg)
+        was = None
+        view = [None, None]
+        done, writing, lock = {}, {}, threading.Lock()  # track i: its outcome / its PDF being written
+
+        def written(dest, ok, why, res):  # from the writer's thread
+            i, n = writing[dest]
+            with lock:
+                if dest.exists() and dest not in run.files:
+                    run.files.append(dest)
+                done[i] = (ok, why, dest, res)
+            print(f"  {dest.name}: saved ({res.get('pages')} pages)" if ok else f"  {dest.name}: NOT saved ({why})")
+        writer = run.writer = PdfWriter(written)
+        try:
+            sharp_screen(cdp, pg, height=PRINT_H)
+            was = notation(pg)
+            view[0] = {"St. + Tab": NOTES_VIEW}.get(was, was)
+            open_instruments(pg)
+
+            def take(i, n, attempt, w, step):
+                label = f"{song} - {artist} - {n}" if artist else f"{song} - {n}"
+                dest = free_name(out, label, ".pdf", writing)  # an existing file is never replaced
+                run.pending = dest
+                eta = (sum(took) / len(took) if took else SECONDS_PER_TRACK) * (len(names) - step)
+                hold(ui)
+                ui.progress(step, len(names), n, eta, "" if attempt == 1 else "Trying this track again.")
+                t0 = time.time()
+                writing[dest] = (i, n)
+                try:
+                    ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n), view, w)
+                except Cancelled:
+                    raise
+                except Exception as err:
+                    ok, why, res = False, str(err).splitlines()[0][:120], {}
+                finally:
+                    if dest.exists() and dest not in run.files:
+                        run.files.append(dest)
+                took.append(time.time() - t0 + a.gap)
+                if ok is not None:  # written here (not by the writer)
+                    done[i] = (ok, why, dest, res)
+                    print(f"  {dest.name}: saved ({res.get('pages')} pages)" if ok else f"  {dest.name}: NOT saved ({why})")
+
+            # the tracks without tab first, then the fretted ones: each of those needs both views, so
+            # taken in this order the player's view changes once per fretted track and no more
+            order = sorted(range(len(names)), key=lambda i: not NO_TAB.search(names[i]))
+            for step, i in enumerate(order):
+                take(i, names[i], 1, writer, step)
+                if step + 1 < len(names):
+                    end = time.time() + a.gap  # unhurried pace
+                    while time.time() < end:
                         hold(ui)
-                        ui.progress(i, len(names), n, eta, "" if attempt == 1 else "Trying this track again.")
-                        t0 = time.time()
-                        try:
-                            keep_drawing(cdp, pg)
-                            ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n), view)
-                            if ok and res.get("full"):
-                                print(f"  {dest.name}: the song is very long; its end may be missing")
-                        except Cancelled:
-                            raise
-                        except Exception as err:
-                            ok, why = False, str(err).splitlines()[0][:120]
-                        finally:
-                            if dest.exists() and dest not in run.files:
-                                run.files.append(dest)
-                        if ok:
-                            saved.append({"name": n, "file": dest.name})
-                            took.append(time.time() - t0 + a.gap)
-                            print(f"  {dest.name}: saved ({res.get('pages')} pages)")
-                            break
-                        print(f"  {dest.name}: NOT saved ({why})")
-                    else:
-                        missing.append(n)
-                    if i + 1 < len(names):
-                        end = time.time() + a.gap  # unhurried pace
-                        while time.time() < end:
-                            hold(ui)
-                            time.sleep(0.25)
-            finally:
-                normal_screen(cdp)  # the song's tab back as it was
-                back = {"St. + Tab": NOTES_VIEW}.get(was, was)
-                if was and back != view[0]:  # the player's own notation choice back
-                    notation(pg, back)
+                        time.sleep(0.25)
             hold(ui)
             ui.progress(len(names), len(names), "chords", 0)
-            chords_text = official_chords(pg)
-            video = page_video(pg)
-            if not chords_text:
-                chords_text, v2 = search_chords(ctx, song, artist)
-                video = video or v2
+            chords_text = official_chords(pg) if has_chords else ""  # while the last PDFs are written
+            writer.finish()
+            for i, n in enumerate(names):  # a track that didn't save is tried once more
+                if not done.get(i, (False,))[0]:
+                    writing.pop(done.get(i, (0, 0, None))[2], None)  # its name is free again
+                    take(i, n, 2, None, i)
+            for i, n in enumerate(names):
+                ok, why, dest, res = done.get(i, (False, "", None, {}))
+                if ok:
+                    saved.append({"name": n, "file": dest.name})
+                    if res.get("full"):
+                        print(f"  {dest.name}: the song is very long; its end may be missing")
+                else:
+                    missing.append(n)
+        finally:
+            normal_screen(cdp)  # the song's tab back as it was
+            back = {"St. + Tab": NOTES_VIEW}.get(was, was)
+            if was and back != view[0]:  # the player's own notation choice back
+                notation(pg, back)
+        video = page_video(pg)
+        if not chords_text:
+            if hunt:
+                hunt.join()
+            chords_text, v2 = chords.get("found") or search_chords(ctx, song, artist)
+            video = video or v2
         hold(ui)
         ui.progress(len(names), len(names), "done", 0)
         if replace:  # everything saved: only now do the new files take the old ones' place
@@ -1691,6 +1959,8 @@ def work(ui, a, result):
                 run.undo()
             return
         close_prints()
+        if run and getattr(run, "writer", None):
+            run.writer.finish()  # the PDFs being written are done, so they can go too
         if run:
             p = getattr(run, "pending", None)  # the track being saved: its half-written copy goes too
             if p:
@@ -1716,6 +1986,11 @@ def work(ui, a, result):
             pass
         ui.finish(f"Something went wrong, so it stopped:\n{err}\n\nFiles already saved were kept.", run.out if run else None)
     finally:
+        if p:
+            try:
+                p.stop()
+            except Exception:
+                pass
         tidy_tabs(a.url)
 
 

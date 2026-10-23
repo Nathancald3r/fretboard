@@ -94,16 +94,25 @@ def hide_window(cdp):
     # minimizing hands the focus back to the window you were using; then it's restored, still off
     # the screen, without taking the focus
     cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "minimized"}})
-    time.sleep(0.6)
-    hs = offscreen_windows(iconic=True)
+    hs = settle(lambda: offscreen_windows(iconic=True), 0.6)
     if hs:
         _, _, u32, _ = _win32()
         for h in hs:
             u32.ShowWindow(h, 4)  # SW_SHOWNOACTIVATE
     else:
         cdp.send("Browser.setWindowBounds", {"windowId": w, "bounds": {"windowState": "normal"}})
-    time.sleep(0.4)
+    settle(lambda: offscreen_windows(iconic=False), 0.4)
     return True
+
+
+def settle(check, most):
+    """check() as soon as it's true (polled), or its last answer after most seconds."""
+    end = time.time() + most
+    while True:
+        got = check()
+        if got or time.time() >= end:
+            return got
+        time.sleep(0.03)
 
 
 def show_window(activate=True):
