@@ -14,6 +14,25 @@
 6. **Automatic checks** on the PDFs and the conversion: same bar count in every track, nothing cut or stretched, time signature and tempo agree.
 7. **Sync to a recording (separate test project, later):** find the right YouTube version, line up the start, match tempo, time signature and sections; if the arrangement differs, adapt (add rests, skip parts). Test and improve on its own first.
 
+## Chord charts as a songbook: columns, ChordPro in and out, live mode (the user's plan, 2026-10-23, not started)
+
+**The goal:** chord charts that feel like Planning Center Music Stand when playing live, with the range of SongbookPro, and files that open cleanly in SongbookPro, OnSong and Music Stand.
+
+1. **Two columns:** the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
+2. **Export:**
+   - **ChordPro (.cho / .chordpro), the main one.** `{title}`, `{artist}`, `{key}`, `{capo}`, `{tempo}`, `{time}`, sections as `{start_of_verse: Verse 1}` … `{end_of_verse}` (chorus, bridge; others as `{comment}`), chords inline `[G]As the [C/G]Spirit`. Exports what is shown (transposed chords if transposed; Nashville or Roman only when chosen, as the key stays in `{key}`).
+   - **PDF:** what the page shows (columns, text size), one song per file, page breaks between sections.
+   - **.txt:** chords over lyrics, as UG writes them.
+   - Check each file by opening it in SongbookPro, OnSong and Music Stand (their ChordPro readers differ: OnSong wants `{c:}` comments, Music Stand reads `{key}` and `{tempo}`).
+3. **Import:** ChordPro files (`.cho`, `.chordpro`, `.chopro`, `.pro` and `.txt` with `{title}` or `[chords]` inline); plain chords-over-lyrics `.txt` (already read as a text tab); PDF chord charts (text PDFs: the chord line above each lyric line, kept by column position).
+4. **Live mode for chord charts (Music Stand feel, SongbookPro range):**
+   - A set list: songs in order, swipe or pedal (Page Down / arrow keys, Bluetooth page turners) to turn pages and move to the next song.
+   - Page-at-a-time view (no scrolling while playing), half-page turns as an option.
+   - Per song: key, capo, transpose, columns, text size, Nashville / Roman, all remembered.
+   - Notes and highlights drawn on the chart (kept per song), a metronome flash, the strum pattern on top.
+   - Big, high-contrast, dark or light; screen stays awake.
+5. **UG helper's "Done" window ("UG song collector"):** add an **Open in app** button beside Open folder and Close. It opens Fretboard (the website or the open Fretboard tab) on the song, importing it first if auto-import hasn't yet, so there's no Import files / select all / Create song step.
+
 ## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 
 - **Now:** Here I Am To Worship (8 tracks + chords) saves in **20 s**. The fretted tracks' Standard + Tab prints are off by default: they were the longest (~15 s together), and Fretboard reads only dynamics and words from them.

@@ -3,9 +3,10 @@
 import { updateSong } from './db.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
-import { detectKey, keyLabel, toNashville, pitchClass, noteName } from './theory.js';
+import { detectKey, keyLabel, toNashville, toRoman, pitchClass, noteName } from './theory.js';
 import { shiftChordName } from './transpose.js';
 import { findRecording } from './ytsearch.js';
+import { playStrum, stopStrum } from './strumplay.js';
 
 const $ = (id) => document.getElementById(id);
 const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d|add\d+|b\d+|#\d+)*(\/[A-G][#b]?)?\)?$/;
@@ -88,7 +89,7 @@ const keyOf = (name) => (name ? { tonic: pitchClass(name), minor: /m$/.test(name
 
 // UG's strokes: 1 down, 101 up, 3 / 103 accented, 2 / 102 muted, 0 none.
 const STROKE = { 1: ['↓', ''], 2: ['↓', 'mute'], 3: ['↓', 'acc'], 101: ['↑', ''], 102: ['↑', 'mute'], 103: ['↑', 'acc'] };
-export function strumHtml(p) {
+export function strumHtml(p, i = 0) {
   const perBeat = p.triplet ? 3 : Math.max(1, (p.per || 8) / 4);
   const cells = p.strokes.map((n, i) => {
     const [arrow, kind] = STROKE[n] || ['', 'rest'];
@@ -97,7 +98,10 @@ export function strumHtml(p) {
     const mark = kind === 'acc' ? '>' : kind === 'mute' ? '×' : '';
     return `<span class="st ${kind}${pos === 0 ? ' beat' : ''}"><i>${mark}</i><b>${arrow}</b><small>${count}</small></span>`;
   }).join('');
-  return `<div class="tx-strum-row"><div class="muted">${escape(p.part || 'Strumming')}${p.bpm ? ` · ${p.bpm} bpm` : ''}</div>`
+  const play = `<span class="tx-strum-play"><button class="ghost small" data-strum="${i}" data-mode="play" title="Hear it on the guitar, over and over, at the song's tempo">▶ Play</button>`
+    + `<button class="ghost small" data-strum="${i}" data-mode="slow" title="Starts at 60% and speeds up a little every two times through">Slow practice</button>`
+    + `<span class="mono muted tx-strum-speed"></span></span>`;
+  return `<div class="tx-strum-row" data-row="${i}"><div class="tx-strum-head"><span class="muted">${escape(p.part || 'Strumming')}${p.bpm ? ` · ${p.bpm} bpm` : ''}</span>${play}</div>`
     + `<div class="tx-strokes">${cells}</div></div>`;
 }
 
@@ -114,17 +118,17 @@ function render() {
   }
   keySelect.value = song.key || 'auto';
   $('tx-chords').value = song.chordMode || 'letters';
-  // Key for Nashville numbers: the saved choice, or detected from the chords.
+  // Key for Nashville numbers and Roman numerals: the saved choice, or detected from the chords.
   const key = song.key && song.key !== 'auto'
     ? { tonic: parseInt(song.key, 10), minor: song.key.endsWith('m') }
     : detected;
-  const nashville = song.chordMode === 'nashville';
-  keySelect.disabled = !nashville;
+  const numbers = { nashville: toNashville, roman: toRoman }[song.chordMode];
+  keySelect.disabled = !numbers;
   // transpose: the chords as written (shapes) move; the key it sounds in is the page's, else the shapes' plus the capo
   const shift = song.transpose || 0;
   const shapes = moveKey(detected, shift);
   const sounds = moveKey(keyOf(head.key) || moveKey(detected, head.capo), shift);
-  const rename = nashville && key ? (c) => toNashville(c, key)
+  const rename = numbers && key ? (c) => numbers(c, key)
     : shift ? (c) => shiftChordName(c, shift, shapes ? flatKey(shapes) : false) : null;
   $('tx-body').innerHTML = highlight(text, rename);
   $('tx-shift').textContent = `Tr. ${shift > 0 ? '+' : ''}${shift}`;
@@ -139,6 +143,44 @@ function render() {
   const strum = (song.strum || []).filter((p) => p.strokes?.length);
   $('tx-strum').hidden = !strum.length;
   $('tx-strum').innerHTML = strum.map(strumHtml).join('');
+  // the strum is heard on the song's first chord, as the shapes are played (capo and transpose too)
+  const first = songChords(text)[0];
+  strumChord = { chord: first ? (shift ? shiftChordName(first, shift, shapes ? flatKey(shapes) : false) : first) : 'G', capo: head.capo || 0 };
+  stopStrumPlay();
+}
+
+/* ---------- hearing the strumming pattern ---------- */
+
+let strumChord = { chord: 'G', capo: 0 };
+let strumOn = null; // { i, mode }
+
+function stopStrumPlay() {
+  strumOn = null;
+  stopStrum();
+  for (const b of document.querySelectorAll('#tx-strum [data-strum]')) b.textContent = b.dataset.mode === 'play' ? '▶ Play' : 'Slow practice';
+  for (const s of document.querySelectorAll('#tx-strum .tx-strum-speed')) s.textContent = '';
+}
+
+async function toggleStrum(i, mode) {
+  const again = strumOn && strumOn.i === i && strumOn.mode === mode;
+  stopStrumPlay();
+  if (again) return;
+  const pattern = (song?.strum || []).filter((p) => p.strokes?.length)[i];
+  if (!pattern) return;
+  const on = { i, mode };
+  strumOn = on;
+  const row = document.querySelector(`#tx-strum [data-row="${i}"]`);
+  const button = row?.querySelector(`[data-mode="${mode}"]`);
+  const speed = row?.querySelector('.tx-strum-speed');
+  if (button) button.textContent = 'Loading…';
+  const bpm = pattern.bpm || tempo;
+  const ok = await playStrum(pattern, {
+    ...strumChord, tempo: bpm, slow: mode === 'slow',
+    onSpeed: (v) => { if (speed && strumOn === on) speed.textContent = `${Math.round(bpm * v)} bpm · ${strumChord.chord}`; },
+  });
+  if (strumOn !== on) return;
+  if (!ok) { stopStrumPlay(); return; }
+  if (button) button.textContent = '■ Stop';
 }
 
 /* ---------- video: the song's recording, beside the sheet ---------- */
@@ -237,6 +279,7 @@ export function openText(s) {
 }
 
 export function closeText() {
+  stopStrumPlay();
   setScrolling(false);
   showVideo(false);
   if (performing) setPerform(false);
@@ -244,6 +287,10 @@ export function closeText() {
 }
 
 export function initText({ onEdit }) {
+  $('tx-strum').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-strum]');
+    if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);
+  });
   $('tx-scroll').addEventListener('click', () => setScrolling(!scrolling));
   $('tx-size').addEventListener('input', (e) => {
     $('tx-body').style.fontSize = e.target.value + 'px';

@@ -2323,6 +2323,8 @@ body.focus .playbar-end > :not(.track-chip) { display: none; }
 .tx-shift { display: inline-flex; align-items: center; gap: .3rem; }
 .tx-shift #tx-shift { min-width: 3.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .tx-strum { display: grid; gap: .6rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem 1rem; }
+.tx-strum-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+.tx-strum-play { display: inline-flex; align-items: center; gap: .4rem; }
 .tx-strokes { display: flex; flex-wrap: wrap; gap: 0 .15rem; margin-top: .2rem; }
 .tx-strokes .st { display: grid; grid-template-rows: 1em 1.5em 1em; justify-items: center; width: 1.5em; line-height: 1; }
 .tx-strokes .st.beat { margin-left: .5em; }

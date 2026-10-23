@@ -73,6 +73,30 @@ export function toNashville(chordText, key) {
   return degree + quality + bass;
 }
 
+// Roman numerals by semitones from the tonic. A minor key counts from its own tonic (C in Am → III).
+const ROMAN_MAJOR = ['I', 'bII', 'II', 'bIII', 'III', 'IV', '#IV', 'V', 'bVI', 'VI', 'bVII', 'VII'];
+const ROMAN_MINOR = ['I', 'bII', 'II', 'III', '#III', 'IV', '#IV', 'V', 'VI', '#VI', 'VII', '#VII'];
+
+/**
+ * "Em7" in G → "vi7", "Bdim" in C → "vii°", "C/G" in G → "IV/1" (the bass as a scale number).
+ * Minor and diminished chords are lower case.
+ */
+export function toRoman(chordText, key) {
+  const c = parseChord(chordText);
+  if (!c || !key) return chordText;
+  let numeral = (key.minor ? ROMAN_MINOR : ROMAN_MAJOR)[(c.root - key.tonic + 12) % 12];
+  let q = c.quality;
+  const dim = /^(dim|°|o(?![a-z]))/.test(q);
+  const half = /^(m7b5|ø)/.test(q);
+  if (half) q = 'ø7' + q.replace(/^(m7b5|ø7?)/, '');
+  else if (dim) q = '°' + q.replace(/^(dim|°|o)/, '');
+  else if (c.minor) q = q.replace(/^(min|m|-)/, '');
+  else if (/^(aug|\+)/.test(q)) q = '+' + q.replace(/^(aug|\+)/, '');
+  if (c.minor || dim || half) numeral = numeral.toLowerCase();
+  const bass = c.bass === null ? '' : '/' + DEGREES[(c.bass - key.tonic + 12) % 12];
+  return numeral + q + bass;
+}
+
 export const SCALES = {
   'Major (Ionian)': [0, 2, 4, 5, 7, 9, 11],
   'Natural minor (Aeolian)': [0, 2, 3, 5, 7, 8, 10],

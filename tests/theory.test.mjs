@@ -1,6 +1,6 @@
 // Run: node tests/theory.test.mjs
 import assert from 'node:assert/strict';
-import { detectKey, toNashville, keyLabel, scalePosition, SCALES, sequence, pitchClass } from '../js/theory.js';
+import { detectKey, toNashville, toRoman, keyLabel, scalePosition, SCALES, sequence, pitchClass } from '../js/theory.js';
 
 const frets = (pos) => pos.notes.map((n) => `${n.string}:${n.fret}`).join(' ');
 
@@ -33,6 +33,15 @@ assert.equal(toNashville('Cmaj7', G), '4maj7');
 assert.equal(toNashville('F', G), 'b7');
 assert.equal(toNashville('Dsus4', G), '5sus4');
 assert.equal(toNashville('Am', { tonic: 9, minor: true }), '1m');
+assert.equal(toRoman('Em7', G), 'vi7');
+assert.equal(toRoman('C/G', G), 'IV/1');
+assert.equal(toRoman('D', G), 'V');
+assert.equal(toRoman('F#dim', G), 'vii°');
+assert.equal(toRoman('F#m7b5', G), 'viiø7');
+assert.equal(toRoman('F', G), 'bVII');
+assert.equal(toRoman('Cmaj7', G), 'IVmaj7');
+assert.equal(toRoman('C', { tonic: 9, minor: true }), 'III');
+assert.equal(toRoman('Am', { tonic: 9, minor: true }), 'i');
 assert.equal(pitchClass('Bb'), 10);
 
 assert.deepEqual(sequence([1, 2, 3, 4], 'straight'), [1, 2, 3, 4, 3, 2, 1]);
