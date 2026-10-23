@@ -33641,6 +33641,7 @@
 			this._output.sampleRequest.on(this.onOutputSampleRequest.bind(this));
 			this._output.open(settings.player.bufferTimeInMilliseconds);
 			this._synth = synthWorker;
+			this._output.fbDirect = (port) => this._synth.postMessage({ cmd: "fb.direct", port }, [port]);
 			this._synth.addEventListener("message", (e) => this.handleWorkerMessage(e));
 			this._synth.postMessage({
 				cmd: "alphaSynth.initialize",
@@ -41566,6 +41567,10 @@
 				_handleMessage(e) {
 					const data = e.data;
 					switch (data.cmd) {
+						case "fb.direct":
+							this._fbDirect = data.port;
+							data.port.onmessage = (m) => this._handleMessage(m);
+							break;
 						case "alphaSynth.output.addSamples":
 							const f = data.samples;
 							this._circularBuffer.write(f, 0, f.length);
@@ -41601,7 +41606,7 @@
 						left[i] = 0;
 						right[i] = 0;
 					}
-					this.port.postMessage({
+					(this._fbDirect || this.port).postMessage({
 						cmd: "alphaSynth.output.samplesPlayed",
 						samples: samplesFromBuffer / SynthConstants.AudioChannels
 					});
@@ -41612,7 +41617,7 @@
 					const halfBufferCount = this._bufferCount / 2 | 0;
 					const halfSamples = halfBufferCount * AlphaSynthWebWorkletProcessor.BufferSize;
 					if (this._circularBuffer.count + this._requestedBufferCount * AlphaSynthWebWorkletProcessor.BufferSize < halfSamples) {
-						for (let i = 0; i < halfBufferCount; i++) this.port.postMessage({ cmd: "alphaSynth.output.sampleRequest" });
+						for (let i = 0; i < halfBufferCount; i++) (this._fbDirect || this.port).postMessage({ cmd: "alphaSynth.output.sampleRequest" });
 						this._requestedBufferCount += halfBufferCount;
 					}
 				}
@@ -41653,6 +41658,11 @@
 				});
 				this._worklet.port.addEventListener("message", this._boundHandleMessage);
 				this._worklet.port.start();
+				if (this.fbDirect) {
+					const ch = new MessageChannel();
+					this._worklet.port.postMessage({ cmd: "fb.direct", port: ch.port1 }, [ch.port1]);
+					this.fbDirect(ch.port2);
+				}
 				this.source.connect(this._worklet);
 				this.source.start(0);
 				this._worklet.connect(ctx.destination);
@@ -49914,6 +49924,11 @@
 		_handleMessage(e) {
 			const data = e.data;
 			switch (data.cmd) {
+				case "fb.direct":
+					this._fbDirect?.close();
+					this._fbDirect = data.port;
+					data.port.onmessage = (m) => this._handleMessage(m);
+					break;
 				case "alphaSynth.output.sampleRequest":
 					this.sampleRequest.trigger();
 					break;
@@ -49926,7 +49941,7 @@
 		samplesPlayed = new EventEmitterOfT();
 		sampleRequest = new EventEmitter();
 		addSamples(samples) {
-			this._main.postMessage({
+			(this._fbDirect || this._main).postMessage({
 				cmd: "alphaSynth.output.addSamples",
 				samples: Environment.prepareForPostMessage(samples)
 			});
@@ -49935,10 +49950,12 @@
 			this._main.postMessage({ cmd: "alphaSynth.output.play" });
 		}
 		pause() {
+			this._fbDirect?.close();
+			this._fbDirect = null;
 			this._main.postMessage({ cmd: "alphaSynth.output.pause" });
 		}
 		resetSamples() {
-			this._main.postMessage({ cmd: "alphaSynth.output.resetSamples" });
+			(this._fbDirect || this._main).postMessage({ cmd: "alphaSynth.output.resetSamples" });
 		}
 		activate() {}
 		async enumerateOutputDevices() {

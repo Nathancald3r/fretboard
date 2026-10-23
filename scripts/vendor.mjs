@@ -118,5 +118,32 @@ code = code.replace(GAIN, `const fbPreset = this.presets[presetIndex];
 					fbPreset.fbLift = Number.isFinite(typical) ? Math.max(0, typical - 20) : 0;
 				}
 				voice.noteGainDb = this.globalGainDb - (fbPreset.fbMinAtt + 0.4 * (region.attenuation - fbPreset.fbMinAtt) - fbPreset.fbLift) - SynthHelper.gainToDecibels(1 / vel);`);
+// Steady playback when the page is busy or in a background tab: alphaTab passes every block of
+// sound from the synth worker to the audio thread through the page's main thread, and keeps only
+// about 0.2 s queued. A redraw, an import or a busy computer stalling the page for 0.1 s left a
+// gap, and the song fell behind (0.25 s stalls lost 1.4 s in 4 s). The worker and the audio
+// thread now talk directly over their own channel; the main thread only sets it up.
+const fbPatch = (name, from, to) => {
+  if (code.split(from).length !== 2) throw new Error('alphaTab changed: ' + name + ' patch no longer applies');
+  code = code.replace(from, to);
+};
+fbPatch('direct channel (worklet in)', 'case "alphaSynth.output.addSamples":\n\t\t\t\t\t\t\tconst f = data.samples;',
+  'case "fb.direct":\n\t\t\t\t\t\t\tthis._fbDirect = data.port;\n\t\t\t\t\t\t\tdata.port.onmessage = (m) => this._handleMessage(m);\n\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\tcase "alphaSynth.output.addSamples":\n\t\t\t\t\t\t\tconst f = data.samples;');
+fbPatch('direct channel (worklet played)', 'this.port.postMessage({\n\t\t\t\t\t\tcmd: "alphaSynth.output.samplesPlayed",',
+  '(this._fbDirect || this.port).postMessage({\n\t\t\t\t\t\tcmd: "alphaSynth.output.samplesPlayed",');
+fbPatch('direct channel (worklet request)', 'for (let i = 0; i < halfBufferCount; i++) this.port.postMessage({ cmd: "alphaSynth.output.sampleRequest" });',
+  'for (let i = 0; i < halfBufferCount; i++) (this._fbDirect || this.port).postMessage({ cmd: "alphaSynth.output.sampleRequest" });');
+fbPatch('direct channel (main setup)', 'this._worklet.port.start();\n\t\t\t\tthis.source.connect(this._worklet);',
+  'this._worklet.port.start();\n\t\t\t\tif (this.fbDirect) {\n\t\t\t\t\tconst ch = new MessageChannel();\n\t\t\t\t\tthis._worklet.port.postMessage({ cmd: "fb.direct", port: ch.port1 }, [ch.port1]);\n\t\t\t\t\tthis.fbDirect(ch.port2);\n\t\t\t\t}\n\t\t\t\tthis.source.connect(this._worklet);');
+fbPatch('direct channel (main to worker)', 'this._synth = synthWorker;',
+  'this._synth = synthWorker;\n\t\t\tthis._output.fbDirect = (port) => this._synth.postMessage({ cmd: "fb.direct", port }, [port]);');
+fbPatch('direct channel (worker in)', 'switch (data.cmd) {\n\t\t\t\tcase "alphaSynth.output.sampleRequest":\n\t\t\t\t\tthis.sampleRequest.trigger();',
+  'switch (data.cmd) {\n\t\t\t\tcase "fb.direct":\n\t\t\t\t\tthis._fbDirect?.close();\n\t\t\t\t\tthis._fbDirect = data.port;\n\t\t\t\t\tdata.port.onmessage = (m) => this._handleMessage(m);\n\t\t\t\t\tbreak;\n\t\t\t\tcase "alphaSynth.output.sampleRequest":\n\t\t\t\t\tthis.sampleRequest.trigger();');
+fbPatch('direct channel (worker samples)', 'addSamples(samples) {\n\t\t\tthis._main.postMessage({\n\t\t\t\tcmd: "alphaSynth.output.addSamples",',
+  'addSamples(samples) {\n\t\t\t(this._fbDirect || this._main).postMessage({\n\t\t\t\tcmd: "alphaSynth.output.addSamples",');
+fbPatch('direct channel (worker reset)', 'resetSamples() {\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.resetSamples" });',
+  'resetSamples() {\n\t\t\t(this._fbDirect || this._main).postMessage({ cmd: "alphaSynth.output.resetSamples" });');
+fbPatch('direct channel (worker pause)', 'pause() {\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });',
+  'pause() {\n\t\t\tthis._fbDirect?.close();\n\t\t\tthis._fbDirect = null;\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });');
 writeFileSync(script, code);
 console.log('alphaTab copied to vendor/alphatab');

@@ -113,6 +113,10 @@ Open bugs and to-dos live in `TODO.md`, not here.
      - Velocity layers are read at FluidSynth's 0.4× attenuation. Only the part above an instrument's loudest layer is scaled.
      - **Floor:** a normal hit (velocity 95, middle C) is never quieter than 20 dB, the quietest guitar preset. Quieter instruments are lifted as a whole (`fbLift`).
      - The guitars measure exactly as before. Keep it that way: guitar sound comes first.
+  5. **Direct audio channel:** the synth worker and the AudioWorklet talk over their own `MessageChannel` (`fb.direct`). The main thread no longer passes the sound along.
+     - Why: alphaTab queues only about 0.2 s of sound. When the page stalled (a redraw, an import, a busy PC, a background tab), the sound had gaps and the song fell behind. 0.25 s stalls lost 1.4 s in 4 s.
+     - Checked: 0.6 s page stalls, and every CPU core busy, lose nothing.
+     - To measure: play, block the page with a busy loop, and compare `api.timePosition` progress with wall time.
 - **To measure the sound** in the preview:
   - `api.exportAudio(new alphaTab.synth.AudioExportOptions())` with `playbackRange` and `trackVolume` (a Map of track index → volume), then `render(500)` until it returns null. Sum the RMS and count NaN.
   - Use the default sample rate (22050 gives NaN everywhere).
