@@ -38725,7 +38725,8 @@
 							const nextPos = pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1;
 							const alpha = tmpSourceSamplePosition - pos;
 							let value = input[pos] * (1 - alpha) + input[nextPos] * alpha;
-							if (tmpLowpass.active) value = tmpLowpass.process(value);
+							if (value !== value) value = 0;
+							if (tmpLowpass.active) { value = tmpLowpass.process(value); if (!Number.isFinite(value)) { value = 0; tmpLowpass.z1 = 0; tmpLowpass.z2 = 0; } }
 							outputBuffer[offset + outL] += value * gainLeft;
 							outL++;
 							outputBuffer[offset + outL] += value * gainRight;
@@ -38742,7 +38743,8 @@
 							const nextPos = pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1;
 							const alpha = tmpSourceSamplePosition - pos;
 							let value = input[pos] * (1 - alpha) + input[nextPos] * alpha;
-							if (tmpLowpass.active) value = tmpLowpass.process(value);
+							if (value !== value) value = 0;
+							if (tmpLowpass.active) { value = tmpLowpass.process(value); if (!Number.isFinite(value)) { value = 0; tmpLowpass.z1 = 0; tmpLowpass.z2 = 0; } }
 							outputBuffer[offset + outL] += value * gainLeft;
 							outL++;
 							outputBuffer[offset + outR] += value * gainRight;
@@ -38757,7 +38759,8 @@
 							const nextPos = pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1;
 							const alpha = tmpSourceSamplePosition - pos;
 							let value = input[pos] * (1 - alpha) + input[nextPos] * alpha;
-							if (tmpLowpass.active) value = tmpLowpass.process(value);
+							if (value !== value) value = 0;
+							if (tmpLowpass.active) { value = tmpLowpass.process(value); if (!Number.isFinite(value)) { value = 0; tmpLowpass.z1 = 0; tmpLowpass.z2 = 0; } }
 							outputBuffer[offset + outL] = value * gainMono;
 							outL++;
 							tmpSourceSamplePosition += pitchRatio;
@@ -39138,7 +39141,9 @@
 				voice.lowPass.qInv = 1 / Math.pow(10, filterQDB / 20);
 				voice.lowPass.z1 = 0;
 				voice.lowPass.z2 = 0;
-				voice.lowPass.active = region.initialFilterFc <= 13500;
+				voice.lowPass.z1 = 0;
+			voice.lowPass.z2 = 0;
+			voice.lowPass.active = region.initialFilterFc <= 13500;
 				if (voice.lowPass.active) voice.lowPass.setup(SynthHelper.cents2Hertz(region.initialFilterFc) / this.outSampleRate);
 				voice.modLfo.setup(region.delayModLFO, region.freqModLFO, this.outSampleRate);
 				voice.vibLfo.setup(region.delayVibLFO, region.freqVibLFO, this.outSampleRate);
@@ -64064,8 +64069,7 @@
 					centeredEffectGlyphs.push(glyph);
 				}
 				if (this.container.beat.dots > 0 && tabRenderer.rhythmMode !== TabRhythmMode.Hidden) {
-					// Fretboard: just under the staff beside the stem, as Ultimate Guitar draws it (at the stem's end the beam hides it)
-					const y = tabRenderer.getLineY(this.renderer.bar.staff.tuning.length - 1) + tabRenderer.getLineHeight(.6);
+					const y = this.getNoteY(this.container.beat.maxNote, NoteYPosition.BottomWithStem);
 					for (let i = 0; i < this.container.beat.dots; i++) this.addEffect(new AugmentationDotGlyph(0, y));
 				}
 			} else {
