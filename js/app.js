@@ -388,8 +388,12 @@ async function readParts(files, title) {
     <p class="muted small-text">You can keep using the computer. Nothing is added to your library until you check the result and press Create song.</p>
     <progress max="${files.length}" value="0"></progress><p class="parts-now small-text"></p>
     <div class="row"><button class="ghost" data-no>Cancel</button></div>`);
+  // Cancel ends it at once: the PDF being read is closed under it, and nothing waits for it to notice
   let stop = false;
-  dlg.querySelector('[data-no]').addEventListener('click', () => { stop = true; dlg.querySelector('.parts-now').textContent = 'Stopping…'; });
+  const ctl = new AbortController();
+  const cancelled = new Promise((_, bad) => ctl.signal.addEventListener('abort', () => bad(new Cancelled())));
+  cancelled.catch(() => {});
+  dlg.querySelector('[data-no]').addEventListener('click', () => { stop = true; ctl.abort(); });
   const items = files.map((file) => {
     const name = partFromName(file.name) || PARTS[Math.max(0, partIndex(file.name))][0];
     const k = partIndex(name);
@@ -405,13 +409,15 @@ async function readParts(files, title) {
       };
       say();
       try {
-        const r = await pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name), drums: drumKind(it.name) });
+        const read = pdfToTab(await it.file.arrayBuffer(), (page, pages, line) => say(` · page ${page} of ${pages}${line ? ', ' + line : ''}`), { title, lyrics: i === singer, bass: /bass/i.test(it.name), drums: drumKind(it.name), signal: ctl.signal });
+        read.catch(() => {});
+        const r = await Promise.race([read, cancelled]);
         if (r.strips?.length) {
           it.strips = r.strips;
           it.bars = ugToAlphaTex(r.strips, { title, name: it.name, program: it.program })?.bars || 0;
         }
       } catch (err) {
-        if (err instanceof Cancelled) throw err;
+        if (err instanceof Cancelled || stop) throw new Cancelled();
         console.error(err);
         it.error = true; // kept as sheet music, so the part isn't lost
       }
@@ -589,7 +595,19 @@ async function importPdfParts(files, auto = null, replace = false) {
   return id;
 }
 
-async function importFiles(files, { quietIfEmpty = false, auto = null, replace = false } = {}) {
+// One import at a time: a second one (the watched folder's, while the user imports by hand) waits
+// its turn. Two at once each opened a "Reading the PDFs" dialog, and the one in front froze.
+let importing = Promise.resolve();
+let waiting = 0;
+function importFiles(files, opts) {
+  if (waiting && files.length) toast('Another import is running: this one starts when it’s done.', 5000);
+  waiting++;
+  const run = importing.then(() => importFilesNow(files, opts)).finally(() => { waiting--; });
+  importing = run.catch(() => {});
+  return run;
+}
+
+async function importFilesNow(files, { quietIfEmpty = false, auto = null, replace = false } = {}) {
   // the UG helper's own notes (its run note, latest.txt, collected.txt), not songs
   files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name) && !/^(latest|collected)\.txt$/i.test(f.name));
   let added = 0;

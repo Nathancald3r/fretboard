@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "fretboard", "runtimeExecutable": "node", "runtimeArgs": ["server.mjs"], "port": 8420 }
+    { "name": "fretboard", "runtimeExecutable": "node", "runtimeArgs": ["server.mjs"], "env": { "PORT": "8421" }, "port": 8421 }
   ]
 }

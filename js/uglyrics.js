@@ -20,11 +20,35 @@ async function getWorker() {
   return worker;
 }
 
+// Each PDF being read holds the reader and lets it go when done; it closes when no one holds it.
+// (Closed under another PDF still reading, that PDF's next line waited forever.)
+let users = 0;
+export function holdLyricReader() { users++; }
+
 export async function closeLyricReader() {
+  users = Math.max(0, users - 1);
+  if (users) return;
   const w = worker;
   worker = null;
   failed = false;
   if (w) await w.terminate().catch(() => {});
+}
+
+// Tesseract's answer, or a throw after 20 s: a reading that hangs gets its worker closed (a
+// fresh one starts for the next line), so one bad line can't stop the import
+async function recognize(wk, canvas) {
+  let timer;
+  try {
+    return await Promise.race([
+      wk.recognize(canvas, {}, { blocks: true }),
+      new Promise((_, bad) => { timer = setTimeout(() => bad(new Error('Tesseract timed out')), 20000); }),
+    ]);
+  } catch (err) {
+    if (worker === wk) { worker = null; wk.terminate().catch(() => {}); }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const K = 4; // the line is read at 4x the size the staff was found at
@@ -48,7 +72,7 @@ export async function readLyricLine(page, scale, st, limitY) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
   let words;
-  try { words = (await wk.recognize(canvas, {}, { blocks: true })).data.words || []; } catch { return []; }
+  try { words = (await recognize(wk, canvas)).data.words || []; } catch { return []; }
   // text that starts low in the crop is the next strip's section name poking in (the lone
   // hyphens between syllables sit lower than the letters, so they are always kept)
   return syllables(words.filter((w) => w.bbox.y0 < 0.45 * canvas.height || isDash(w)), x0);
@@ -142,7 +166,7 @@ export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11'
   let words = [];
   try {
     await wk.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: chars }); // 11: scattered words, 8: one word
-    words = (await wk.recognize(canvas, {}, { blocks: true })).data.words || [];
+    words = (await recognize(wk, canvas)).data.words || [];
   } catch {
     words = [];
   } finally {

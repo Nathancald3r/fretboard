@@ -4,7 +4,7 @@
 //    are read cell by cell with template matching, which is exact for the fonts tab sites use.
 import { ATLAS, ATLAS_W, ATLAS_H } from './pdfatlas.js';
 import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugtab.js';
-import { readLyricLine, closeLyricReader, readWords } from './uglyrics.js';
+import { readLyricLine, holdLyricReader, closeLyricReader, readWords } from './uglyrics.js';
 import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -440,9 +440,27 @@ const looksLikeTab = (lines) => lines.filter((l) => /-{4,}/.test(l) && /\|/.test
  * @param {ArrayBuffer} buf the PDF
  * @returns {Promise<{ text: string, how: 'text'|'image', systems: number, unknown: number }>}
  */
-export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title = '', artist = '', lyrics = true, bass = false, drums = null } = {}) {
+export async function pdfToTab(buf, onProgress = () => {}, opts = {}) {
   const lib = await loadPdfjs();
-  const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const task = lib.getDocument({ data: new Uint8Array(buf) });
+  // opts.signal (an AbortSignal) stops the reading at once: the document is closed under it, which
+  // ends a page being drawn, and the next step throws
+  const { signal } = opts;
+  const stop = () => task.destroy();
+  signal?.addEventListener('abort', stop);
+  holdLyricReader();
+  try {
+    const go = (...a) => { signal?.throwIfAborted(); onProgress(...a); };
+    signal?.throwIfAborted();
+    return await readPdf(await task.promise, go, opts);
+  } finally {
+    signal?.removeEventListener('abort', stop);
+    await closeLyricReader();
+    task.destroy().catch(() => {});
+  }
+}
+
+async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', lyrics = true, bass = false, drums = null }) {
   const pages = [];
   const seen = new Set();
   let how = 'image', unknown = 0, systems = 0;
@@ -542,7 +560,6 @@ export async function pdfToTab(buf, onProgress = () => {}, { tempo = 100, title 
     pages.push(text);
   }
   if (strips.length) {
-    await closeLyricReader();
     if (noted.length) applyNotationMarks(strips, noted);
     const made = ugToAlphaTex(strips, { tempo, title, artist });
     return made ? { tex: made.tex, text: '', how: 'staff', systems: strips.length, bars: made.bars, exact: made.exact, strips, unknown: 0 } : { text: '', how, systems: 0, unknown: 0 };
