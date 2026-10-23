@@ -1256,10 +1256,20 @@ def pick_track(pg, n, k=0):
         raise RuntimeError(f"Couldn't find the track {n} in Instruments.")
 
 
-def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
-    """One track: show it, take the score once it has stopped changing, write the PDF."""
+NOTES_VIEW = "Standard + Tablature"
+NO_TAB = re.compile(r"drum|perc|shaker|tambourine|vocal|voice|sing|choir|piano|key|organ|synth(?!\s*bass)|pad|string|violin|cello|horn|sax|trumpet|flute", re.I)
+
+
+def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0, view=None):
+    """One track: show it, take the score once it has stopped changing, write the PDF.
+    view: a one-item list, the player's Notation view now; kept up to date for the next track."""
+    view = view if view is not None else ["Tablature"]
     pick_track(pg, n, k)
-    pg.wait_for_timeout(2500)
+    pg.wait_for_timeout(1000)
+    for _ in range(6):  # on as soon as the player shows it (steady() then waits for the drawing)
+        if showing(pg, n, k):
+            break
+        pg.wait_for_timeout(250)
     if showing(pg, n, k) is False:  # something else switched the track: the right one is picked again
         pick_track(pg, n, k)
         pg.wait_for_timeout(2500)
@@ -1289,30 +1299,42 @@ def save_track(ui, ctx, pg, cdp, n, dest, label, lines, k=0):
         finally:
             out.close()
 
+    def switch(to):
+        pg.evaluate("scrollTo(0, 0)")
+        if notation(pg, to) is None:
+            return False
+        view[0] = to
+        pg.wait_for_timeout(1500)
+        return showing(pg, n, k) is not False
+
+    # the same score with its music staff too: only there does the player draw the dynamics (mf, f)
+    # and words like "w/sustainer". Fretboard reads just those from these extra pages. A track with
+    # no tab staff (vocals, drums, keys) looks the same either way and gets none.
+    def notes_pages():
+        try:
+            if view[0] != NOTES_VIEW and not switch(NOTES_VIEW):
+                return []
+            return [steady(False), steady(True)]
+        except Cancelled:
+            raise
+        except Exception as err:
+            print(f"  (No notation pages for {n}: {str(err).splitlines()[0][:80]})")
+            return []
+
+    # Each track starts in the view the one before ended in, so the view switches once per track,
+    # not twice: tab view, then notation; the next track notation, then tab view.
+    fretted = bool(tuning) or not NO_TAB.search(n)
+    notes = notes_pages() if fretted and view[0] == NOTES_VIEW else None
+    if view[0] != "Tablature" and not switch("Tablature"):
+        raise RuntimeError("Couldn't switch the player to Tablature.")
     # the score from its top, then scrolled down as far as it goes: a song longer than the screen
     # ends below the first picture (it may end in the gap between two lines, so it's always taken)
     shots = [steady(False), steady(True)]
-    pg.evaluate("scrollTo(0, 0)")
-    # the same score with its music staff too: only there does the player draw the dynamics (mf, f)
-    # and words like "w/sustainer". Fretboard reads just those from these extra pages. A track with
-    # no tab staff (vocals, drums) looks the same either way and gets none.
-    notes = []
-    try:
-        if notation(pg, "Standard + Tablature") is not None:
-            pg.wait_for_timeout(1500)
-            if showing(pg, n, k) is not False:
-                notes = [steady(False), steady(True)]
-                if notes == shots:
-                    notes = []
-    except Cancelled:
-        raise
-    except Exception as err:
-        print(f"  (No notation pages for {n}: {str(err).splitlines()[0][:80]})")
+    if notes is None:
+        notes = notes_pages() if fretted else []
+    if notes == shots:
         notes = []
-    finally:
-        notation(pg, "Tablature")
-        pg.evaluate("scrollTo(0, 0)")
-        pg.wait_for_timeout(800)
+    pg.evaluate("scrollTo(0, 0)")
     res, pdf = lay_out(shots, notes)
     if showing(pg, n, k) is False:  # the track changed while it was being taken: this picture isn't n
         raise RuntimeError(f"The track changed while {n} was being saved.")
@@ -1495,6 +1517,7 @@ def work(ui, a, result):
             cdp = ctx.new_cdp_session(pg)
             park_chrome(cdp, pg)
             was = None
+            view = ["Tablature"]
             try:
                 sharp_screen(cdp, pg)
                 # tab alone: each note's length is drawn under its fret number
@@ -1511,7 +1534,7 @@ def work(ui, a, result):
                         t0 = time.time()
                         try:
                             keep_drawing(cdp, pg)
-                            ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n))
+                            ok, why, res = save_track(ui, ctx, pg, cdp, n, dest, label, (song, artist), names[:i].count(n), view)
                             if ok and res.get("full"):
                                 print(f"  {dest.name}: the song is very long; its end may be missing")
                         except Cancelled:
@@ -1536,8 +1559,9 @@ def work(ui, a, result):
                             time.sleep(0.25)
             finally:
                 normal_screen(cdp)  # the song's tab back as it was
-                if was and was != "Tablature":  # the player's own notation choice back
-                    notation(pg, {"St. + Tab": "Standard + Tablature"}.get(was, was))
+                back = {"St. + Tab": NOTES_VIEW}.get(was, was)
+                if was and back != view[0]:  # the player's own notation choice back
+                    notation(pg, back)
             hold(ui)
             ui.progress(len(names), len(names), "chords", 0)
             chords_text = official_chords(pg)
