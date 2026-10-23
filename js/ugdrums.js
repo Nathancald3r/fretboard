@@ -291,7 +291,7 @@ export function readDrumStrip(ink, light, w, h, st, flipped, { piece = 'shaker' 
   for (let i = 0; i + 1 < bl.length; i++) {
     const cols = [];
     for (const n of notes.filter((q) => !q.grace && q.cx > bl[i] && q.cx < bl[i + 1])) {
-      const c = cols.find((k) => Math.abs(k.sx - n.stem.x) <= 3);
+      const c = cols.find((k) => Math.abs(k.sx - (n.stem?.x ?? n.cx)) <= 3);
       if (c) { if (!c.notes.some((q) => q.drum === n.drum)) c.notes.push({ drum: n.drum }); c.cx = Math.min(c.cx, n.cx); c.ys.push(n.cy); c.heads.push(n.used); }
       else cols.push({ cx: n.cx, sx: n.stem?.x ?? n.cx, stem: n.stem, ys: [n.cy], heads: [n.used], notes: [{ drum: n.drum }] });
     }

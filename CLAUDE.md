@@ -47,6 +47,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
    - **Collector Chrome** runs on CDP port 9222. For tests, connect with Playwright `connect_over_cdp("http://localhost:9222")` and pick the page whose URL contains "official".
 2. **Official songs are saved as one PDF per instrument, plus `Chords.txt`.** Guitar Pro files only come with `--gp`.
    - The user wants PDFs that Fretboard converts. Never switch the default back to .gp.
+   - **Pro and Guitar Pro tabs** (URL has `-pro-`) are different: the helper saves only the .gp/.gp5 file from their Download button (`page_kind` / `save_gp`). Only `-official-` URLs get PDFs.
+   - The user does this legally: never add stealth, bot-hiding or paywall bypassing.
 3. **The importer:** `importFiles` → `importPdfParts` → `readParts` (in `js/app.js`).
    - **Each PDF:** `pdfToTab` (`js/pdftab.js`) → `findStaves` + `readStrip` (`js/ugtab.js`).
      - Drums and shaker go through `findDrumStaves` / `readDrumStrip` (`js/ugdrums.js`) instead.
@@ -98,8 +100,33 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **Check the result:** `window.fretboardPlayer.api.score` has the master bar count, time signature and tempo. Check that each track's bar beats add up to `masterBars[i].calculateDuration()`.
 - **Python PDF checks:** render pages with `fitz` (PyMuPDF), e.g. `page.get_pixmap(dpi=60)`, to look at them.
 
-## Where we left off (2026-10-22)
+- **Never navigate the preview to a non-HTML file** (e.g. a .pdf or LICENSE): it pops a Save dialog on the user's screen. Fetch it from page JS instead.
 
-- Commits `ad7a620`, `cf606de` and `12f34f7` are pushed. Official UG songs now import with every part in sync and exact guitar rhythms.
-- Here I Am To Worship (8 parts) reads 85 bars in every part, 4/4 at ♩=76.
-- For the user to get it: restart the helper (Start UG helper), re-save the song with Replace, then import the new PDFs.
+## Sound engine: our patches to alphaTab's synth
+
+- `vendor/alphatab/alphaTab.js` is **generated**: edit `scripts/vendor.mjs`, then run `node scripts/vendor.mjs`. Each patch throws if alphaTab's code changes, so an upgrade can't silently drop one.
+- The soundfont is `vendor/soundfont/MuseScore_General.sf3` (downloaded once, never in the APK). It was made for FluidSynth, and alphaTab's synth (a TinySoundFont port) reads it differently. The patches:
+  1. **NaN guard:** a bad sample is dropped and the voice's low-pass filter is cleared. Before, one NaN silenced the whole song (When I Go Down went silent at bar 18).
+  2. **Stereo samples load** (`sampleType & 7`). alphaTab loaded only mono samples. The grand piano is stereo, so it played nothing.
+  3. **Modulators:** alphaTab ignores soundfont modulators. `fbCollectMods` / `fbApplyMods` apply the ones that move the filter (`initialFilterFc`, `modEnvToFilterFc`) by velocity or key when a note starts. Without them the piano's filter stayed closed near 80 Hz.
+  4. **Volume:**
+     - Velocity layers are read at FluidSynth's 0.4× attenuation. Only the part above an instrument's loudest layer is scaled.
+     - **Floor:** a normal hit (velocity 95, middle C) is never quieter than 20 dB, the quietest guitar preset. Quieter instruments are lifted as a whole (`fbLift`).
+     - The guitars measure exactly as before. Keep it that way: guitar sound comes first.
+- **To measure the sound** in the preview:
+  - `api.exportAudio(new alphaTab.synth.AudioExportOptions())` with `playbackRange` and `trackVolume` (a Map of track index → volume), then `render(500)` until it returns null. Sum the RMS and count NaN.
+  - Use the default sample rate (22050 gives NaN everywhere).
+  - Volume 0 doesn't hide a NaN track (NaN × 0 = NaN).
+- Reference: When I Go Down `.gp5`, bars 18–20, solo RMS:
+  - acoustic guitar (track 0) 0.0347
+  - piano (track 4) 0.0146
+
+## Where we left off (2026-10-23)
+
+- Pushed: piano sound fixes (`c694008`, `f24112c`), the helper's Pro-tab .gp download, and the importer fixes for When I Go Down.
+  - The importer fixes: rest-only lines, rest digits 4 and 7, a drum note with no stem, and imports stalling in a hidden tab (`intent: 'print'`).
+- Android 1.38 (versionCode 39) is the latest APK. The user says the sound is "much better".
+- Still open for When I Go Down (PDF import, 114 bars), details in `TODO.md`:
+  - piano part line 3 is lost: 37 bars
+  - drums and percussion don't read multi-bar rests
+  - the gp5 drums import as piano (channel 11, program 0)

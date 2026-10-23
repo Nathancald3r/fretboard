@@ -245,7 +245,7 @@ export async function renderInk(page, scale) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const ink = new Uint8Array(width * height);
   const light = new Uint8Array(width * height); // also the pale staff lines

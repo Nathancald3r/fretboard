@@ -23,3 +23,34 @@
 7. Test on web, then bump the Android version, build, install, and send the APK (under 30 MB).
 
 **Done when:** the chords on song 40 match the sheet, the vocal lines up with the lyric bar, and the guitar sounds right.
+
+## When I Go Down - Relient K: finish the PDF import (official UG song, 7 parts, 114 bars)
+
+The PDFs are in `%USERPROFILE%\Downloads\UG Songs\When I Go Down - Relient K\`. Copy them into a temporary `_ug5/` folder to test, and delete it before committing.
+
+Mapping:
+- p1 Background Percussion
+- p2 Drums
+- p3 Bass
+- p4 Acoustic
+- p5 Electric (Matt Hoopes)
+- p6 Electric (Matt Theissen)
+- p7 Piano
+
+Bars read per part with `pdfToTab` (lyrics off):
+
+| Part | Bars | Note |
+|---|---|---|
+| Electric p5, Electric p6, Bass p3 | 114 ✓ | |
+| Acoustic p4 | 107 | Measured before the rest-line fixes; re-check. 10 pages, about 3 min. |
+| Piano p7 | 37 ✗ | Line 3 (bars 28–104) is all multi-bar rests and is lost. `findStaves` finds the staff (ys ≈ 575…651), so the loss is later. Debug `readStrip` on that staff: probably `barLines` (bar lines with ticks or 2 breaks) or `tabSize`. |
+| Drums p2 | 56 ✗ | `readDrumStrip` (`js/ugdrums.js`) doesn't read multi-bar rests. Add the empty bar + big number logic that `readStrip` has (`readRestCount`, `bar.rest`). |
+| Percussion p1 | 33 ✗ | Same as Drums. |
+
+Other notes:
+- `findStaves` has a new rule: two lines 3 or 5 spaces apart, joined by ≥ 3 bar lines, are filled in as a staff. It isn't proven to help yet; remove it if it doesn't.
+- The `.gp5` of this song imports its drums as piano (channel 11, program 0). Check the GP5 import's percussion detection.
+- When done:
+  - Run the tests and push.
+  - Tell the user to restart the UG helper.
+  - Delete the old When I Go Down card and re-import.

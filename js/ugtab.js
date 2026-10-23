@@ -33,6 +33,24 @@ export function findStaves(light, w, h, ink, counts = [6]) {
   // one, it would join a staff's run and shift the staff a string down
   const thick = lines.map((l) => l.n).sort((a, b) => a - b)[lines.length >> 1] * 2;
   const ys = lines.filter((l) => l.n <= Math.max(thick, 3)).map((l) => l.sum / l.n);
+  // A line of only multi-bar rests can be drawn with just its outer two lines (the others are ticks at
+  // the bar lines): two lines 3 or 5 spaces apart, joined by bar lines, are a 4- or 6-line staff.
+  const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter((g) => g > 6).sort((a, b) => a - b);
+  const sp = gaps[gaps.length >> 1];
+  for (let i = 0; sp && i + 1 < ys.length; i++) {
+    const t = Math.round(ys[i]), b = Math.round(ys[i + 1]), g = b - t;
+    const m = [3, 5].find((k) => Math.abs(g - k * sp) <= 0.08 * k * sp && counts.includes(k + 1));
+    if (!m) continue;
+    let joins = 0;
+    for (let x = 0; x < w && joins < 3; x++) {
+      let n = 0;
+      for (let y = t; y <= b; y++) n += light[y * w + x];
+      if (n >= 0.97 * (g + 1)) { joins++; x += 3; }
+    }
+    if (joins < 3) continue;
+    ys.splice(i + 1, 0, ...Array.from({ length: m - 1 }, (_, k) => ys[i] + (k + 1) * g / m));
+    i += m - 1;
+  }
   const out = [];
   for (let i = 0; i + 1 < ys.length;) {
     const gap = ys[i + 1] - ys[i];
@@ -56,7 +74,7 @@ export function findStaves(light, w, h, ink, counts = [6]) {
         while (x0 < w && !light[y * w + x0]) x0++;
         while (x1 > 0 && !light[y * w + x1]) x1--;
         // a staff's lines all start at its left edge; a beam over a music staff starts after the clef
-        const starts = rows.map((r) => Math.min(...[-1, 0, 1].map((d) => { const yy = Math.round(r) + d; let x = 0; while (x < w && !light[yy * w + x]) x++; return x; })));
+        const starts = rows.map((r) => Math.min(...[-1, 0, 1].map((d) => { const yy = Math.round(r) + d; let x = 0; while (x < w && !light[yy * w + x]) x++; return x; }))).filter((x) => x < w); // a line drawn only as ticks has no start
         if (Math.max(...starts) - Math.min(...starts) > 2 * gap) continue;
         out.push({ ys: rows, x0, x1, u: (rows[size - 1] - rows[0]) / (size - 1) });
       }
@@ -71,9 +89,16 @@ function barLines(light, w, st) {
   const t = Math.round(st.ys[0]), b = Math.round(st.ys[st.ys.length - 1]);
   const xs = [];
   for (let x = st.x0; x <= st.x1; x++) {
-    let n = 0;
-    for (let y = t; y <= b; y++) n += light[y * w + x];
-    if (n >= 0.97 * (b - t + 1)) xs.push(x);
+    let n = 0, gaps = 0, hole = 0, run = 0;
+    for (let y = t; y <= b; y++) {
+      n += light[y * w + x];
+      if (y > t && light[(y - 1) * w + x] && !light[y * w + x]) gaps++;
+      run = light[y * w + x] ? 0 : run + 1;
+      hole = Math.max(hole, run);
+    }
+    // whole, or broken once in the middle (UG breaks the bar lines of a line of multi-bar rests); a chord's
+    // stacked numbers leave a gap between every two
+    if (n >= 0.97 * (b - t + 1) || (gaps <= 1 && hole <= 0.8 * st.u && n >= 0.7 * (b - t + 1) && light[t * w + x] && light[b * w + x])) xs.push(x);
   }
   const groups = [];
   for (const x of xs) {
@@ -437,6 +462,10 @@ export function readStrip(ink, light, w, h, st) {
     if (thick) { // the number sits centred over the thick bar
       const c = (thick.x0 + thick.x1) / 2;
       bar.rest = readRestCount(ink, w, st, c - 2.2 * st.u, c + 2.2 * st.u) || 1;
+    } else if (!cols.length) { // Tablature view draws a multi-bar rest as an empty bar with its number above
+      const c = (bl[i] + bl[i + 1]) / 2;
+      const n = readRestCount(ink, w, st, c - 2.2 * st.u, c + 2.2 * st.u);
+      if (n) bar.rest = n;
     } else if (cols.length) { // rests between the notes keep them in time (a bar of only rests stays empty)
       const inside = rests.filter((r) => r.cx > bl[i] && r.cx < bl[i + 1] && !cols.some((c) => Math.abs(c.cx - r.cx) < 0.6 * st.u));
       if (inside.length) { cols.push(...inside.map((r) => ({ ...r }))); cols.sort((a, b) => a.cx - b.cx); }

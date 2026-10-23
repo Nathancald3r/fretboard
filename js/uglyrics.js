@@ -46,7 +46,7 @@ export async function readLyricLine(page, scale, st, limitY) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K] }).promise;
+  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
   let words;
   try { words = (await wk.recognize(canvas, {}, { blocks: true })).data.words || []; } catch { return []; }
   // text that starts low in the crop is the next strip's section name poking in (the lone
@@ -125,7 +125,7 @@ export async function readWords(page, scale, x0, y0, x1, y1, { K = 4, psm = '11'
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K] }).promise;
+  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: scale * K }), transform: [1, 0, 0, 1, -x0 * K, -y0 * K], intent: 'print' }).promise;
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data, W = canvas.width;
   for (let y = 0; y < canvas.height; y++) {
