@@ -20,7 +20,7 @@ The song: official UG, Elevation Worship, key C, 181 bars. Its PDFs are in `%USE
 Done (`ec69318`): piano ties (also over the bar line and into a line), triplets (long "⌐3¬" and short "(3)" brackets), bracketed notes held, the bridge's fake sharps (a "(" read as a flat), lyrics, LG3 bar 135, section labels, count-in, the Outro slowdown, the helper's tray Quit.
 
 1. **Roman numerals:** the key part is done (`40ea297`). The spelling waits for the user's examples.
-2. **Dynamics p, f, mf** (bars 77–79, 146): not read yet.
+2. **Dynamics p, f, mf:** done. Read from the sheet music under each staff (`scoreDynamics`). Still missed: a mark printed on top of a lyric word (the f under mp at bars 24, 26, 34, 47, 85).
 3. **Lyrics, helper capture bug:** the Vocal PDF's words at bars 141–143 are cut in the PDF itself (only the letter tops), though it was saved after the cut-words fix (`108be84`). Fretboard borrows those words from another part. Test the helper's capture on this song with the collector Chrome running.
 4. **alphaTab draws a 4-note triplet as two "3"s** (16+8, 8+16): it plays right but looks different from UG's one bracket.
 

@@ -838,8 +838,11 @@ function fitScore(b, T) {
 const scorePieces = (len, tu) => (tu ? pieces(len * 1.5).map((p) => withFx(dur(p), 'tu 3')) : pieces(len).map(dur));
 // One staff's bar: wherever a note starts on that staff, the notes sounding then (one still held
 // from before is tied on); silence is a rest.
-function scoreBeats(b, k, T, flats) {
+// A dynamic (p, mf, f) read under either staff goes on every staff's beat where it falls; `start` is
+// the one to begin the staff with (the importer carries the last one on into the next staff).
+function scoreBeats(b, k, T, flats, start = null) {
   const evs = (b.staves?.[k] || []).filter((e) => e.notes.length && e.dur > 0);
+  const marks = (b.staves || []).flat().filter((e) => e.dy).sort((x, y) => x.at - y.at);
   const eps = 1e-6; // triplet times are thirds
   const starts = [...new Set([0, ...evs.map((e) => e.at)].map((t) => Math.round(t * 1e6) / 1e6))].filter((t) => t < T - eps).sort((x, y) => x - y);
   const tus = (b.tuplets || []).filter((g) => g.staff === k);
@@ -849,9 +852,12 @@ function scoreBeats(b, k, T, flats) {
     const held = new Map(); // pitch -> only tied on from before
     // (a note drawn with a tie into it is held on too, also over the bar line)
     for (const e of evs) if (e.at <= t + eps && e.at + e.dur > t + eps) for (const n of e.notes) held.set(n.p, (held.get(n.p) ?? true) && (e.at < t - eps || !!n.tie));
-    if (!held.size) return scorePieces(len, tu).map((d) => `r.${d}`).join(' ');
+    const dy = marks.filter((e) => e.at >= t - eps && (e.at < t + len - eps || j === 0)).pop()?.dy || (j === 0 ? start : null);
+    const fx = (d, i) => (i === 0 && dy ? withFx(d, `dy ${dy}`) : d);
+    if (!held.size) return scorePieces(len, tu).map((d, i) => `r.${fx(d, i)}`).join(' ');
     const ps = [...held.keys()].sort((x, y) => x - y);
-    return scorePieces(len, tu).map((d, i) => {
+    return scorePieces(len, tu).map((d0, i) => {
+      const d = fx(d0, i);
       const notes = ps.map((p) => pitchTex(p, flats, i > 0 || held.get(p)));
       return `${notes.length === 1 ? notes[0] : `(${notes.join(' ')})`}.${d}`;
     }).join(' ');
@@ -1009,7 +1015,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
         if (i === 0) head.push(`\\ts ${num} ${den}`);
       }
       if (i === 0) head.push(`\\clef ${staff.clef}`, `\\ks ${KS_NAMES[staff.key + 7]}`);
-      return `${head.join(' ')} ${scoreBeats(b, staff.k, T, staff.key < 0) || restTex(T)}`.trim();
+      return `${head.join(' ')} ${scoreBeats(b, staff.k, T, staff.key < 0, i === 0 ? 'f' : null) || restTex(T)}`.trim();
     }
     const lens = b.lens;
     for (const c of b.cols) {

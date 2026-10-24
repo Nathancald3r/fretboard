@@ -387,26 +387,84 @@ async function notationMarks(page, scale, r, st, top) {
   const src = await drawBox(page, scale, x0 - u - 2, tTop - 2, x1 + u + 2, st.ys[0] + u + 2);
   const flat = inkBlobs(r.ink, r.w, x0, tTop, x1, tBot).filter((b) => b.y1 - b.y0 <= 0.6 * u && b.x1 - b.x0 >= 1.2 * u);
   out.push(...notationText(await readWords(page, scale, x0, tTop, x1, tBot, { wipe: flat, src }), u));
-  // dynamics: bold letters under the music staff, each piece read on its own as p, m or f letters
-  const dTop = ms[1] + 0.3 * u, dBot = st.ys[0] - 0.7 * u;
+  out.push(...await readDynamics(page, scale, r, x0, x1, ms[1] + 0.3 * u, st.ys[0] - 0.7 * u, u, src));
+  return out.sort((a, b) => a.x - b.x);
+}
+
+// How bold a group's strokes are: the share of its ink that has ink all round it, a tenth of a staff space out.
+function thick(ink, w, g, u) {
+  const d = Math.max(1, Math.round(0.1 * u));
+  let n = 0, all = 0;
+  for (let y = g.y0 + d; y < g.y1 - d; y++) for (let x = g.x0 + d; x < g.x1 - d; x++) {
+    if (!ink[y * w + x]) continue;
+    all++;
+    if (ink[(y - d) * w + x] && ink[(y + d) * w + x] && ink[y * w + x - d] && ink[y * w + x + d]) n++;
+  }
+  return all ? n / all : 0;
+}
+
+// Dynamics: bold letters in a box (under a music staff), each piece read on its own as p, m or f letters.
+// `sheet`: a sheet-music system, where u is the music staff's space and the lyrics sit in the same box.
+async function readDynamics(page, scale, r, x0, x1, dTop, dBot, u, src, sheet = false) {
+  const out = [];
   const pieces = inkBlobs(r.ink, r.w, x0, dTop, x1, dBot).filter((b) => b.y1 - b.y0 >= 0.3 * u && b.x1 - b.x0 >= 0.25 * u);
   pieces.sort((a, b) => a.x0 - b.x0);
   const groups = [];
   for (const b of pieces) {
     const g = groups[groups.length - 1];
-    if (g && b.x0 - g.x1 < 0.3 * u && b.y0 < g.y1 && b.y1 > g.y0) { g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1); g.n += b.n; } else groups.push({ ...b });
+    if (g && b.x0 - g.x1 < 0.3 * u && b.y0 < g.y1 && b.y1 > g.y0) { g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1); g.n += b.n; g.parts.push(b); } else groups.push({ ...b, parts: [b] });
   }
+  const rowInk = (g, y) => { let n = 0; for (let x = g.x0; x < g.x1; x++) n += r.ink[y * r.w + x] ? 1 : 0; return n; };
   for (const g of groups) {
+    // a mark touching a stem that runs into the box (a note of the staff above or below): cut the stem off
+    if (g.y0 <= dTop + 1) while (g.y0 < g.y1 && rowInk(g, g.y0) <= 0.25 * u) g.y0++;
+    if (g.y1 >= dBot - 1) while (g.y1 > g.y0 && rowInk(g, g.y1 - 1) <= 0.25 * u) g.y1--;
     const gw = g.x1 - g.x0, gh = g.y1 - g.y0;
-    // a piece cut off at the top of the box is a note hanging from the staff (its stem), not a letter
+    // a piece still cut off at the top of the box is a note hanging from the staff, not a letter
     if (g.y0 <= dTop + 1 || gh < 0.6 * u || gh > 2.2 * u || gw > 4 * u || g.n < 0.18 * gw * gh) continue;
+    // the marks are bold (0.15+ of their ink is deep inside a stroke), the lyrics' letters thin (0.11 at most);
+    // an m on its own is short and is read with the letter beside it
+    const th = sheet ? thick(r.ink, r.w, g, u) : 0;
+    if (sheet && (gh < 1.2 * u || th < 0.14)) continue;
     const ws = await readWords(page, scale, g.x0 - u, g.y0 - u, g.x1 + u, g.y1 + u, { psm: '8', chars: 'pmf', lines: false, src });
-    const t = ws.map((w) => w.text.trim()).join('');
-    const conf = ws.length ? Math.min(...ws.map((w) => w.conf)) : 0;
+    let t = ws.map((w) => w.text.trim()).join('');
+    let conf = ws.length ? Math.min(...ws.map((w) => w.conf)) : 0;
+    // "mf" and "mp" often come back as "f" and "p": a short piece (the m) in front of the tall letter says so
+    if ((t === 'f' || t === 'p') && g.parts.length > 1 && g.parts[0].y1 - g.parts[0].y0 <= 0.65 * gh) { t = 'm' + t; conf = 100; }
+    // nothing read (a lyric beside it can throw the reader): a lone bold letter is known by its height,
+    // p 1.4 staff spaces, f 2.1 (noteheads are bolder still)
+    if (sheet && !t && g.parts.length === 1 && th < 0.35) {
+      if (gh >= 1.25 * u && gh <= 1.6 * u) t = 'p';
+      else if (gh >= 1.9 * u && gh <= 2.2 * u) t = 'f';
+    }
     // a lone f or p comes back with no confidence at all: its tall bold shape vouches for it
-    if (DYNAMICS.has(t) && (conf >= 40 || (/^(f+|p+)$/.test(t) && gh >= 1.3 * u && g.n >= 0.2 * gw * gh))) out.push({ x: g.x0, dy: t });
+    if (DYNAMICS.has(t) && (conf >= 40 || (/^(f+|p+)$/.test(t) && gh >= 1.3 * u && g.n >= 0.2 * gw * gh))) out.push({ x: g.x0, cx: (g.x0 + g.x1) / 2, dy: t });
   }
-  return out.sort((a, b) => a.x - b.x);
+  return out;
+}
+
+// The dynamics under each staff of a sheet-music system go on the first note at or after them (e.dy).
+async function scoreDynamics(page, scale, r, sys) {
+  const u = sys.u, [x0, x1] = sys.sx;
+  for (let k = 0; k < sys.ys.length; k++) {
+    // under the staff, above the next one (or 6 spaces down); the lyrics' letters are thin, not bold
+    const dTop = sys.ys[k][1] + 0.3 * u, dBot = k + 1 < sys.ys.length ? sys.ys[k + 1][0] - 0.7 * u : sys.ys[k][1] + 6 * u;
+    if (dBot - dTop < 1.5 * u) continue;
+    const src = await drawBox(page, scale, x0 - 2 * u, dTop - 2, x1 + u, dBot + 2);
+    const got = [];
+    for (const m of await readDynamics(page, scale, r, x0, x1, dTop, dBot, u, src, true)) {
+      const bar = sys.bars.find((b) => m.x >= b.x0 - 0.5 * u && m.x < b.x1);
+      const evs = bar?.staves[k]?.filter((e) => e.notes.length).sort((a, b) => a.x - b.x);
+      if (!evs?.length) continue;
+      // the note it sits under: the nearest one
+      let i = 0;
+      evs.forEach((e, j) => { if (Math.abs(e.x - m.cx) < Math.abs(evs[i].x - m.cx)) i = j; });
+      got.push({ m, bar, evs, i });
+    }
+    // two marks in a bar keep their order on notes of their own ("p f" under a chord and the note after it)
+    for (let j = got.length - 2; j >= 0; j--) if (got[j].bar === got[j + 1].bar && got[j].i >= got[j + 1].i) got[j].i = got[j + 1].i - 1;
+    for (const { m, evs, i } of got) if (i >= 0) evs[i].dy = m.dy;
+  }
 }
 
 // The bars of some strips in play order, a multi-bar rest counting as that many bars.
@@ -473,7 +531,7 @@ export async function pdfToTab(buf, onProgress = () => {}, opts = {}) {
   }
 }
 
-async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', lyrics = true, bass = false, drums = null }) {
+async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', lyrics = true, bass = false, drums = null, dynamics = true }) {
   const pages = [];
   const seen = new Set();
   let how = 'image', unknown = 0, systems = 0;
@@ -569,9 +627,11 @@ async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', 
       const music = findMusicStaves(r.light, r.w, r.h);
       if (music.length) {
         const u = music.map((s) => s.u).sort((a, b) => a - b)[music.length >> 1];
-        if (Math.abs(u - UG_UNIT) > 0.6) r = await renderInk(page, base * UG_UNIT / u);
+        const sc = Math.abs(u - UG_UNIT) > 0.6 ? base * UG_UNIT / u : base;
+        if (sc !== base) r = await renderInk(page, sc);
         const got = readScorePage(r.ink, r.light, r.w, r.h, scoreKey);
         if (got.length) {
+          if (dynamics) for (const sys of got) await scoreDynamics(page, sc, r, sys);
           how = 'score';
           scoreKey ??= got.flatMap((s) => s.keys).find((k) => k) ?? null;
           strips.push(...got);

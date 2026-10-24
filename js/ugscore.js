@@ -664,6 +664,7 @@ export function readScorePage(ink, light, w, h, key = null) {
     const barAt = (x) => bars.reduce((k, b, j) => (b.x0 <= x + 0.5 * u ? j : k), 0);
     for (const sec of hd.sections) if (bars.length) Object.assign(bars[barAt((sec.x + sec.x1) / 2)], { heading: true, name: sec.name, numbered: sec.numbered });
     for (const t of hd.tempos) if (bars.length) bars[barAt(t.x)].tempo = t.v;
-    return { score: true, clefs: staves.map((s) => s.clef), keys: staves.map((s) => s.key), den: staves[0].den, bars, lyr: [] };
+    return { score: true, clefs: staves.map((s) => s.clef), keys: staves.map((s) => s.key), den: staves[0].den, bars, lyr: [], u,
+      ys: staves.map((s) => [s.st.ys[0], s.st.ys[4]]), sx: [top.x0, top.x1] }; // (where the staves are, for the dynamics)
   }).filter((s) => s.bars.length);
 }
