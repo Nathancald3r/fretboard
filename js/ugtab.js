@@ -143,7 +143,18 @@ function barLines(light, w, st) {
     if (groups.length && x - groups[groups.length - 1][groups[groups.length - 1].length - 1] <= 2) groups[groups.length - 1].push(x);
     else groups.push([x]);
   }
-  const out = groups.map((g) => g.reduce((a, c) => a + c, 0) / g.length)
+  // A bar line is straight. Brackets round a tied chord stacked on every string ("(0)" over "(2)" ...) can
+  // join into one column of ink too, but they curve: just beside it, between the staff lines, there's ink
+  // on many rows.
+  const between = [];
+  for (let y = t; y <= b; y++) if (st.ys.every((ly) => Math.abs(y - ly) > 2)) between.push(y);
+  const straight = (g) => {
+    const l = g[0] - 2, r = g[g.length - 1] + 2;
+    let n = 0;
+    for (const y of between) if ((l >= 0 && light[y * w + l]) || (r < w && light[y * w + r])) n++;
+    return n <= 0.25 * between.length;
+  };
+  const out = groups.filter(straight).map((g) => g.reduce((a, c) => a + c, 0) / g.length)
     .filter((x, i, a) => i === 0 || x - a[i - 1] > st.u); // the thin and thick lines of a final double bar are one
   // some systems end without a closing bar line: the staff's end closes the last bar
   if (out.length && st.x1 - out[out.length - 1] > 4 * st.u) out.push(st.x1);
@@ -248,7 +259,7 @@ function readNotes(ink, w, st, bars, comps = components(ink, w, st, bars)) {
     if (c.h < 0.45 * u || c.area < 18 || c.h > 1.3 * u || c.w > 1.3 * u || c.w <= 4) continue; // (a bracket is thinner than any digit)
     if (cy < st.ys[0] - 0.45 * u || cy > st.ys[st.ys.length - 1] + 0.45 * u) continue;
     const ch = glyphAt(c);
-    if (ch === null) continue;
+    if (ch === null || (ch === '1' && c.h > 0.9 * u)) continue; // (a bracket can match a 1, but it's taller: UG's 1 is 0.75 spaces)
     let s = 0;
     st.ys.forEach((y, i) => { if (Math.abs(cy - y) < Math.abs(cy - st.ys[s])) s = i; });
     glyphs.push({ x0: c.x0, x1: c.x1, s, ch });
