@@ -24,7 +24,7 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
 3. **Lyrics, helper capture bug:** the Vocal PDF's words at bars 141–143 are cut in the PDF itself (only the letter tops), though it was saved after the cut-words fix (`108be84`). Fretboard borrows those words from another part. Test the helper's capture on this song with the collector Chrome running.
 4. **alphaTab draws a 4-note triplet as two "3"s** (16+8, 8+16): it plays right but looks different from UG's one bracket.
 
-## Chord charts as a songbook: columns, ChordPro in and out, live mode, Roman numerals fix (the user's plan, 2026-10-23, not started)
+## Chord charts as a songbook: columns, ChordPro in and out, live mode, Roman numerals fix (the user's plan, 2026-10-23, partly done)
 
 **The goal:** chord charts that feel like Planning Center Music Stand when playing live, with the range of SongbookPro, and files that open cleanly in SongbookPro, OnSong and Music Stand.
 
@@ -61,7 +61,7 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
      - minor keys: we count from the minor tonic, so C in Am is III; some charts count from the relative major instead
    - Ask the user what looked wrong before changing the spelling.
    - Tests are in `tests/theory.test.mjs`.
-2. **Two columns:** the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
+2. **Two columns: done 2026-10-24 (`a7d07bf`)**, a toggle in the sticky bar, saved per song (`song.columns`), sections never split (`.tx-sec`); phones stay one column. Not done: a section that won't fit moving whole to the next page. The plan was: the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
 3. **Export:**
    - **ChordPro (.cho / .chordpro), the main one.**
      - Header: `{title}`, `{artist}`, `{key}`, `{capo}`, `{tempo}`, `{time}`.
@@ -85,6 +85,13 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
 6. **UG helper's Done window ("UG song collector"):** add an **Open in app** button beside Open folder and Close.
    - It opens Fretboard (the website, or the Fretboard tab already open) on the song. If auto-import hasn't brought the song in yet, it imports it first, so there's no Import files / select all / Create song step.
    - The helper can tell Fretboard over `ug_watch.py` (a "ready, open it" flag Fretboard picks up on its 4 s check), or open the website with the song's folder in the address.
+
+**Done 2026-10-24 (`a7d07bf`):**
+- Hover or tap a chord: its diagram, other shapes (Open, E/A/D shape, `shapesFor` in `js/chordshapes.js`), tap to hear, and "Use this shape". Saved shapes apply to every song (IndexedDB kv `chordShapes`, `"root:type" → frets`).
+- "Chord shapes" strip: every chord in the song as a diagram.
+- Edit opens a chord sheet as ChordPro (`editorText` / `fromEditor` in `texttab.js`) and saves it back as chords over the words, keeping the head and From link.
+- The control bar (auto-scroll, speed, transpose) is sticky; on phones it's one row you swipe.
+- ChordPro export for sharing (`sheetToChordPro` in `js/sharecore.js`) came with the sharing work (`2b05e93`).
 
 **Done already (2026-10-23):**
 - The strum pattern plays on loop: ▶ Play at the song's tempo, and Slow practice from 60%, +5% every two loops.

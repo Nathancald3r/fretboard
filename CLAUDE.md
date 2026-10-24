@@ -156,12 +156,10 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - acoustic guitar (track 0) 0.0347
   - piano (track 4) 0.0146
 
-## Where we left off (2026-10-23)
+## Where we left off (2026-10-24)
 
-- Pushed: piano sound fixes (`c694008`, `f24112c`), the helper's Pro-tab .gp download, and the importer fixes for When I Go Down.
-  - The importer fixes: rest-only lines, rest digits 4 and 7, a drum note with no stem, and imports stalling in a hidden tab (`intent: 'print'`).
-- Android 1.38 (versionCode 39) is the latest APK. The user says the sound is "much better".
+- Android 1.47 (versionCode 48) is the latest APK (sharing to MusicStand/OnSong). Chord sheet features (`a7d07bf`) are pushed but not in an APK yet.
+- Pushed: the Songs page redesign, sharing, the .ptb reader, the mixer preview and instrument picker, drum fixes, the round-trip import test.
 - Still open for When I Go Down (PDF import, 114 bars), details in `TODO.md`:
   - piano part line 3 is lost: 37 bars
   - drums and percussion don't read multi-bar rests
-  - the gp5 drums import as piano (channel 11, program 0)
