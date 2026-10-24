@@ -263,6 +263,44 @@ class Ranged(http.server.SimpleHTTPRequestHandler):
             left -= len(chunk)
 
 
+def youtube_id(url):
+    import re
+    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/)([\w-]{11})", url or "")
+    return m.group(1) if m else None
+
+
+def fretboard_file(song, info, out):
+    """The song for Fretboard (a .fretboard file): the tab, its YouTube video, and where every bar starts in
+    that video (the line-up), so Fretboard plays the tab in step with the video straight away."""
+    import datetime
+    A, step = np.array(info["tabAt"]), info["step"]
+    rec_s = np.arange(len(A)) * step
+    keep = np.r_[True, np.diff(A) > 0]  # tab time only moves on: np.interp needs it rising
+    points, last = [], -1
+    for p, b in enumerate(info["bars"]):
+        ms = int(round(float(np.interp(b[0], A[keep], rec_s[keep])) * 1000))
+        if ms > last:  # bars before the video begins all sit at 0: keep the first
+            points.append([p, max(0, ms)])
+            last = max(0, ms)
+    vid = youtube_id(info["url"])
+    video = song.get("video") or {}
+    gp = Path(song["gp"])
+    title = song.get("title") or song["name"].removesuffix(" (official)")
+    entry = {
+        "kind": "gp", "title": title, "artist": song.get("artist", ""), "fileName": gp.name,
+        "data": {"$bytes": base64.b64encode(gp.read_bytes()).decode()},
+        "recording": {"kind": "youtube", "id": vid, "title": video.get("title", ""), "author": video.get("channel", "")},
+        "syncPoints": points, "syncDone": True,
+        "autoSync": {"from": "yt2gp5", "gp_sha": info["gp_sha"], "chords": info.get("dist"), "made": datetime.date.today().isoformat()},
+        "version": {"type": "official"},
+        **({"sourceUrl": song["ug"]} if song.get("ug") else {}),
+    }
+    path = out / f"{run.slug(title)}.fretboard"
+    path.write_text(json.dumps({"format": "fretboard-songs", "version": 1, "created": datetime.datetime.now().isoformat(),
+                                "songs": [entry]}), encoding="utf-8")
+    return path
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
@@ -282,6 +320,10 @@ def main():
         build(song, url)  # else the last build is still right: just open it
     else:
         print("(the same tab and video as last time: opening that; --again rebuilds it)")
+    fb = fretboard_file(song, json.loads(info.read_text(encoding="utf-8")), out)
+    print(f"for Fretboard (the tab, the video and where each bar is): {fb}")
+    if "--export" in a:
+        return
     (out / "index.html").write_text(PAGE.replace("/*INFO*/null", info.read_text(encoding="utf-8")), encoding="utf-8")
     Ranged.marks_file = TRUTH / f"{run.slug(song['name'])}.json"
     Ranged.old_file = MARKS / f"{run.slug(song['name'])}.json"

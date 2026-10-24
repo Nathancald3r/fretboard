@@ -152,6 +152,7 @@ cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; 
 - It plays every track of the tab with Fretboard's synth, then stretches it to the recording's timing with the pitch kept. It lines up by the chords first, then by the note starts (to about 10 ms).
 - It then opens a local page: the recording in the left ear, the tab in the right (all tracks, or one alone), with levels in dB, a timeline with the song's sections and one lane per track, and the keys in the guide above.
 - Add `--url URL` to try another video, and `--again` to build it again.
+- **For Fretboard:** every run also writes `<title>.fretboard` in the song's `out\listen\` folder: the tab, its YouTube video, and where every bar starts in it. Drop it into Fretboard and the tab plays in step with the video. `--export` only writes that file (no page).
 - **The truth file** (`truth\<song>.json`, no audio, so it can be committed): your checks (track, kind, bars, times, section, the tab's notes there, your levels), your answers to the guesses, how long you heard each track alone in each section, the sections, and the time map (recording → tab every 50 ms). Older `marks\<song>.json` files are carried over.
 - **Guesses** (`check.py`): bars where the chords differ, a track's notes aren't in the recording, or a track plays early or late.
 - Sections come from the tab's section markers (UG official tabs have them). A tab with none shows one "Start" section, and C/V/B say so.

@@ -102,6 +102,16 @@ The goal: official `.gp` files that pair perfectly with their recordings, so the
   4. Fix the tabs from the checks (Claude, by hand at first; then suggested fixes, e.g. a note one semitone off where the recording has the other one).
 - **Later:** suggest levels per track (from the user's own level changes); sections for tabs without markers (from Chords.txt labels, then from the music repeating); how sure each bar is, shown in Fretboard.
 
+## Two roads to "any YouTube song as a .gp" (2026-10-24)
+
+1. **A good tab exists (UG official, or a good user tab):** don't transcribe. Download the tab, match it to the video (`real.whole_match`), and hand Fretboard the line-up.
+   - **Done:** `listen.py NAME --export` writes `out/listen/<song>/<title>.fretboard`: the .gp, the YouTube link, and a sync point for every bar (`syncPoints`, from the time map), marked `syncDone` and `autoSync`. Import it into Fretboard and the tab follows the video at once. Checked on Be My Escape: bars 28, 52 and 73 land within 0.05 s of the matcher's times.
+   - **Next:** one command from a YouTube link: find the UG official tab, have the helper save it, `ug_to_gp`, verify, export, and open it in Fretboard. Then the same for good user tabs (rated ones), with the match as the quality check: a tab that doesn't match all the way through is not used.
+2. **No good tab:** transcribe (the Colab notebook). This is where Colab and a dataset pay off.
+   - Every song checked on road 1 is a training pair: the recording, its stems, and the exact notes with their times (the time map), cleaned by the user's checks in `truth/`.
+   - With ~100 such pairs: fine-tune the note model on Colab (GPU), score it with `real.py` on songs it hasn't seen, and keep it only if the guitar notes get better.
+   - Public datasets (GuitarSet, GAPS, the Slakh synthetic mixes) help as a start, but the user's own band-style pairs match what they play.
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).

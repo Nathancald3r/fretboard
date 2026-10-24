@@ -29,6 +29,7 @@ assert.equal(syncState({ recording: { kind: 'youtube' } }).state, 'progress');
 assert.deepEqual(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1]], videoBpm: 90 }).steps, [true, true, true, false]);
 assert.equal(syncState({ recording: {}, videoMaster: 5, syncPoints: [[0, 1], [4, 9]], syncDone: true }).state, 'synced');
 assert.equal(syncState({ recording: {}, syncDone: true }).state, 'progress'); // can't be done before it is lined up
+assert.equal(syncState({ recording: {}, autoSync: { from: 'yt2gp5' }, syncPoints: [[0, 0], [1, 1900]], syncDone: true }).state, 'synced'); // lined up by the computer from bar 1
 
 import { versionLabel } from '../js/songmeta.js';
 assert.equal(versionLabel({}), '');
