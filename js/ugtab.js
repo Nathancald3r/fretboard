@@ -165,9 +165,11 @@ function glyphAt(comp) {
   if (dist[0].d > MAX_MISS) return null;
   // A close call between digits with a different number of closed loops (a small 6 matched 5 by one
   // pixel: Trust In God, Lead Guitar 3, bar 135) goes to the one whose loops the glyph has.
+  // Missing a loop the best match needs counts for more (a heavier 5 matched 6 by seven pixels).
   const holes = loops(box);
   if (HOLES[dist[0].ch] !== undefined && HOLES[dist[0].ch] !== holes) {
-    const alt = dist.find((t) => t.d <= dist[0].d + 6 && HOLES[t.ch] === holes);
+    const room = holes < HOLES[dist[0].ch] ? 10 : 6;
+    const alt = dist.find((t) => t.d <= dist[0].d + room && HOLES[t.ch] === holes);
     if (alt) return alt.ch;
   }
   return dist[0].ch;
