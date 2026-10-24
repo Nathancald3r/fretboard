@@ -1,6 +1,11 @@
 // Viewer for pasted plain-text tabs and chord sheets: highlighting, text size, auto-scroll,
 // transpose, the strumming pattern, the song's video, and Perform (just the song, big).
-import { updateSong } from './db.js';
+import { updateSong, getValue, setValue } from './db.js';
+import { shapesFor } from './chordshapes.js';
+import { chordDiagram } from './keys.js';
+import { strum } from './pluck.js';
+import { splitSheet, sheetToChordPro } from './sharecore.js';
+import { readChordPro } from './chordpro.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { shapesKey, keyLabel, toNashville, toRoman, pitchClass, noteName } from './theory.js';
@@ -43,42 +48,90 @@ function songChords(text) {
 
 // Rewrites a chord line, keeping each chord at its original column where possible
 // so chords stay above the right lyric.
-function chordLine(line, rename) {
+// played: the chord's name as played (transposed), for its shapes; kept on it as data-chord
+function chordLine(line, rename, played) {
   let html = '';
   let col = 0;
   for (const m of line.matchAll(/\S+/g)) {
     const chord = CHORD.test(m[0]);
     const shown = rename && chord ? m[0].replace(/[^()]+/, rename) : m[0];
     const gap = Math.max(col ? 1 : 0, m.index - col);
-    html += ' '.repeat(gap) + (chord ? `<span class="chord" title="${escape(m[0])}">${escape(shown)}</span>` : escape(shown));
+    const name = chord ? m[0].replace(/[()]/g, '') : '';
+    html += ' '.repeat(gap) + (chord ? `<span class="chord" data-chord="${escape(played ? played(name) : name)}">${escape(shown)}</span>` : escape(shown));
     col += gap + shown.length;
   }
   return html;
 }
 
 // rename: optional, a chord name -> the name to show (Nashville numbers, or moved to another key)
-export function highlight(text, rename) {
+export function highlight(text, rename, played) {
   return cleanTabText(text).split('\n').map((line) => {
     if (/^\s*\[[^\]]+\]\s*$/.test(line)) return `<span class="section">${escape(line)}</span>`;
     if (TAB_LINE.test(line)) return `<span class="tab-line">${escape(line)}</span>`;
-    if (chordTokens(line)) return chordLine(line, rename);
+    if (chordTokens(line)) return chordLine(line, rename, played);
     return escape(line);
   }).join('\n');
 }
 
-// The UG helper's text files start with "Song - Artist", "Chords · Key: Bb · Capo: 3rd fret · Tuning: …"
-// and "From: <url>". Those lines become the facts over the sheet; body is the sheet without them (null: not one).
+// The highlighted sheet in blocks, one per section (a [Verse] line or a blank line starts the next), so
+// two columns never split a section.
+function sectionsHtml(html) {
+  const blocks = [[]];
+  for (const line of html.split('\n')) {
+    const cur = blocks[blocks.length - 1];
+    if (!line.trim()) { if (cur.length) blocks.push([]); continue; }
+    if (line.startsWith('<span class="section">') && cur.length) blocks.push([line]);
+    else cur.push(line);
+  }
+  return blocks.filter((b) => b.length).map((b) => `<div class="tx-sec">${b.join('\n')}</div>`).join('');
+}
+
+// A chord sheet starts with "Song - Artist", "Chords · Key: Bb · Capo: 3rd fret · Tuning: …" and maybe
+// "From: <url>" (the UG helper, a ChordPro import, the editor). Those lines become the facts over the
+// sheet; body is the sheet without them (null: it has no head).
 export function sheetHead(text) {
-  const lines = cleanTabText(text).split('\n');
-  const from = /^From:\s*(https?:\S+)/.exec(lines[2] || '');
-  const head = lines.slice(0, from ? 3 : 4).join('\n');
+  const clean = cleanTabText(text);
+  const s = splitSheet(clean);
+  const lines = clean.split('\n');
+  const head = lines.length > s.body.length;
   return {
-    key: /\bKey:\s*([A-G][#b]?m?)(?![\w#])/.exec(head)?.[1] || '',
-    capo: Number(/\bCapo:\s*(\d+)/.exec(head)?.[1]) || 0,
-    tuning: (/\bTuning:\s*([^·\n]+)/.exec(head)?.[1] || '').trim(),
-    url: from?.[1] || '',
-    body: from ? lines.slice(3).join('\n').replace(/^\n+/, '') : null,
+    key: s.key,
+    capo: s.capo,
+    tuning: s.tuning,
+    url: s.url,
+    body: head ? s.body.join('\n').replace(/^\n+/, '') : null,
   };
+}
+
+/* ---------- editing as ChordPro ---------- */
+
+const hasChords = (text) => songChords(text).length > 0;
+const TUNING = /^\s*\{\s*tuning\s*:\s*(.*?)\s*\}\s*$/im;
+
+/** What the editor shows: a chord sheet as ChordPro ("[G]Amazing [C]grace"), a tab as it is. */
+export function editorText(song) {
+  if (!hasChords(song.data)) return String(song.data || '');
+  return sheetToChordPro(song.data).replace(/^\{comment: Tuning (.*)\}$/m, '{tuning: $1}');
+}
+
+const looksChordPro = (text) => /^\s*\{\s*[\w-]+\s*(:[^}]*)?\}\s*$/m.test(text) || /\[[A-G][#b]?[^\]\s]{0,10}\]\S/.test(text);
+
+/**
+ * The editor's text back as a chord sheet (chords over the words). ChordPro is turned back; anything
+ * else (a pasted UG page) is kept as it is. old: the song before (its UG link is kept).
+ */
+export function fromEditor(text, { title = '', artist = '', old = null } = {}) {
+  if (!looksChordPro(text)) return { data: cleanTabText(text), title, artist };
+  const tuning = TUNING.exec(text)?.[1] || '';
+  const r = readChordPro(text.replace(new RegExp(TUNING.source, 'gim'), ''));
+  title ||= r.title;
+  artist ||= r.artist;
+  const lines = r.text.replace(/\n$/, '').split('\n');
+  lines[0] = [title || 'Untitled', artist].filter(Boolean).join(' - ');
+  if (tuning) lines[1] += ` · Tuning: ${tuning}`;
+  const url = old ? splitSheet(cleanTabText(old.data)).url : '';
+  if (url) lines.splice(2, 0, `From: ${url}`);
+  return { data: lines.join('\n') + '\n', title, artist };
 }
 
 const FLAT_MAJORS = [5, 10, 3, 8, 1]; // F Bb Eb Ab Db
@@ -129,9 +182,15 @@ function render() {
   const shift = song.transpose || 0;
   const shapes = moveKey(detected, shift);
   const sounds = moveKey(keyOf(head.key) || moveKey(detected, head.capo), shift);
-  const rename = numbers && key ? (c) => numbers(c, key)
-    : shift ? (c) => shiftChordName(c, shift, shapes ? flatKey(shapes) : false) : null;
-  $('tx-body').innerHTML = highlight(text, rename);
+  const played = shift ? (c) => shiftChordName(c, shift, shapes ? flatKey(shapes) : false) : null;
+  const rename = numbers && key ? (c) => numbers(c, key) : played;
+  capo = head.capo || 0;
+  $('tx-body').innerHTML = sectionsHtml(highlight(text, rename, played));
+  $('tx-body').classList.toggle('cols-2', song.columns === 2);
+  $('tx-cols').textContent = song.columns === 2 ? '1 column' : '2 columns';
+  $('tx-cols').setAttribute('aria-pressed', String(song.columns === 2));
+  hidePop();
+  drawShapes();
   $('tx-shift').textContent = `Tr. ${shift > 0 ? '+' : ''}${shift}`;
   const facts = [
     sounds && `Key <b>${keyName(sounds)}</b>`,
@@ -152,6 +211,160 @@ function render() {
   const first = songChords(text)[0];
   strumChord = { chord: first ? (shift ? shiftChordName(first, shift, shapes ? flatKey(shapes) : false) : first) : 'G', capo: head.capo || 0 };
   stopStrumPlay();
+}
+
+/* ---------- chord shapes: the song's chords as diagrams, every way to play each, your own pick kept ---------- */
+
+let capo = 0;
+let myShapes = {}; // "6:m" (root:type) -> "2,4,4,2,2,2": the shape you play that chord with, in every song
+let showShapes = false;
+try { showShapes = localStorage.getItem('fretboard-tx-shapes') === '1'; } catch { /* ignore */ }
+
+const shapeKey = (s) => `${s.root}:${s.type}`;
+// a chord's shapes, yours first
+function shapesOf(name) {
+  const s = shapesFor(name);
+  if (!s || !s.voicings.length) return null;
+  const mine = myShapes[shapeKey(s)];
+  const i = mine ? s.voicings.findIndex((v) => v.frets.join(',') === mine) : -1;
+  return { ...s, mine: i, start: Math.max(0, i) };
+}
+
+const hear = (frets) => strum(frets.map((f) => (f < 0 ? f : f + capo)));
+
+function drawShapes() {
+  const bar = $('tx-shapes');
+  $('tx-shapes-btn').setAttribute('aria-pressed', String(showShapes));
+  bar.hidden = !showShapes;
+  if (!showShapes) { bar.innerHTML = ''; return; }
+  const names = [...new Set([...$('tx-body').querySelectorAll('.chord')].map((e) => e.dataset.chord))];
+  const cards = names.map((n) => {
+    const s = shapesOf(n);
+    if (!s) return '';
+    const v = s.voicings[s.start];
+    return `<button class="tx-shape" data-chord="${escape(n)}" title="${escape(n)}: tap for other ways to play it">${chordDiagram(v.frets, s.root, { title: n, barre: v.barre })}</button>`;
+  }).join('');
+  bar.innerHTML = cards || '<span class="muted">No chord shapes for these chords.</span>';
+}
+
+/* the pop-up over a chord: its diagram, the other shapes, and "make this my shape" */
+
+let pop = null; // { name, s, i, pinned, anchor }
+let popTimer = 0;
+
+function drawPop() {
+  const box = $('tx-pop');
+  const { name, s, i } = pop;
+  const v = s.voicings[i];
+  const n = s.voicings.length;
+  const notes = [
+    !s.exact && 'Closest shape (the full chord isn’t in the list)',
+    s.bass !== null && `Bass note ${name.split('/')[1]}`,
+    capo && `With capo ${capo}`,
+  ].filter(Boolean);
+  box.innerHTML = `<div class="tx-pop-head"><b>${escape(name)}</b><button class="ghost small" data-pop="close" aria-label="Close">✕</button></div>`
+    + `<button class="tx-pop-dia" data-pop="hear" title="Hear it">${chordDiagram(v.frets, s.root, { barre: v.barre })}</button>`
+    + `<div class="tx-pop-nav"><button class="ghost small" data-pop="prev" aria-label="Previous shape" ${n < 2 ? 'disabled' : ''}>‹</button>`
+    + `<span>${escape(v.name)}<br><small class="muted">${i + 1} of ${n}</small></span>`
+    + `<button class="ghost small" data-pop="next" aria-label="Next shape" ${n < 2 ? 'disabled' : ''}>›</button></div>`
+    + (notes.length ? `<div class="muted small-text">${notes.map(escape).join('<br>')}</div>` : '')
+    + (i === s.mine ? '<div class="tx-pop-mine">✓ Your shape</div>' : `<button class="small" data-pop="save">★ Use this shape</button>`);
+}
+
+function placePop() {
+  const box = $('tx-pop');
+  const r = pop.anchor.getBoundingClientRect();
+  const w = box.offsetWidth, h = box.offsetHeight;
+  let top = r.bottom + 6;
+  if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  box.style.top = `${top}px`;
+  box.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+}
+
+function showPop(anchor, pinned) {
+  clearTimeout(popTimer);
+  const name = anchor.dataset.chord;
+  const s = shapesOf(name);
+  if (!s) return;
+  if (pop && pop.anchor === anchor) { pop.pinned ||= pinned; return; }
+  pop = { name, s, i: s.start, pinned, anchor };
+  $('tx-pop').hidden = false;
+  drawPop();
+  placePop();
+  requestAnimationFrame(() => { if (pop?.anchor === anchor) placePop(); });
+}
+
+function hidePop() {
+  clearTimeout(popTimer);
+  pop = null;
+  const box = $('tx-pop');
+  if (box) box.hidden = true;
+}
+
+async function popAction(act) {
+  if (!pop) return;
+  const n = pop.s.voicings.length;
+  if (act === 'close') { hidePop(); return; }
+  if (act === 'prev' || act === 'next') { pop.i = (pop.i + (act === 'next' ? 1 : n - 1)) % n; pop.pinned = true; drawPop(); hear(pop.s.voicings[pop.i].frets); return; }
+  if (act === 'hear') { hear(pop.s.voicings[pop.i].frets); return; }
+  if (act === 'save') {
+    myShapes = { ...myShapes, [shapeKey(pop.s)]: pop.s.voicings[pop.i].frets.join(',') };
+    pop.s.mine = pop.i;
+    drawPop();
+    drawShapes();
+    await setValue('chordShapes', myShapes);
+  }
+}
+
+// The bar sticks just under the top bar, whose height changes with the width.
+function barTop() {
+  $('view-text').style.setProperty('--tx-top', `${document.querySelector('.topbar')?.offsetHeight || 0}px`);
+}
+
+function initShapes() {
+  getValue('chordShapes').then((v) => { myShapes = v || {}; if (song && showShapes) drawShapes(); }).catch(() => {});
+  const box = document.createElement('div');
+  box.id = 'tx-pop';
+  box.className = 'tx-pop';
+  box.hidden = true;
+  document.body.append(box);
+  box.addEventListener('click', (e) => { const b = e.target.closest('[data-pop]'); if (b) popAction(b.dataset.pop); });
+  box.addEventListener('mouseenter', () => clearTimeout(popTimer));
+  box.addEventListener('mouseleave', () => { if (pop && !pop.pinned) popTimer = setTimeout(hidePop, 250); });
+  const hover = matchMedia('(hover: hover) and (pointer: fine)');
+  $('tx-body').addEventListener('mouseover', (e) => {
+    const c = e.target.closest('.chord');
+    if (!c || !hover.matches || (pop && pop.pinned)) return;
+    clearTimeout(popTimer);
+    popTimer = setTimeout(() => showPop(c, false), 120);
+  });
+  $('tx-body').addEventListener('mouseout', (e) => {
+    if (!e.target.closest('.chord') || (pop && pop.pinned)) return;
+    clearTimeout(popTimer);
+    popTimer = setTimeout(hidePop, 250);
+  });
+  const tap = (e) => {
+    const c = e.target.closest('.chord, .tx-shape');
+    if (!c) return;
+    if (pop && pop.anchor === c && pop.pinned) { hidePop(); return; }
+    if (pop && pop.anchor !== c) hidePop();
+    showPop(c, true);
+  };
+  $('tx-body').addEventListener('click', tap);
+  $('tx-shapes').addEventListener('click', tap);
+  document.addEventListener('pointerdown', (e) => { if (pop && !e.target.closest('#tx-pop, .chord, .tx-shape')) hidePop(); });
+  window.addEventListener('scroll', () => { if (pop) placePop(); }, { passive: true });
+  window.addEventListener('resize', () => { if (song) barTop(); if (pop) placePop(); });
+  $('tx-shapes-btn').addEventListener('click', () => {
+    showShapes = !showShapes;
+    try { localStorage.setItem('fretboard-tx-shapes', showShapes ? '1' : '0'); } catch { /* ignore */ }
+    drawShapes();
+  });
+  $('tx-cols').addEventListener('click', async () => {
+    if (!song) return;
+    song = await updateSong(song.id, { columns: song.columns === 2 ? 1 : 2 });
+    render();
+  });
 }
 
 /* ---------- hearing the strumming pattern ---------- */
@@ -272,6 +485,8 @@ export function openText(s) {
   tempo = s.tempo || s.strum?.find((p) => p.bpm)?.bpm || playable?.tempo || 100;
   $('tx-tempo').value = tempo;
   render();
+  // the bar (auto-scroll, transpose…) stays in sight under the top bar
+  barTop();
   $('tx-play').disabled = !playable;
   $('tx-play').title = playable
     ? `Play ${playable.bars} bars as a score (rhythm is guessed from spacing)`
@@ -284,6 +499,7 @@ export function openText(s) {
 }
 
 export function closeText() {
+  hidePop();
   stopStrumPlay();
   setScrolling(false);
   showVideo(false);
@@ -292,6 +508,7 @@ export function closeText() {
 }
 
 export function initText({ onEdit }) {
+  initShapes();
   $('tx-strum').addEventListener('click', (e) => {
     const b = e.target.closest('[data-strum]');
     if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);
@@ -333,6 +550,7 @@ export function initText({ onEdit }) {
   });
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && pop) { hidePop(); return; }
     if (e.key === 'Escape' && performing) { setPerform(false); return; }
     if ($('view-text').hidden || e.target.closest('input, select, textarea, button, dialog')) return;
     if (e.code === 'Space') { e.preventDefault(); setScrolling(!scrolling); }

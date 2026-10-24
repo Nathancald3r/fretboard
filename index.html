@@ -688,6 +688,8 @@
         <button id="tx-up" class="ghost small" aria-label="Transpose up">+</button>
       </span>
       <label>Text <input id="tx-size" type="range" min="10" max="40" value="15"></label>
+      <button id="tx-shapes-btn" class="ghost" aria-pressed="false" title="The song's chords as diagrams. Tap one (or any chord in the song) for other ways to play it">Chord shapes</button>
+      <button id="tx-cols" class="ghost" aria-pressed="false" title="Show the song in two columns (sections never split)">2 columns</button>
       <button id="tx-video" class="ghost" title="Play along with the song's video">▶ Video</button>
       <button id="tx-perform" class="ghost" title="Just the song, big: tempo, key, transpose, auto-scroll and video (Esc to leave)">Perform</button>
       <label class="tx-more">Chords
@@ -701,7 +703,8 @@
       <span id="tx-time" class="mono muted tx-more"></span>
     </div>
     <div id="tx-strum" class="tx-strum" hidden></div>
-    <pre id="tx-body" class="text-tab"></pre>
+    <div id="tx-shapes" class="tx-shapes" hidden></div>
+    <div id="tx-body" class="text-tab"></div>
     <div id="tx-vid" class="tx-vid" hidden>
       <div class="tx-vid-head"><span>Video</span><button id="tx-vid-close" class="ghost small" aria-label="Close the video">✕</button></div>
       <div id="tx-vid-frame" class="tx-vid-frame"></div>
@@ -955,6 +958,7 @@
         <input id="tf-title" placeholder="Title" required>
         <input id="tf-artist" placeholder="Artist">
       </div>
+      <p id="tf-help" class="muted small-text" hidden>ChordPro: <code>[G]</code> puts G over the word after it. <code>{start_of_chorus: Chorus}</code> … <code>{end_of_chorus}</code> marks a section (also verse, bridge, tab). <code>{key: G}</code>, <code>{capo: 2}</code>, <code>{tempo: 90}</code> set the facts.</p>
       <textarea id="tf-body" rows="18" placeholder="Paste the tab or chords here…" required></textarea>
       <div class="row spread">
         <button value="cancel" formnovalidate class="ghost">Cancel</button>

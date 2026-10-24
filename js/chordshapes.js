@@ -54,6 +54,14 @@ const MOVABLE = {
       dim7: [null, 0, 1, -1, 1, null], m7b5: [null, 0, 1, 0, 1, null], aug: [null, 0, 3, 2, 2, null],
     },
   },
+  // "D shape": root on the D string, the top four strings
+  D: {
+    string: 2,
+    shapes: {
+      '': [null, null, 0, 2, 3, 2], m: [null, null, 0, 2, 3, 1], 7: [null, null, 0, 2, 1, 2], maj7: [null, null, 0, 2, 2, 2],
+      m7: [null, null, 0, 2, 1, 1], sus2: [null, null, 0, 2, 3, 0], sus4: [null, null, 0, 2, 3, 3],
+    },
+  },
 };
 const MAX_FRET = 15;
 
@@ -100,6 +108,28 @@ export function chordVoicings(root, type) {
   return out.sort((a, b) => (b.name === 'Open') - (a.name === 'Open') || lowFret(a) - lowFret(b));
 }
 const lowFret = (v) => Math.min(...v.frets.filter((f) => f >= 0));
+
+// How sheets write chord types, as the types above
+const ALIAS = { min: 'm', mi: 'm', '-': 'm', maj: '', M: '', Maj7: 'maj7', M7: 'maj7', ma7: 'maj7', '2': 'sus2', sus: 'sus4', add2: 'add9', min7: 'm7', '-7': 'm7', '°': 'dim', o: 'dim', '°7': 'dim7', ø: 'm7b5', 'ø7': 'm7b5', '+': 'aug', 'm7-5': 'm7b5' };
+
+/**
+ * A chord name as written on a sheet ("F#m", "C/G", "Bbmaj9", "G(add9)") → its shapes:
+ * { root, type, bass, exact, voicings }. exact is false when the type isn't known and a near one
+ * (the triad, or the 7th under a 9th) stands in. null when it isn't a chord name.
+ */
+export function shapesFor(name) {
+  const m = /^\(?([A-G][#b♯♭]?)([^/]*?)(?:\/([A-G][#b♯♭]?))?\)?$/.exec(String(name || '').trim());
+  if (!m) return null;
+  const root = pitchClass(m[1].replace('♯', '#').replace('♭', 'b'));
+  let written = m[2].replace(/[()]/g, '');
+  if (written in ALIAS) written = ALIAS[written];
+  let type = written;
+  if (!(type in CHORD_TYPES)) {
+    const near = { maj9: 'maj7', maj13: 'maj7', m9: 'm7', m11: 'm7', 11: '7', 13: '7', '7sus4': 'sus4', '7sus2': 'sus2', madd9: 'm', m6: 'm', '6/9': '6', 69: '6', '7#9': '7', '7b9': '7' }[type];
+    type = near ?? (/^(m|min|mi)(?!aj)/.test(type) ? 'm' : '');
+  }
+  return { root, type, bass: m[3] ? pitchClass(m[3].replace('♯', '#').replace('♭', 'b')) : null, exact: type === written, voicings: chordVoicings(root, type) };
+}
 
 /* ---------- keys ---------- */
 

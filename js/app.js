@@ -2,7 +2,7 @@
 import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { askVersion } from './version.js';
-import { initText, openText, closeText, cleanTabText } from './texttab.js';
+import { initText, openText, closeText, cleanTabText, editorText, fromEditor } from './texttab.js';
 import { openSheet, closeSheet } from './sheetview.js';
 import { initMetronome, stopMetronome } from './metronome.js';
 import { initLayers, resetLayers } from './layers.js';
@@ -1012,23 +1012,32 @@ function initImport() {
 /* ---------- text tab editor ---------- */
 
 // song: an existing text song to edit, or null for a new one; prefill: initial text for a new one.
+// A chord sheet is edited as ChordPro ([G]Amazing [C]grace) and saved back as chords over the words.
+let editingSong = null;
+let editorStart = '';
 function openEditor(song, prefill = {}) {
   editingId = song?.id ?? null;
-  $('tab-dialog-title').textContent = song ? 'Edit text tab' : 'Paste text tab';
+  editingSong = song || null;
+  editorStart = song ? editorText(song) : '';
+  const pro = song ? editorStart !== String(song.data || '') : false;
+  $('tab-dialog-title').textContent = !song ? 'Paste text tab' : pro ? 'Edit chord chart (ChordPro)' : 'Edit text tab';
+  $('tf-help').hidden = !pro;
   $('tf-title').value = song?.title || prefill.title || '';
   $('tf-artist').value = song?.artist || prefill.artist || '';
-  $('tf-body').value = song?.data || prefill.data || '';
+  $('tf-body').value = song ? editorStart : prefill.data || '';
   $('tab-dialog').showModal();
 }
 
 function initEditor() {
   $('tab-dialog').addEventListener('close', async () => {
     if ($('tab-dialog').returnValue !== 'save') return;
-    const fields = {
-      title: $('tf-title').value.trim(),
-      artist: $('tf-artist').value.trim(),
-      data: cleanTabText($('tf-body').value),
-    };
+    const text = $('tf-body').value;
+    const title = $('tf-title').value.trim();
+    const artist = $('tf-artist').value.trim();
+    // the sheet unchanged: kept exactly as it was
+    const fields = editingSong && text === editorStart
+      ? { title, artist }
+      : fromEditor(text, { title, artist, old: editingSong });
     if (editingId) {
       const song = await updateSong(editingId, fields);
       if (currentView === 'text') openText(song); else renderLibrary();
@@ -1056,6 +1065,10 @@ function openPlayAlongSheet(tries = 20) {
 async function findSong(mode) {
   const query = $('find-query').value;
   if (!query.trim()) { $('find-query').focus(); return; }
+  // searched: the box empties, so the whole library shows again
+  $('find-query').value = '';
+  $('qi-modes').hidden = true;
+  renderLibrary();
   const url = sourceUrl('ug-gp', query);
   // The UG helper (tools/ug_watch.py): the search opens in its Chrome, every type listed. Open an Official
   // or Pro song there and its files are saved and added here as one song by themselves.
