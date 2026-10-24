@@ -675,9 +675,11 @@ function mineTick() {
     mine.at += (ctx.currentTime - mine.ctxAt) * mine.src.playbackRate.value;
     mine.ctxAt = ctx.currentTime;
     const ahead = mine.at - pos;
-    // Small drift is eased out (a 1 % speed change can't be heard); a jump starts again from there.
+    // The video's clock reads a few ms off each time: under 20 ms the speed stays exact. More drift
+    // is eased out (at most 0.5 %, which can't be heard); a jump starts again from there.
     if (Math.abs(ahead) < 0.15 && rate === mine.rate) {
-      mine.src.playbackRate.value = rate * (1 - Math.max(-0.01, Math.min(0.01, ahead / 2)));
+      const ease = Math.abs(ahead) < 0.02 ? 0 : Math.max(-0.005, Math.min(0.005, ahead / 4));
+      mine.src.playbackRate.value = rate * (1 - ease);
       return;
     }
     mineStop();
