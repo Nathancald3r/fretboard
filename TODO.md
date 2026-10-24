@@ -1,5 +1,9 @@
 # Fretboard: open work (moved out of CLAUDE.md)
 
+## YouTube → GP5 (Colab notebook + test loop, 2026-10-24)
+
+The plan, the file list, where it stands and the next steps are all in `tests/yt2gp5/PLAN.md`. Start there.
+
 ## The UG workflow: search, pick, save in the background, review, import (the user's plan, 2026-10-23)
 
 **The user's answers:** skip the review when the automatic checks pass; the recording for syncing is YouTube (UG's linked video); build setup + queue + background first.

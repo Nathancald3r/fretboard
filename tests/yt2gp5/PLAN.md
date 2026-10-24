@@ -112,6 +112,59 @@ The goal: official `.gp` files that pair perfectly with their recordings, so the
    - With ~100 such pairs: fine-tune the note model on Colab (GPU), score it with `real.py` on songs it hasn't seen, and keep it only if the guitar notes get better.
    - Public datasets (GuitarSet, GAPS, the Slakh synthetic mixes) help as a start, but the user's own band-style pairs match what they play.
 
+## Save point (2026-10-24, evening): video sync, one steady tempo
+
+**Where we stopped:** both songs were sent to the user to import and listen to. Waiting for the user to say whether they sound right. If they do, commit and push (the user asked "commit and push" before for this work). If not, ask which bar.
+
+**The user's rules for the sync (new):**
+- **One steady tempo for the whole song, plus the right start.** Never stretch or fit single bars unless the user asks (`--fit`). Bar fitting made Be My Escape slow at bar 92 and speed up at 93.
+- **Check before sending:** `whole_song_off` must be about 0 ms. The user noticed the delay and the off notes, and the old checks didn't.
+
+**How the line-up works now** (`syncqa.py`, run by `listen.py NAME --export`, or on its own: `syncqa.py NAME`):
+1. `raw_line`: the audio line-up from `listen.py` (`info["tabAt"]`), one time per bar.
+2. `one_tempo`: a straight line through it (median slopes of bars far apart), then a search on tempo (±1 %, then ±0.2 %) and start (±150 ms). It keeps the line where the tab's own sound (all tracks, onset strength) lines up best with the recording over the whole song. The `.fretboard` gets a sync point on that line for every bar.
+3. `lag_curve`: the check. How far the whole tab would have to move to line up best, printed as "whole song off N ms" and saved as `whole_song_off_ms` in `sync.json`.
+
+**Traps found today:**
+- **Beat This! can lock onto the off-beats.** Fitting the tempo to its beats put Stupid Deep half a beat off (it played 141 ms late: "it sounds terrible, delay"). The note check (±80 ms window) and the beat check can't see a half-beat slip in a strummed song. So the tempo never comes from Beat This!. Its bar list ("bars where the tab differs", "bars over 50 ms off") is wrong whenever its beats sit on the off-beats; Stupid Deep shows 1–50 there, which means nothing.
+- **The raw line-up drifts at the end** of Be My Escape: from bar 91 it runs up to 13 s past the end of the 3:40 recording, which caused the bar 92/93 jumps. The steady line fills the recording exactly.
+
+**Results:**
+
+| Song | Tempo | Bar 1 | Whole song off | Notes within 30 ms |
+|---|---|---|---|---|
+| Be My Escape | 112 BPM (100.44 % of the tab) | 0.169 s | −1 ms | 78 % |
+| Stupid Deep (official) | 72 BPM (102.85 % of the tab's 70) | 0.031 s | −1 ms (was 141 ms late) | 64 % |
+
+The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 official audio at about 72.
+
+**Where the files are:**
+- The files sent to the user: `out/listen/<slug>/<title>.fretboard`, with `sync_report.html` and `sync.json` beside them. Slugs: `Relient_K_-_Be_My_Escape_official`, `Jon_Bellion_-_Stupid_Deep_official`.
+- Stupid Deep's tab: made by `ug_to_gp.py` → `cache/ug/Jon Bellion - Stupid Deep.gp` (54 bars, 13 tracks), then `songdb.py scan … --official` and `find --official` → video "Jon Bellion - Stupid Deep (Official Audio)", 2:59.
+
+**Not committed yet:**
+- `syncqa.py` (CRLF): `one_tempo`, `raw_line`, `lag_curve`, `--fit`, the check.
+- `listen.py`: `--fit`, the steady tempo by default.
+- `songs.json`: Stupid Deep.
+- The app files:
+  - `js/playalong.js`:
+    - a toast when the speed isn't a YouTube speed (YouTube plays only in 25 % steps, so the video, the tab and the click follow the video, not the typed speed)
+    - the docked video bar follows its slot each frame (it overlapped the speed box when the chord name got wider)
+  - `js/player.js` and `styles.css`: the mixer's sound box opens from the instrument icon (a box on every row was "way too obnoxious"); it shows by itself only on tracks whose sound isn't sure.
+- `TODO.md` and `marks/` stay uncommitted (as always). The Android APK hasn't been built for any of this.
+
+**The simple sync (2026-10-24, later):** start with simple songs: a studio recording played to a click, one tempo, no free intro. A sync is two numbers, the tempo and the start (`one_tempo`); Beat This! now runs only for `--fit`. `steadiness` checks the song in 4-bar stretches and prints one verdict:
+- **OK**: one steady tempo fits (no stretch drifts, the whole song within 15 ms).
+- **NOT SIMPLE**: stretches drift off the tempo. Leave the song for later.
+- **listen to bars …**: a stretch lines up half a beat off while the stretches round it are right. The tab's rhythm differs there, not the sync.
+- Be My Escape: OK. Listen to 1–8 (the intro: clearly half a beat out, 0.77 vs 0.17), 21–24, 37–48, 93–96. Stupid Deep: NOT SIMPLE (weak line-up everywhere, 0.1–0.3; nothing lines up at 0 in bars 37–48).
+
+**Next, after the user confirms:**
+1. Commit and push.
+2. Build the APK if the user wants it on the phone.
+3. Redo Trust In God (`syncqa.py "Trust In God"`) the same way and check its whole_song_off.
+4. Later: drop or fix the Beat This! bar list (it should use the tab's sound per bar, like `lag_curve` but per section).
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).

@@ -51,6 +51,7 @@ function fileHandler(rec) {
   el.src = URL.createObjectURL(new Blob([rec.data], { type: rec.type || 'audio/mpeg' }));
   let raf = 0, timer = 0, dead = false; // a switched-off handler must not move or play anything
   let held = false; // handed over to the synth: plays on by itself until it fades out
+  let wantPlay = false;
   const tick = () => {
     sendPosition(el.currentTime * 1000);
     cancelAnimationFrame(raf);
@@ -76,8 +77,8 @@ function fileHandler(rec) {
     seekTo(ms) { if (!dead) el.currentTime = toReal(Math.max(0, ms - lead())) / 1000; },
     seekReal(ms) { if (!dead) el.currentTime = ms / 1000; },
     nowReal: () => el.currentTime * 1000,
-    play() { if (!dead) el.play().catch(() => {}); },
-    pause() { if (!held) el.pause(); },
+    play() { if (dead) return; wantPlay = true; whenReady(() => { if (!dead && wantPlay) el.play().catch(() => {}); }); },
+    pause() { if (!held) { wantPlay = false; el.pause(); } },
     now: () => toPlayed(el.currentTime * 1000),
     hold() { dead = true; held = true; },
     destroy() { dead = true; held = false; el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
@@ -133,13 +134,36 @@ async function youTubeHandler(rec) {
   let held = false; // handed over to the synth: plays on by itself until it fades out
   let wantPlay = false; // YouTube starts playing by itself when you seek an idle video; only the play button may start it
   let seekedAt = 0;
+  let gating = false; // holding the video until your tracks are made
   const seekIdle = () => { seekedAt = wantPlay ? 0 : Date.now(); };
-  const poll = () => sendPosition(player.getCurrentTime() * 1000);
+  // For about a quarter second after it starts or seeks, YouTube's clock runs ahead and then jumps
+  // back. It counts as steady once its readings have kept time with the wall clock for 0.3 s.
+  let anchor = null, steadyFrom = 0, playingAt = 0;
+  const poll = () => {
+    const t = player.getCurrentTime() * 1000, w = performance.now();
+    if (!anchor || Math.abs(t - (anchor[0] + (w - anchor[1]) * rate)) > 25) { anchor = [t, w]; steadyFrom = w; }
+    sendPosition(t);
+  };
   const stateChange = (e) => {
     if (held || dead) return; // YouTube never really removes a listener: a switched-off handler must ignore it
     if (e.data === window.YT.PlayerState.PLAYING && !wantPlay && seekedAt && Date.now() - seekedAt < 2000) { player.pauseVideo(); return; }
+    // Play pressed on the video itself while your tracks aren't made yet: it waits for them too.
+    if (e.data === window.YT.PlayerState.PAUSED && gating) return;
+    if (e.data === window.YT.PlayerState.PLAYING && !gating) {
+      const wait = mineWait();
+      if (wait) {
+        gating = true;
+        wantPlay = true;
+        player.pauseVideo();
+        const api = hooks.api();
+        if (api && api.playerState !== 1) api.play();
+        wait.then(() => { gating = false; if (!dead && wantPlay) player.playVideo(); });
+        return;
+      }
+    }
     clearInterval(timer);
-    if (e.data === window.YT.PlayerState.PLAYING) timer = setInterval(poll, 30);
+    anchor = null;
+    if (e.data === window.YT.PlayerState.PLAYING) { playingAt = performance.now(); timer = setInterval(poll, 30); }
     poll();
     // Play / pause pressed on the video itself.
     const api = hooks.api();
@@ -152,6 +176,7 @@ async function youTubeHandler(rec) {
     get backingTrackDuration() { return Math.max(0, (player.getDuration() || 0) * 1000 - skippedTotal() + lead()); },
     get rawDuration() { return (player.getDuration() || 0) * 1000; },
     get isPlaying() { return player.getPlayerState?.() === window.YT.PlayerState.PLAYING; },
+    get steady() { const w = performance.now(); return this.isPlaying && !!anchor && w - steadyFrom >= 300 && w - playingAt >= 450; },
     get playbackRate() { return rate; },
     set playbackRate(v) {
       // YouTube only offers some speeds (0.25 steps, or finer on newer players).
@@ -162,11 +187,11 @@ async function youTubeHandler(rec) {
     },
     get masterVolume() { return player.getVolume() / 100; },
     set masterVolume(v) { player.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); },
-    seekTo(ms) { if (!dead) { seekIdle(); player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
+    seekTo(ms) { if (!dead) { seekIdle(); anchor = null; player.seekTo(toReal(Math.max(0, ms - lead())) / 1000, true); setTimeout(poll, 50); } },
     // ahead=false (while scrubbing) only moves within what YouTube has already loaded, so it never stalls on buffering; the final seek on release loads the exact spot.
-    seekReal(ms, ahead = true) { if (!dead) { seekIdle(); player.seekTo(ms / 1000, ahead); setTimeout(poll, 50); } },
+    seekReal(ms, ahead = true) { if (!dead) { seekIdle(); anchor = null; player.seekTo(ms / 1000, ahead); setTimeout(poll, 50); } },
     nowReal: () => player.getCurrentTime() * 1000,
-    play() { if (!dead) { wantPlay = true; seekedAt = 0; player.playVideo(); } },
+    play() { if (dead) return; wantPlay = true; seekedAt = 0; whenReady(() => { if (!dead && wantPlay) player.playVideo(); }); },
     pause() { if (!held) { wantPlay = false; player.pauseVideo(); } },
     hold() { dead = true; held = true; },
     now: () => toPlayed(player.getCurrentTime() * 1000),
@@ -195,10 +220,17 @@ async function youTubeHandler(rec) {
   };
 }
 
+let rateToast = '';
 function showRateNote(wanted, got) {
-  $('pa-rate-note').textContent = Math.abs(wanted - got) > 0.01
+  const text = Math.abs(wanted - got) > 0.01
     ? `YouTube plays at ${Math.round(got * 100)}% (the nearest speed it offers). An audio file can play at any speed.`
     : '';
+  $('pa-rate-note').textContent = text;
+  // Said once per speed: the tab, the click and your tracks all follow the video, so a speed it can't
+  // play would otherwise look like the click and the tab running slow.
+  const say = text && `${Math.round(wanted * 100)}% isn’t a YouTube speed: the video, the tab and the click play at ${Math.round(got * 100)}%. Pick a speed in 25% steps for the video.`;
+  if (say && say !== rateToast) window.dispatchEvent(new CustomEvent('fbtoast', { detail: say }));
+  rateToast = say;
 }
 
 /* ---------- sync points ---------- */
@@ -646,6 +678,7 @@ async function renderLayer(l, key) {
   const api = hooks.api();
   const ctx = mineCtx();
   if (l.kind === 'click') return renderClick(ctx);
+  mineState('Getting your tracks ready…');
   const opts = new AT.synth.AudioExportOptions();
   opts.soundFonts = [await hooks.soundFontBytes()];
   opts.useSyncPoints = true;
@@ -744,9 +777,15 @@ function mineTick() {
     mine.at += (ctx.currentTime - mine.ctxAt) * running[0].src.playbackRate.value;
     mine.ctxAt = ctx.currentTime;
     const ahead = mine.at - pos;
+    // Started on YouTube's unsteady first readings: carry on as started until its clock is steady,
+    // then line up once, closely (the start's nudge: it was ~40 ms early for seconds).
+    const steady = media.steady !== false;
+    if (!steady && rate === mine.rate) return;
+    const jump = mine.synced ? 0.15 : 0.02;
     // The video's clock reads a few ms off each time: under 20 ms the speed stays exact. More drift
     // is eased out (at most 0.5 %, which can't be heard); a jump starts again from there.
-    if (Math.abs(ahead) < 0.15 && rate === mine.rate) {
+    if (Math.abs(ahead) < jump && rate === mine.rate) {
+      mine.synced = true;
       const ease = Math.abs(ahead) < 0.02 ? 0 : Math.max(-0.005, Math.min(0.005, ahead / 4));
       for (const l of running) l.src.playbackRate.value = rate * (1 - ease);
       return;
@@ -768,8 +807,58 @@ function mineTick() {
   }
   mine.out.gain.setValueAtTime(0, t);
   mine.out.gain.linearRampToValueAtTime(1, t + 0.015);
-  Object.assign(mine, { at, ctxAt: t, rate });
+  Object.assign(mine, { at, ctxAt: t, rate, synced: media.steady !== false });
 }
+
+// The video waits until your tracks (and the click) are made, so they all start together and
+// never come in part way.
+let waiting = null;
+function mineWait() {
+  const missing = () => on && layers.some((l) => wanted(l) && l.key !== layerKey(l));
+  if (!missing()) return null;
+  if (waiting) return waiting;
+  mineCtx();
+  toast('Getting your tracks ready: the video starts when they are.');
+  waiting = new Promise((resolve) => {
+    const t = setInterval(() => { mineRender(); if (!missing()) { clearInterval(t); waiting = null; resolve(); } }, 100);
+  });
+  return waiting;
+}
+
+function whenReady(go) {
+  syncCheck();
+  const wait = mineWait();
+  if (wait) wait.then(go); else go();
+}
+
+// Said once per song, before it first plays with its recording: does the sync hold up?
+let checkedSong = null;
+function syncCheck() {
+  if (!song || !media || checkedSong === song.id) return;
+  checkedSong = song.id;
+  const bars = hooks.playedBars();
+  if (!bars.length) return;
+  if (!song.syncPoints?.length) { toast('Sync check: not synced yet. The tab plays at its own tempo from the start you set.'); return; }
+  const pts = syncPoints().filter(([p]) => bars[p]);
+  const issues = [];
+  // A bar much faster or slower than both its neighbours is a stray point (a real tempo change stays).
+  const speed = pts.slice(1).map(([p, t], i) => (t - pts[i][1]) / Math.max(1, bars[p].start - bars[pts[i][0]].start));
+  const odd = [];
+  for (let i = 1; i < speed.length - 1; i++) {
+    const a = speed[i] / speed[i - 1] - 1, b = speed[i] / speed[i + 1] - 1;
+    if (Math.abs(a) > 0.03 && Math.abs(b) > 0.03 && a * b > 0) odd.push(pts[i][0] + 1);
+  }
+  if (odd.length) issues.push(`bar${odd.length > 1 ? 's' : ''} ${odd.slice(0, 5).join(', ')}${odd.length > 5 ? '…' : ''} jump in speed`);
+  const len = (media.rawDuration || 0) - skippedTotal();
+  const end = pts[pts.length - 1][1] + totalOffset();
+  if (len > 0 && end > len + 2000) issues.push(`the tab runs ${Math.round((end - len) / 1000)} s past the end of the recording`);
+  const lastSet = Math.max(...song.syncPoints.map(([p]) => p)) + 1;
+  if (lastSet < bars.length - 4) issues.push(`only bars 1–${lastSet} are lined up (the rest follow the tab’s tempo)`);
+  toast(issues.length
+    ? `Sync check: ${issues.join('; ')}. It may drift there.`
+    : `Sync check: OK. All ${bars.length} bars line up with the recording.`);
+}
+const toast = (text) => window.dispatchEvent(new CustomEvent('fbtoast', { detail: text }));
 
 function setMine(mode = mine.mode, level = mine.level) {
   mine.mode = MINE_MODES[mode] ? mode : 'off';
@@ -1437,7 +1526,19 @@ export function initPlayAlong(h) {
     if (!r.width) return;
     Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` });
   };
+  // The slot moves whenever anything in the row changes width (the chord name, the time, the speed box),
+  // and no observer sees every such move: while docked, check where it is each frame (cheap) and follow.
+  let at = '', following = false;
+  const follow = () => {
+    following = box.classList.contains('docked');
+    if (!following) { at = ''; return; }
+    const r = slot.getBoundingClientRect();
+    const now = `${r.left},${r.top},${r.width}`;
+    if (now !== at) { at = now; dock(); }
+    requestAnimationFrame(follow);
+  };
   new ResizeObserver(dock).observe(slot);
+  new MutationObserver(() => { if (!following && box.classList.contains('docked')) { following = true; requestAnimationFrame(follow); } }).observe(box, { attributes: true, attributeFilter: ['class'] });
   new MutationObserver(dock).observe(box, { attributes: true, attributeFilter: ['hidden'] });
   addEventListener('resize', dock);
   addEventListener('scroll', dock, true);

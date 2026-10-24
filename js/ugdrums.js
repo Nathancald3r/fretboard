@@ -28,7 +28,8 @@ export function findDrumStaves(light, w, h, oneLine = false) {
   for (let y = 0; y < h; y++) {
     let n = 0, run = 0, longest = 0; // (a song's last line can be short)
     for (let x = 0; x < w; x++) { n += light[y * w + x]; run = light[y * w + x] ? run + 1 : 0; if (run > longest) longest = run; }
-    if (n > 0.18 * w && longest > 0.12 * w) {
+    // (a one-bar last line can be 15% of the page: Be My Escape's bar 103 was lost)
+    if ((n > 0.18 * w && longest > 0.12 * w) || longest > 0.13 * w) {
       const r = rows[rows.length - 1];
       if (r && y - r.last <= 1) { r.last = y; r.sum += y; r.n++; r.ns.push([y, n]); } else rows.push({ first: y, last: y, sum: y, n: 1, ns: [[y, n]] });
     }

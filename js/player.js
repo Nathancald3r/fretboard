@@ -822,7 +822,7 @@ const iconOf = (track) => ICONS[instrumentOf(track)] || '🎵';
 // Sounds you can give a track the file leaves unnamed or unclear ("Untitled" in UG's Power PDFs):
 // The choice is kept per song (song.sounds: track index → program); names → sounds in sounds.js.
 const unnamed = (name) => !name?.trim() || /^(untitled\b.*|track \d+)$/i.test(name.trim());
-const unsure = (track, i) => !isDrums(track) && (song?.sounds?.[i] != null || unnamed(track.name) || !instrumentOf(track));
+const unsure = (track, i) => !isDrums(track) && (song?.sounds?.[i] != null || unnamed(track.name));
 
 // The sounds picked for this song, set on the read score (before it's drawn and played).
 function applySounds(sc, sounds) {
@@ -940,6 +940,25 @@ function applyMix() {
   showMix();
 }
 
+// The box for a track's sound: type or pick an instrument, or clear it to go back to the file's sound.
+function addSoundPick(row, track, i) {
+  const pick = document.createElement('input');
+  pick.className = 'track-sound';
+  pick.dataset.act = 'sound';
+  pick.setAttribute('list', 'fb-sounds');
+  pick.placeholder = song?.sounds?.[i] != null ? 'As in the file' : 'Type or pick the instrument…';
+  pick.title = 'This track’s sound: type or pick another instrument if it doesn’t sound right. Clear it for the file’s own sound.';
+  pick.value = soundName(song?.sounds?.[i] ?? (unnamed(track.name) ? null : track.playbackInfo?.program));
+  row.append(pick);
+  if (!$('fb-sounds')) {
+    const list = document.createElement('datalist');
+    list.id = 'fb-sounds';
+    for (const [name] of TYPICAL) list.append(new Option(name)); // any other name is found as you type it
+    document.body.append(list);
+  }
+  return pick;
+}
+
 function buildTrackControls() {
   if (mix.length !== score.tracks.length) loadMix(score, song?.mix);
   const list = $('mixer-list');
@@ -954,25 +973,10 @@ function buildTrackControls() {
       <button class="ms solo" data-act="solo" title="Solo">S</button>
       <button class="ms" data-act="preview" title="Hear this track alone for a few seconds">▶</button>`;
     row.querySelector('.ticon').textContent = iconOf(track);
+    if (!isDrums(track)) Object.assign(row.querySelector('.ticon'), { title: 'Change this track’s sound' }).dataset.act = 'pick';
     row.querySelector('.tname').textContent = trackLabel(track, i);
     row.querySelector('small').textContent = isFretted(track) ? '' : 'notation';
-    if (!isDrums(track)) {
-      // type an instrument (suggestions from the list), or clear it to go back to the file's sound
-      const pick = document.createElement('input');
-      pick.className = 'track-sound';
-      pick.dataset.act = 'sound';
-      pick.setAttribute('list', 'fb-sounds');
-      pick.placeholder = song?.sounds?.[i] != null ? 'As in the file' : 'Type or pick the instrument…';
-      pick.title = 'This track’s sound: type or pick another instrument if it doesn’t sound right. Clear it for the file’s own sound.';
-      pick.value = soundName(song?.sounds?.[i] ?? (unnamed(track.name) ? null : track.playbackInfo?.program));
-      row.append(pick);
-      if (!$('fb-sounds')) {
-        const list = document.createElement('datalist');
-        list.id = 'fb-sounds';
-        for (const [name] of TYPICAL) list.append(new Option(name)); // any other name is found as you type it
-        document.body.append(list);
-      }
-    }
+    if (unsure(track, i)) addSoundPick(row, track, i); // the rest: tap the instrument icon
     list.append(row);
   });
   // parts written as standard notation (piano, drums...) are kept as their PDF pages
@@ -1081,6 +1085,7 @@ function onMixerInput(e) {
   if (e.type !== 'click') return;
   if (act !== 'preview') stopPreview();
   if (act === 'preview') previewTrack(i);
+  else if (act === 'pick') { const box = row.querySelector('.track-sound'); if (box && !unsure(score.tracks[i], i)) box.remove(); else (box || addSoundPick(row, score.tracks[i], i)).select(); }
   else if (act === 'show') { selectTrack(i); closeSheets(); } // picked: the menu goes away
   else if (act === 'mute') setMute(i);
   else if (act === 'solo') setSolo(i);

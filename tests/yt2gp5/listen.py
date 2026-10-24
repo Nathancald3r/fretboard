@@ -3,8 +3,9 @@
     python tests/yt2gp5/listen.py NAME            a song from songs.json (part of its name is enough)
     python tests/yt2gp5/listen.py NAME --url URL  against another video
     python tests/yt2gp5/listen.py NAME --again    build it again (else the last build opens straight away)
-    python tests/yt2gp5/listen.py NAME --export   only write the .fretboard file, every bar fitted to the recording
-    python tests/yt2gp5/listen.py NAME --raw      leave out that fit (syncqa.py): the line-up as it came
+    python tests/yt2gp5/listen.py NAME --export   only write the .fretboard file: one steady tempo and the right start
+    python tests/yt2gp5/listen.py NAME --fit      fit every bar to the recording instead (only when the user asks)
+    python tests/yt2gp5/listen.py NAME --raw      the line-up as it came (bar by bar, eased)
 
 Each track of the tab is played by Fretboard's synth on its own, then stretched (pitch kept) to follow the
 recording's timing, as real.whole_match lined the two up. A local page plays the recording in the left ear and
@@ -344,11 +345,11 @@ def main():
     else:
         print("(the same tab and video as last time: opening that; --again rebuilds it)")
     fb = fretboard_file(song, json.loads(info.read_text(encoding="utf-8")), out)
-    if "--raw" not in a:  # hands off: every bar put on the recording's beats and bar lines (syncqa.py)
+    if "--raw" not in a:  # hands off: one tempo and the start from the recording's beats (syncqa.py)
         import syncqa
-        print("fitting every bar to the recording's beats...")
+        print("fitting every bar to the recording's beats..." if "--fit" in a else "finding the tempo and the start...")
         fb.with_suffix(".fretboard.before").unlink(missing_ok=True)  # the line-up just written is the new "before"
-        syncqa.improve(song)
+        syncqa.improve(song, fit="--fit" in a)
     print(f"for Fretboard (the tab, the video and where each bar is): {fb}")
     if "--export" in a:
         return

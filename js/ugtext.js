@@ -189,7 +189,7 @@ export function readRestCount(ink, w, st, x0, x1, { debug = null } = {}) {
   const u = st.u;
   const y0 = Math.max(0, Math.round(st.ys[0] - 2.8 * u)), y1 = Math.round(st.ys[0] - 0.15 * u);
   const comps = labelRegion(ink, w, Math.max(st.x0, Math.round(x0)), Math.min(st.x1, Math.round(x1)), y0, y1)
-    .filter((c) => c.h >= 0.9 * u && c.h <= 2 * u && c.w <= 1.6 * u && c.px.length >= 10 && c.y1 >= st.ys[0] - 1.2 * u)
+    .filter((c) => c.h >= 0.9 * u && c.h <= 2 * u && c.w <= 1.9 * u && c.px.length >= 10 && c.y1 >= st.ys[0] - 1.2 * u)
     .sort((a, b) => a.x0 - b.x0);
   if (!comps.length || comps.length > 3) return 0;
   let txt = '';

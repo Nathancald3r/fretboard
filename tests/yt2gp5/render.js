@@ -211,12 +211,12 @@ const PARTS = [
 ];
 const drumKind = (name) => (/shaker|maraca/i.test(name) ? 'shaker' : /tambourine/i.test(name) ? 'tambourine' : /drum|percussion|cajon|conga|bongo|toms/i.test(name) ? 'kit' : null);
 
-window.ugFolderToGp = async (files, { title, artist, key }) => {
+window.ugFolderToGp = async (files, { title, artist, key, keepOff = false }) => {
   const { pdfToTab } = await import('../../js/pdftab.js');
   const { ugToAlphaTex } = await import('../../js/ugtab.js');
   const parts = [], skipped = [];
   for (const f of files) {
-    const name = f.name.replace(/\.[^.]+$/, '').split(' - ').pop().trim();
+    const name = f.part || f.name.replace(/\.[^.]+$/, '').split(' - ').pop().trim();
     const k = PARTS.findIndex(([, re]) => re.test(name));
     try {
       const r = await pdfToTab(b64ToBytes(f.b64).buffer, () => {}, { title, lyrics: false, dynamics: false, bass: /bass/i.test(name), drums: drumKind(name) });
@@ -229,7 +229,16 @@ window.ugFolderToGp = async (files, { title, artist, key }) => {
   const guitar = (p) => (/guitar|acoustic|electric|lead(?!\s*vocal)|rhythm/i.test(p.name) ? 0 : drumKind(p.name) ? 2 : 1);
   parts.sort((x, y) => guitar(x) - guitar(y));
   if (!parts.length) throw new Error('no part could be read');
-  const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1), key });
+  // The song's length is the bar count most parts agree on. A part that read more or fewer bars has lost or
+  // gained bars somewhere, and ugToAlphaTex would cut or pad it at the end, so everything after the misread
+  // plays at the wrong time. Such a part is left out (or kept with keepOff, for a look).
+  const votes = new Map();
+  for (const p of parts) votes.set(p.bars, (votes.get(p.bars) || 0) + 1);
+  const songBars = [...votes].sort((x, y) => y[1] - x[1] || parts.findIndex((p) => p.bars === x[0]) - parts.findIndex((p) => p.bars === y[0]))[0][0];
+  const off = parts.filter((p) => p.bars !== songBars);
+  const used = keepOff ? parts : parts.filter((p) => p.bars === songBars);
+  used.sort((x, y) => (x.bars !== songBars) - (y.bars !== songBars) || guitar(x) - guitar(y));
+  const made = ugToAlphaTex(used[0].strips, { title, artist, name: used[0].name, program: used[0].program, extra: used.slice(1), key });
   const a = await getApi();
   const imp = new at.importer.AlphaTexImporter();
   imp.initFromString(made.tex.replace(/\\staff \{tabs\}/g, '\\staff {score tabs}'), a.settings);
@@ -237,7 +246,7 @@ window.ugFolderToGp = async (files, { title, artist, key }) => {
   const bytes = new at.exporter.Gp7Exporter().export(score, a.settings);
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return { gp: btoa(s), bars: made.bars, parts: parts.map((p) => `${p.name}: ${p.bars}`), skipped };
+  return { gp: btoa(s), bars: made.bars, songBars, parts: used.map((p) => `${p.name}: ${p.bars}`), off: off.map((p) => `${p.name}: ${p.bars} of ${songBars}`), skipped };
 };
 
 window.renderReady = true;

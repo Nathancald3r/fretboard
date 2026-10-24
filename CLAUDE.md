@@ -178,6 +178,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - Round-trip import test: 7 of 7 songs pass, mean 99.6% (2026-10-24).
   - Library fix: a song tapped in the ☰ drawer opens again (`92facfb`). Checked on the website.
   - Android 1.48 built and installed on the user's Pixel 8a (`8fed129`).
+- **Video sync (latest work, 2026-10-24 evening):** see the "Save point … one steady tempo" section in `tests/yt2gp5/PLAN.md`. Uncommitted work is waiting for the user to confirm Be My Escape and Stupid Deep sound right.
 - **Open (details in `TODO.md`):**
   - When I Go Down PDF import: piano line 3 lost (37 bars), drums 71 and percussion 33 bars (multi-bar rests).
   - Songbook plan: live mode with page turns, a chord chart as a laid-out PDF, Open in app on the helper's Done window, checking shares in the real apps.

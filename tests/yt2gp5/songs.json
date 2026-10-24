@@ -901,6 +901,104 @@
    }
   },
   {
+   "name": "Jon Bellion - Stupid Deep (official)",
+   "title": "Stupid Deep",
+   "artist": "Jon Bellion",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Jon Bellion - Stupid Deep.gp",
+   "sha1": "7412ef51e774129c",
+   "seconds": 185,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "suggested",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/jon-bellion/stupid-deep-official-2741001",
+   "youtube": "https://www.youtube.com/watch?v=AYZ3Gvk-88g",
+   "video": {
+    "title": "Jon Bellion - Stupid Deep (Official Audio)",
+    "channel": "Jon Bellion",
+    "seconds": 179
+   },
+   "confidence": 100.0,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=EtlZV2EaZBQ",
+     "title": "Jon Bellion - Stupid Deep",
+     "channel": "Jon Bellion",
+     "seconds": 186,
+     "score": 99.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=LSYzT6JQZAU",
+     "title": "Stupid Deep - Jon Bellion (Lyrics)",
+     "channel": "Jon Bellion Lyrics",
+     "seconds": 181,
+     "score": 82.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=tuvVC2i4saw",
+     "title": "Jon Bellion - The Making of \"Stupid Deep\"",
+     "channel": "Jon Bellion",
+     "seconds": 833,
+     "score": 70.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=Q-scUJX_I8k",
+     "title": "Jon Bellion  - Stupid Deep (Official Audio)",
+     "channel": "Visionary Music Group",
+     "seconds": 179,
+     "score": 90.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=oOg-87YqTkk",
+     "title": "Jon Bellion - Stupid Deep (Chill Space 🌴)",
+     "channel": "Creative.",
+     "seconds": 188,
+     "score": 83.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=XLDuCGitBTE",
+     "title": "Jon Bellion - Stupid Deep",
+     "channel": "ThatWasDecent",
+     "seconds": 180,
+     "score": 79.6
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=QNnSwNSfoMo",
+     "title": "Jon Bellion - Stupid Deep",
+     "channel": "Project Xcalibur",
+     "seconds": 179,
+     "score": 78.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=hGrFTw8RaNA",
+     "title": "Jon Bellion - Stupid Deep.mp3",
+     "channel": "PoeticBeats",
+     "seconds": 178,
+     "score": 77.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=THqhi9YYdJ0",
+     "title": "Stupid Deep (Lyrics) - Jon Bellion",
+     "channel": "Peter Cherek",
+     "seconds": 182,
+     "score": 68.8
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=a-EvScEZN7A",
+     "title": "Jon Bellion -Stupid Deep [Lyrics/Lyric]",
+     "channel": "Taz Sound",
+     "seconds": 179,
+     "score": 65.5
+    }
+   ]
+  },
+  {
    "name": "Led Zeppelin - Stairway to Heaven",
    "title": "Stairway to Heaven",
    "artist": "Led Zeppelin",

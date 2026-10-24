@@ -2518,3 +2518,5 @@ body.performing #view-text .tx-bar { top: 0; }
 .pa-video.docked { right: auto; bottom: auto; max-width: none; box-shadow: none; border-radius: 8px; z-index: 31; }
 .pa-video.docked .pa-video-ctl { display: none; }
 .pa-video.docked .pa-video-bar { padding: .05rem .2rem .05rem .5rem; height: 26px; }
+.mixer-row .ticon[data-act=pick] { cursor: pointer; border-radius: 6px; padding: 0 .15rem; }
+.mixer-row .ticon[data-act=pick]:hover { background: var(--line); }
