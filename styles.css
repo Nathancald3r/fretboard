@@ -2511,3 +2511,9 @@ body.performing #view-text .tx-bar { top: 0; }
   #tx-body.cols-2 { column-count: 1; }
   #tx-cols { display: none; }
 }
+
+/* The hidden-away video, docked in the play bar on a bigger screen: just its bar, over a slot beside the tempo. */
+.pa-dock { flex: 0 1 340px; min-width: 200px; height: 28px; }
+.pa-video.docked { right: auto; bottom: auto; max-width: none; box-shadow: none; border-radius: 8px; z-index: 31; }
+.pa-video.docked .pa-video-ctl { display: none; }
+.pa-video.docked .pa-video-bar { padding: .05rem .2rem .05rem .5rem; height: 26px; }
