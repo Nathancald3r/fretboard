@@ -286,7 +286,7 @@ export function readRests(comps, st) { // exported for tests
     const cy = (c.y0 + c.y1) / 2;
     if (cy < top || cy > bot || c.w < 0.4 * u || c.w > 0.95 * u || c.area < 0.15 * c.w * c.h) continue;
     let len = 0;
-    if (c.h >= 1.7 * u && c.h <= 2.2 * u) len = c.w <= 0.7 * u ? 4 : 1;
+    if (c.h >= 1.7 * u && c.h <= 2.2 * u) len = c.w <= 0.385 * c.h ? 4 : 1; // (by its shape: fonts draw a quarter rest 0.55 to 0.73 spaces wide)
     else if (c.h >= 1.0 * u && c.h <= 1.4 * u && c.w >= 0.55 * u) len = 2;
     else if (c.h >= 0.25 * u && c.h <= 0.45 * u && c.w >= 0.6 * u && c.area >= 0.8 * c.w * c.h) {
       const line = (y) => st.ys.some((ly) => Math.abs(ly - y) <= 2);
@@ -364,12 +364,16 @@ export function stemLength(ink, w, s, u) {
   };
   const far = Math.max(joined(1), joined(-1));
   const xa = Math.round(x + 0.3 * u), xb = Math.round(x + 1.0 * u);
-  if (far) { // beamed eighths / sixteenths; a dot sits beside the stem, above the beams
+  if (far) { // beamed eighths / sixteenths; a dot sits beside the stem, above the beams (UG's near the top, others' just over the beams)
     let dot = false, run = 0, wide = false;
-    for (let y = s.top - 2; y <= s.bot - Math.round(0.9 * u) && !dot; y++) {
+    for (let y = s.top - 2; y <= s.bot && !dot; y++) {
       let n = 0;
       for (let xx = xa; xx <= xb; xx++) n += ink[y * w + xx];
-      if (n) { run++; wide ||= n > 0.45 * u; } // a beam stub runs wider than a dot
+      // a beam stub runs wider than a dot; down by the beams, a dot also stands clear of its stem (a sixteenth's
+      // own short stub grows out of it) and of the next one (the next note's stub reaches it)
+      let near = false;
+      if (y > s.bot - Math.round(0.9 * u)) for (let xx = Math.round(x + 0.15 * u); xx < xa && !near; xx++) near = ink[y * w + xx] === 1;
+      if (n) { run++; wide ||= n > 0.45 * u || near || ink[y * w + xb] === 1; }
       else { dot = run >= 3 && run <= 8 && !wide; run = 0; wide = false; }
     }
     // a sixteenth beside eighths has only a short second beam (a stub about half a space long) at its stem

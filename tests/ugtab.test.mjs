@@ -105,6 +105,8 @@ console.log('ugtab tuning ok');
   assert.deepEqual(lens([box(424, 746, 16, 6)]), [16], 'whole rest');
   assert.deepEqual(lens([box(424, 756, 16, 6)]), [], 'a block off the lines is not a rest');
   assert.deepEqual(lens([box(424, 764, 14, 1)]), [], 'a thin stroke is not a rest');
+  assert.deepEqual(lens([box(424, 737, 13, 38)]), [4], 'a wide quarter rest (another font) is still a quarter: told by its shape');
+  assert.deepEqual(lens([box(424, 740, 14, 31)]), [1], 'a sixteenth rest is wider for its height');
 }
 
 // A part of held chords (one a bar, as a rhythm guitar part) still makes a song, in 4/4, each chord ringing to the bar end.
