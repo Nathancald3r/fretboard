@@ -1,2 +1,5 @@
 node_modules/
 tests/roundtrip/out/
+tests/yt2gp5/cache/
+tests/yt2gp5/out/
+__pycache__/

@@ -1,0 +1,38 @@
+{
+  "_songs": "Guitar Pro files whose notes are known. Paths may start with ~. Copies stay on your PC (cache/ and out/ are not committed).",
+  "songs": [
+    { "path": "~/Downloads/Chris Tomlin - Here I Am To Worship.gp" },
+    { "path": "~/Downloads/Led Zeppelin-Stairway to Heaven-12-08-2025.gp" },
+    { "path": "~/Downloads/Relient K - When I Go Down.gp5" },
+    { "path": "~/Downloads/Relient K-Forget And Not Slow Down-10-16-2025.gp" },
+    { "path": "~/Downloads/UG Songs/How He Loves - David Crowder Band (Key C)/How He Loves - David Crowder Band - Guitar Pro.gpx" }
+  ],
+  "_seconds": "Each song is tested on its busiest stretch of this many seconds (set \"start\" on a song to pick it).",
+  "seconds": 45,
+  "models": ["htdemucs", "htdemucs_6s"],
+  "_pass": "Pass marks. A check below its mark fails the song. SDR in dB; F1 from 0 to 1 (1 = every note right); bar_lines = share of the true bar lines the .gp5 has within 80 ms.",
+  "pass": {
+    "stem_sdr_db": 5.0,
+    "guitar_f1": 0.5,
+    "bass_f1": 0.6,
+    "tab_guitar_f1": 0.4,
+    "tab_bass_f1": 0.5,
+    "tempo_pct": 2.0,
+    "bar_lines": 0.8,
+    "guitar_leak": 0.25,
+    "dropped_pct": 15.0
+  },
+  "_pass_real": "Pass marks for real recordings (real.py). Lower: a band doesn't play exactly what the tab says, and the line-up is good to ~0.1 s. Set from the first runs (2026-10-24) minus a margin, so a fail means it got worse.",
+  "pass_real": {
+    "guitar_f1": 0.25,
+    "bass_f1": 0.25,
+    "tab_guitar_f1": 0.3,
+    "tab_bass_f1": 0.3,
+    "tempo_pct": 3.0,
+    "bar_lines": 0.3,
+    "guitar_leak": 0.25,
+    "dropped_pct": 15.0
+  },
+  "_drop": "A score this much lower than the last run of the same song and model is flagged.",
+  "drop": { "f1": 0.05, "sdr_db": 1.0 }
+}
