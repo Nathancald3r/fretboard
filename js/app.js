@@ -688,6 +688,17 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;
     }
+    if (/\.ptb$/i.test(file.name)) { // Power Tab: read here into alphaTex, a track per guitar
+      try {
+        const { ptbToAlphaTex } = await import('./ptb.js');
+        const r = ptbToAlphaTex(await file.arrayBuffer());
+        const fromName = parseFilename(file.name);
+        ids.push(await saveImported({ kind: 'tex', title: r.title.trim() || fromName?.song || base, artist: r.artist.trim() || fromName?.artist || '', data: r.tex, fileName: file.name, added: Date.now() }, replace));
+        added++;
+        toast(`Read ${r.bars} bars and ${r.tracks.length} tracks from the Power Tab file: ${r.tracks.join(', ')}.`, 7000);
+      } catch (err) { console.error(err); failed.push(file.name); }
+      continue;
+    }
     const buf = await file.arrayBuffer();
     const fromName = parseFilename(file.name); // Ultimate Guitar's "Artist-Song-date" names
     const info = readScoreInfo(new Uint8Array(buf));
