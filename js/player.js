@@ -34,6 +34,7 @@ import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 import { humanize, liftCymbals, sustainPads, ownDrumChannels } from './humanize.js';
 import { highlight } from './texttab.js';
 import { autoLevels } from './mixlevels.js';
+import { GM } from './midi.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -813,7 +814,28 @@ const SOUNDS = [
   ['Overdriven guitar', 29], ['Distortion guitar', 30], ['Bass', 33], ['Bass (pick)', 34],
   ['Piano', 0], ['Electric piano', 4], ['Organ', 16], ['Strings', 48], ['Synth pad', 89],
   ['Synth lead', 81], ['Choir', 52], ['Brass', 61], ['Flute', 73],
-];
+  ...GM.map((name, p) => [name, p]), // and every General MIDI sound, to type in
+].filter(([name], k, all) => all.findIndex(([n]) => n.toLowerCase() === name.toLowerCase()) === k);
+const soundName = (program) => SOUNDS.find(([, p]) => p === program)?.[0] || '';
+// The sound a typed name means: the same name, else one starting with it, else one holding all its words.
+function soundFor(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+  const words = t.split(/\s+/);
+  return SOUNDS.find(([n]) => n.toLowerCase() === t) || SOUNDS.find(([n]) => n.toLowerCase().startsWith(t))
+    || SOUNDS.find(([n]) => words.every((w) => n.toLowerCase().includes(w))) || bestWords(words);
+}
+// Else the one matching the most words, the last word ("electric BASS") counting most.
+function bestWords(words) {
+  const stems = words.filter((w) => w.length > 2).map((w) => w.replace(/s$/, ''));
+  let best = null, top = 0;
+  for (const sound of SOUNDS) {
+    const n = sound[0].toLowerCase();
+    const score = stems.reduce((a, w, k) => a + (n.includes(w) ? (k === stems.length - 1 ? 3 : 2) : 0), 0);
+    if (score > top) { best = sound; top = score; }
+  }
+  return best;
+}
 const unnamed = (name) => !name?.trim() || /^(untitled\b.*|track \d+)$/i.test(name.trim());
 const unsure = (track, i) => !isDrums(track) && (song?.sounds?.[i] != null || unnamed(track.name) || !instrumentOf(track));
 
@@ -939,14 +961,21 @@ function buildTrackControls() {
     row.querySelector('.tname').textContent = trackLabel(track, i);
     row.querySelector('small').textContent = isFretted(track) ? '' : 'notation';
     if (unsure(track, i)) {
-      const pick = document.createElement('select');
+      // type an instrument (suggestions from the list), or clear it to go back to the file's sound
+      const pick = document.createElement('input');
       pick.className = 'track-sound';
       pick.dataset.act = 'sound';
-      pick.title = 'What this track is: its sound and name';
-      pick.add(new Option(song?.sounds?.[i] != null ? 'As in the file' : 'Pick the instrument…', ''));
-      for (const [name, p] of SOUNDS) pick.add(new Option(name, p));
-      pick.value = song?.sounds?.[i] ?? '';
+      pick.setAttribute('list', 'fb-sounds');
+      pick.placeholder = song?.sounds?.[i] != null ? 'As in the file' : 'Type or pick the instrument…';
+      pick.title = 'What this track is: its sound and name. Clear it for the file’s own sound.';
+      pick.value = soundName(song?.sounds?.[i]);
       row.append(pick);
+      if (!$('fb-sounds')) {
+        const list = document.createElement('datalist');
+        list.id = 'fb-sounds';
+        for (const [name] of SOUNDS) list.append(new Option(name));
+        document.body.append(list);
+      }
     }
     list.append(row);
   });
@@ -1040,7 +1069,9 @@ function onMixerInput(e) {
   if (e.type === 'change' && act === 'volume') { saveMix(); e.target.blur(); return; }
   if (e.type === 'change' && act === 'sound') {
     stopPreview();
-    setSound(i, e.target.value === '' ? null : Number(e.target.value));
+    const sound = soundFor(e.target.value);
+    if (e.target.value.trim() && !sound) { window.dispatchEvent(new CustomEvent('fbtoast', { detail: `No instrument called “${e.target.value.trim()}”. Try piano, strings, bells or flute.` })); e.target.value = soundName(song?.sounds?.[i]); return; }
+    setSound(i, sound ? sound[1] : null);
     pendingPreview = i; // heard as soon as it's read again
     return;
   }

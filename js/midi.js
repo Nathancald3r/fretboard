@@ -6,7 +6,7 @@
 
 const U = 24; // MusicXML divisions: units in a quarter note (24 holds 32nds and triplets)
 
-const GM = ['Acoustic Grand Piano', 'Bright Piano', 'Electric Grand Piano', 'Honky-tonk Piano', 'Electric Piano', 'Electric Piano 2', 'Harpsichord', 'Clavinet',
+export const GM = ['Acoustic Grand Piano', 'Bright Piano', 'Electric Grand Piano', 'Honky-tonk Piano', 'Electric Piano', 'Electric Piano 2', 'Harpsichord', 'Clavinet',
   'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
   'Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
   'Nylon Guitar', 'Acoustic Guitar', 'Jazz Guitar', 'Clean Electric Guitar', 'Muted Guitar', 'Overdriven Guitar', 'Distortion Guitar', 'Guitar Harmonics',
