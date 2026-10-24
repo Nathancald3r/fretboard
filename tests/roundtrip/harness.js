@@ -71,6 +71,11 @@ function settings() {
   s.display.resources.smuflFontFamilyName = 'Bravura';
   // UG's fret numbers are bold
   s.display.resources.tablatureFont.weight = at.model.FontWeight.Bold;
+  // UG's tempo mark ("♩ = 75") and section names are bold serif with lining digits, about the size of
+  // a fret number: the importer matches those digit shapes (alphaTab's default font has old-style
+  // digits that dip below the line, and "120" read as 100)
+  s.display.resources.elementFonts.set(at.NotationElement.EffectMarker,
+    at.model.Font.withFamilyList(['Century Schoolbook', 'New Century Schoolbook', 'Times New Roman', 'serif'], 15, at.model.FontStyle.Plain, at.model.FontWeight.Bold));
   // black bar numbers and darker staff lines (alphaTab's are red and light grey)
   s.display.resources.barNumberColor = new at.model.Color(0, 0, 0, 255);
   s.display.resources.staffLineColor = new at.model.Color(90, 90, 90, 255);

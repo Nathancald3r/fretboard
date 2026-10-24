@@ -137,7 +137,47 @@ function restDigit(c) {
     d = d / g.length + 0.5 * Math.abs(c.w / c.h - t.ar);
     if (d < top[0]) top = [d, t.ch, t.real];
   }
+  // 0, 6 and 9 differ mostly in where their hole is, which the grid blurs (a tempo's 90 read as 00):
+  // a hole from top to bottom is 0, in the upper half 9, in the lower half 6
+  if ('069'.includes(top[1])) {
+    const hole = holeSpan(c, on);
+    if (hole) {
+      const ch = hole[1] - hole[0] > 0.5 ? '0' : (hole[0] + hole[1]) / 2 < 0.5 ? '9' : '6';
+      if (ch !== top[1]) top = [top[0], ch, REST_DIGITS.find((t) => t.ch === ch).real];
+    }
+  }
   return [...top, g];
+}
+
+// The rows (0..1 of the height) a digit's one enclosed hole spans, or null when it has none or several.
+function holeSpan(c, on) {
+  const out = new Uint8Array(c.w * c.h); // background reached from the edge
+  const stack = [];
+  for (let x = 0; x < c.w; x++) stack.push(x, (c.h - 1) * c.w + x);
+  for (let y = 0; y < c.h; y++) stack.push(y * c.w, y * c.w + c.w - 1);
+  while (stack.length) {
+    const i = stack.pop();
+    if (out[i] || on.has(i)) continue;
+    out[i] = 1;
+    const x = i % c.w, y = (i - x) / c.w;
+    if (x > 0) stack.push(i - 1);
+    if (x + 1 < c.w) stack.push(i + 1);
+    if (y > 0) stack.push(i - c.w);
+    if (y + 1 < c.h) stack.push(i + c.w);
+  }
+  let y0 = -1, y1 = -1, n = 0, runs = 0, prev = false;
+  for (let y = 0; y < c.h; y++) {
+    let row = 0;
+    for (let x = 0; x < c.w; x++) if (!out[y * c.w + x] && !on.has(y * c.w + x)) row++;
+    if (row && !prev) runs++;
+    prev = row > 0;
+    if (!row) continue;
+    if (y0 < 0) y0 = y;
+    y1 = y; n += row;
+  }
+  // none, two (an 8), or too small to trust (a blurred digit at tab size)
+  if (runs !== 1 || n < 0.03 * c.w * c.h) return null;
+  return [y0 / c.h, (y1 + 1) / c.h];
 }
 
 /**
@@ -163,7 +203,8 @@ export function readRestCount(ink, w, st, x0, x1, { debug = null } = {}) {
 }
 
 /**
- * @returns {{ sections:{name: string, x: number, x1: number, numbered: boolean}[], tempos: {v: number, x: number}[] }}
+ * @returns {{ sections:{name: string, x: number, x1: number, numbered: boolean}[], tempos: {v: number, x: number}[], marks: number[] }}
+ * marks: where a tempo mark's "=" was seen, whether or not its digits could be read
  */
 export function readHeading(ink, w, st, { debug = null } = {}) {
   const u = st.u;
@@ -179,7 +220,7 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
     if (line) { line.items.push(c); line.cy = (line.cy * (line.items.length - 1) + cy) / line.items.length; }
     else lines.push({ cy, items: [c] });
   }
-  const sections = [], tempos = [];
+  const sections = [], tempos = [], marks = [];
   for (const line of lines) {
     const items = line.items.sort((a, b) => a.x0 - b.x0);
     if (debug && lines.length) debug.push({ line: items.map((c) => [c.x0, c.w, c.h]) });
@@ -198,6 +239,7 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
     // tempo mark: a note, "=", then digits
     const eq = items.findIndex((c, i) => c.w > 0.3 * u && c.h < 0.2 * u && items[i + 1] && items[i + 1].h < 0.2 * u);
     if (eq >= 0) {
+      marks.push(items[eq].x0);
       const digits = items.slice(eq + 2).sort((a, b) => a.x0 - b.x0);
       let txt = '';
       // read like a multi-bar rest's count (UG's own digit shapes; matching a system font read
@@ -235,5 +277,5 @@ export function readHeading(ink, w, st, { debug = null } = {}) {
       }
     }
   }
-  return { sections, tempos };
+  return { sections, tempos, marks };
 }

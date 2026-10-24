@@ -7,6 +7,7 @@ import { findStaves, readStrip, ugToAlphaTex, parseTuning, UG_UNIT } from './ugt
 import { readLyricLine, holdLyricReader, closeLyricReader, readWords, drawBox } from './uglyrics.js';
 import { findDrumStaves, readDrumStrip, flip } from './ugdrums.js';
 import { findMusicStaves, readScorePage } from './ugscore.js';
+import { readHeading } from './ugtext.js';
 
 const TEMPLATES = ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
 const PAGE_WIDTH = 1634; // the width the templates were made at
@@ -376,6 +377,27 @@ function musicStaff(light, w, x0, x1, y0, y1) {
 }
 
 /** The marks around one tab staff of a Notation page: dynamics under its music staff, words above it. */
+// A tempo mark read again from the line's heading drawn 3x as large. At tab size its digits are only
+// ~14 px tall and the digit shapes blur: How He Loves' Synth Bells read 75 as 73, the round-trip
+// test 120 as 125 and 84 as 33.
+async function sharpTempo(page, scale, st, strip) {
+  const K = 3, u = st.u;
+  const box = await drawBox(page, scale, st.x0 - 2, Math.max(0, st.ys[0] - 4 * u), st.x1 + 2, st.ys[0] + 0.5 * u, K);
+  const { width: w, height: h } = box.canvas;
+  const data = box.canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const ink = new Uint8Array(w * h);
+  for (let i = 0; i < ink.length; i++) ink[i] = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3 < 150 ? 1 : 0;
+  const hd = readHeading(ink, w, { ys: st.ys.map((y) => (y - box.y0) * K), u: u * K, x0: (st.x0 - box.x0) * K, x1: Math.min(w - 1, (st.x1 - box.x0) * K) });
+  if (!hd.tempos.length) return; // keep what the first read found
+  for (const b of strip.bars) delete b.tempo;
+  for (const t of hd.tempos) {
+    const x = t.x / K + box.x0;
+    let bar = strip.bars[0];
+    for (const b of strip.bars) if (b.x0 <= x + 0.5 * u) bar = b;
+    bar.tempo = t.v;
+  }
+}
+
 async function notationMarks(page, scale, r, st, top) {
   const u = st.u, x0 = st.x0 - 2 * u, x1 = st.x1 + u;
   const ms = musicStaff(r.light, r.w, st.x0, st.x1, top, st.ys[0] - u);
@@ -607,6 +629,7 @@ async function readPdf(pdf, onProgress, { tempo = 100, title = '', artist = '', 
         const st = staves[i];
         const strip = readStrip(r.ink, r.light, r.w, r.h, st);
         if (!strip) continue;
+        if (strip.tempoMarks) await sharpTempo(page, scale, st, strip);
         if (notation) { // the gap from the staff above (or the page top) holds the music staff and the marks
           strip.u = st.u;
           const top = i ? staves[i - 1].ys[staves[i - 1].ys.length - 1] + 1.5 * st.u : 0;

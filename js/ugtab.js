@@ -556,6 +556,8 @@ export function readStrip(ink, light, w, h, st) {
   };
   for (const sec of hd.sections) Object.assign(barAt(sec.x, sec.x1), { heading: true, name: sec.name, numbered: sec.numbered });
   for (const t of hd.tempos) barAt(t.x).tempo = t.v;
+  // at this size a tempo's digits are only ~14 px tall and often misread: pdftab reads them again, sharper
+  const tempoMarks = hd.marks.length;
   // a swell goes on the note it stands over, a wavy line on every note under it
   const marks = readMarks(ink, w, st);
   const played = bars.flatMap((b) => b.cols.filter((c) => c.notes?.length));
@@ -567,7 +569,7 @@ export function readStrip(ink, light, w, h, st) {
   for (const m of marks.waves) {
     for (const c of played) if (c.cx >= m.x0 - 0.6 * st.u && c.cx <= m.x1 + 0.3 * st.u && !c.fx?.includes('v')) (c.fx ||= []).push('v');
   }
-  return { bars, dbg, strings: st.ys.length };
+  return { bars, dbg, strings: st.ys.length, tempoMarks };
 }
 
 /* ---------- tuning ---------- */
