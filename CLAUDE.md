@@ -31,6 +31,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - Bump `versionCode` and `versionName` in `android/app/build.gradle`.
   - Build with `cd android; ./gradlew --console=plain assembleRelease -q`. The output is `android/app/build/outputs/apk/release/app-release.apk`. The web files are copied into the APK by the `copyWeb` task.
   - Check the APK is under 30 MB, then send it with SendUserFile.
+  - **Install on the user's phone** (a Pixel 8a over USB): `~/AppData/Local/Android/Sdk/platform-tools/adb.exe -s 49111JEKB02598 install -r android/app/build/outputs/apk/release/app-release.apk`. `adb` isn't on the PATH, and `-s` is needed because an offline emulator also shows in `adb devices`. Check with `adb shell dumpsys package app.fretboard | grep versionName`.
+  - Keep a copy as `Fretboard-<version>.apk` in the project folder (not committed).
 
 ## Line endings: check before every commit
 
@@ -130,6 +132,14 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **Check the result:** `window.fretboardPlayer.api.score` has the master bar count, time signature and tempo. Check that each track's bar beats add up to `masterBars[i].calculateDuration()`.
 - **Python PDF checks:** render pages with `fitz` (PyMuPDF), e.g. `page.get_pixmap(dpi=60)`, to look at them.
 
+## Android Back and the history (`js/layers.js`)
+
+- Each open layer (the ☰ drawer, a sheet, the ⚙ menu, the tempo or video pop-up, full screen) adds one history entry, so Android Back closes it first. Layers are found from body classes and `.sheet[hidden]` by a MutationObserver.
+- A layer closed from the screen calls `history.back()` to drop its entry. **Not when a link moved the page meanwhile:** tapping a song in the drawer closed the drawer, and that Back undid the link, so the library opened no song (fixed `92facfb`). The check waits one tick (`setTimeout`), because the observer runs before the link changes the address.
+- `route()` calls `resetLayers()` on every page change.
+
+## Preview checks: other traps
+
 - **Never navigate the preview to a non-HTML file** (e.g. a .pdf or LICENSE): it pops a Save dialog on the user's screen. Fetch it from page JS instead.
 
 ## Sound engine: our patches to alphaTab's synth
@@ -158,7 +168,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Where we left off (2026-10-24)
 
-- **Latest APK:** Android 1.48 (versionCode 49), with the chord sheet features, the importer fixes and the library fix (`92facfb`).
+- **Latest APK:** Android 1.48 (versionCode 49), installed on the user's phone. It has everything pushed up to `92facfb`; nothing is waiting for an APK.
 - **Done and pushed 2026-10-23/24:**
   - Songs page redesign: the last song opens straight away, ☰ holds the library, bulk edit (delete, setlist, folder, share, key), "You already have this song".
   - Sharing to MusicStand / OnSong / SongbookPro (ChordPro, PDF with the song attached, setlist .zip).
@@ -166,6 +176,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - Chord sheets: chord shapes on hover/tap with saved favourite shapes, ChordPro editing, two columns, sticky controls, search box clears after a search.
   - Power Tab (.ptb) import; mixer ▶ preview and instrument picker; drums in When I Go Down; dynamics from the sheet music.
   - Round-trip import test: 7 of 7 songs pass, mean 99.6% (2026-10-24).
+  - Library fix: a song tapped in the ☰ drawer opens again (`92facfb`). Checked on the website.
+  - Android 1.48 built and installed on the user's Pixel 8a (`8fed129`).
 - **Open (details in `TODO.md`):**
   - When I Go Down PDF import: piano line 3 lost (37 bars), drums 71 and percussion 33 bars (multi-bar rests).
   - Songbook plan: live mode with page turns, a chord chart as a laid-out PDF, Open in app on the helper's Done window, checking shares in the real apps.

@@ -185,6 +185,13 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
 
 **Done when:** every part reads the song's bar count, every bar adds up, and playing it, all instruments come in together. Run the tests, and check Here I Am To Worship still reads 85 bars in every part.
 
+## Bug: songs in the ☰ library didn't open (fixed 2026-10-24, keep for reference)
+
+- **What the user saw:** tapping a song in the library left the song that was already open.
+- **Why:** closing the drawer ran `history.back()` to drop the drawer's history entry (`js/layers.js`), and that Back undid the tap's move to `#song/N`.
+- **Fix (`92facfb`):** the Back is skipped when the address changed since the layer opened, checked one tick later. Android Back and × still close the drawer. In Android 1.48.
+- If a song still won't open: reload first (an open page keeps the old code), then check that song itself (a different cause).
+
 ## Bug: wrong chords and bad sound on imported songs (to fix later)
 
 **What the user saw (screenshot, Here I Am To Worship, song 40, Verse 2 and Chorus):**
