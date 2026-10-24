@@ -158,7 +158,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Where we left off (2026-10-24)
 
-- **Latest APK:** Android 1.47 (versionCode 48). Pushed since, not in an APK yet: the chord sheet features (`a7d07bf`) and two importer fixes (`1b5fe63`, `862aa28`).
+- **Latest APK:** Android 1.48 (versionCode 49), with the chord sheet features, the importer fixes and the library fix (`92facfb`).
 - **Done and pushed 2026-10-23/24:**
   - Songs page redesign: the last song opens straight away, ☰ holds the library, bulk edit (delete, setlist, folder, share, key), "You already have this song".
   - Sharing to MusicStand / OnSong / SongbookPro (ChordPro, PDF with the song attached, setlist .zip).
