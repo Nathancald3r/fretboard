@@ -18,11 +18,12 @@ import { initScales, renderScales } from './scales.js';
 import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showStatus, setupUG, TAB_FILE } from './quickimport.js';
 import { sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
-import { initDrawer, openDrawer, addToSetlist, setlistTargetName } from './drawer.js';
+import { initDrawer, openDrawer, addToSetlist, addSetlist, setlistTargetName } from './drawer.js';
 import { popMenu } from './menu.js';
 import { initSync } from './syncui.js';
 import { parseFilename } from './tabinfo.js';
-import { initBulk, selecting, isPicked, toggle as togglePick, drawBar, keyNote, readShared } from './bulk.js';
+import { initBulk, selecting, isPicked, toggle as togglePick, drawBar, keyNote } from './bulk.js';
+import { readFretboardFile, readZip, readSetlistText, pdfAttachment } from './sharecore.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -249,6 +250,7 @@ async function cardAct(act, id) {
   if (act === 'edit') { location.hash = `edit/${id}`; return; }
   if (act === 'practice') { location.hash = `song/${id}`; return; }
   if (act === 'setlist') { await addToSetlist(id); return; }
+  if (act === 'share') { (await import('./share.js')).shareSongs([song]); return; }
   if (act === 'folder') { folderPick(song); return; }
   if (act === 'open-tab') { location.hash = `song/${id}/tab`; return; }
   if (act === 'open-chords') { location.hash = `song/${id}/chords`; return; }
@@ -317,6 +319,7 @@ function openCardMenu(row, at) {
   popMenu(at || row.querySelector('[data-act=menu]'), [
     { k: 'setlist', label: list ? `Add to “${list}”` : 'Add to a setlist', hint: list ? '' : 'Starts “My setlist”' },
     { k: 'folder', label: 'Move to folder…', hint: song.folder || 'No folder' },
+    { k: 'share', label: '⤴ Share…', hint: 'MusicStand, email, Nearby Share…' },
     { stars: song.rating || 0 },
     '-',
     song.chordSheet && (type === 'pro' || type === 'tab') ? { k: 'open-chords', label: 'Open the chord sheet', hint: 'Chords over the words' } : null,
@@ -624,7 +627,7 @@ function askCombine(existing, part) {
   }, { once: true }));
 }
 
-const CHORDPRO = /\.(cho|chordpro|chopro|crd)$/i;
+const CHORDPRO = /\.(cho|chordpro|chopro|crd|pro)$/i;
 
 // A chord chart with notes on it: keep them (each with who wrote it) or import it clean. null: cancelled.
 function askNotes(notes) {
@@ -658,6 +661,7 @@ let dupRule = null;
 let dupMore = 0; // files after this one in the same import
 let dupSkipped = 0;
 let dupReplaced = 0; // songs given this import's content (counted apart from the added ones)
+let skippedAs = 0; // the song you already had, for the last one skipped (a received setlist still lists it)
 
 // The library's songs that are this one: the same title (a "(with notes)" or "(live)" on the end aside),
 // and the same artist when both name one.
@@ -737,7 +741,7 @@ async function saveImported(song, replace) {
   const old = same[0];
   let act = dupRule || await askDuplicate(song, old, same.length, more);
   if (act === 'attach' && !(song.kind === 'text' && old.kind !== 'text' && old.kind !== 'sheet')) act = 'replace'; // "the same for the rest" on a file that isn't a chord chart
-  if (act === 'skip') { dupSkipped++; return 0; }
+  if (act === 'skip') { dupSkipped++; skippedAs = old.id; return 0; }
   if (act === 'attach' || act === 'replace') dupReplaced++;
   if (act === 'attach') { await updateSong(old.id, { chordSheet: song.data }); return old.id; }
   if (act === 'replace') return replaceSong(old, song);
@@ -807,13 +811,39 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   const got = (id) => { if (id) { ids.push(id); added++; } };
   if (!batch || batch.first) dupRule = null; // one of several songs picked at once: an answer "for the rest" carries on
   dupSkipped = dupReplaced = 0;
+  // a .zip (a setlist shared from Fretboard, or songs from another app): each file in it imported on its own
+  for (const z of files.filter((x) => /\.zip$/i.test(x.name))) {
+    files = files.filter((x) => x !== z);
+    try {
+      const r = await importZip(z, replace);
+      ids.push(...r.ids); added += r.added; failed.push(...r.failed);
+    } catch (err) { console.error(err); failed.push(z.name); }
+  }
+  // a PDF Fretboard made carries its whole song (an attached .fretboard file): read that instead
+  for (const [i, f] of files.entries()) {
+    if (!/\.pdf$/i.test(f.name)) continue;
+    try {
+      const inside = pdfAttachment(await f.arrayBuffer());
+      if (inside) files[i] = new File([inside], f.name.replace(/\.pdf$/i, '.fretboard'));
+    } catch { /* an ordinary PDF */ }
+  }
   // songs shared from Fretboard (a .fretboard file): each saved as it came, asking about ones you have
   for (const f of files.filter((x) => /\.fretboard$/i.test(x.name))) {
     files = files.filter((x) => x !== f);
-    const shared = readShared(await f.text());
+    const shared = readFretboardFile(await f.text());
     if (!shared) { failed.push(f.name); continue; }
-    dupMore = shared.length - 1 + files.length; // for "Do the same for the other …"
-    for (const song of shared) got(await saveImported(song, replace));
+    dupMore = shared.songs.length - 1 + files.length; // for "Do the same for the other …"
+    const saved = [];
+    for (const song of shared.songs) {
+      skippedAs = 0;
+      const id = await saveImported(song, replace);
+      got(id);
+      saved.push(id || skippedAs);
+    }
+    for (const l of shared.setlists) {
+      const songIds = l.songs.map((i) => saved[i]).filter(Boolean);
+      if (songIds.length) toast(`Added the setlist “${await addSetlist({ name: l.name, date: l.date, songIds })}” (${songIds.length} songs). It’s in ☰ Setlists.`, 6000);
+    }
   }
   // ChordPro files, and PDFs that are chord charts (SongSelect and the like: real text, chords over words)
   const charts = [];
@@ -849,7 +879,7 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   }
   const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
   let open = 0;
-  if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
+  if (pdfs.length > 1 && !batch?.single) { // several PDFs together: one song, an instrument each
     files = files.filter((f) => !pdfs.includes(f)); // cancelling adds none of them
     // the chord sheet saved with the parts ("Song - Artist - Chords.txt") belongs to the same song
     const sheet = files.find((f) => /\bchords\.txt$/i.test(f.name));
@@ -932,6 +962,30 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   if (open) { location.hash = `#song/${open}`; return { added, failed, ids }; } // straight to the new song
   renderLibrary();
   return { added, failed, ids };
+}
+
+// A .zip: each song file in it imported on its own (several PDFs in a zip are separate songs, not parts),
+// in name order. With a Setlist.txt (Fretboard's setlist zip) the setlist is made again from them.
+async function importZip(zip, replace) {
+  const entries = (await readZip(await zip.arrayBuffer())).map((e) => ({ ...e, name: e.name.split('/').pop() }));
+  const listFile = entries.find((e) => /^setlist.*\.txt$/i.test(e.name));
+  const list = listFile && readSetlistText(new TextDecoder().decode(listFile.data));
+  // "01 Song (chords).cho" beside "01 Song.pdf": the PDF already carries the song with its chord sheet
+  const songs = entries.filter((e) => e !== listFile && !(/ \(chords\)\.cho$/i.test(e.name) && entries.some((x) => x.name === e.name.replace(/ \(chords\)\.cho$/i, '.pdf')))).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const out = { ids: [], added: 0, failed: [] };
+  const byFile = new Map();
+  for (const [i, e] of songs.entries()) {
+    skippedAs = 0;
+    const r = await importFilesNow([new File([e.data], e.name)], { replace, quietIfEmpty: true, batch: { first: i === 0, left: songs.length - 1 - i, single: true } });
+    out.ids.push(...r.ids); out.added += r.added; out.failed.push(...r.failed);
+    byFile.set(e.name, r.ids[0] || skippedAs);
+  }
+  if (list) {
+    const order = list.files.length ? list.files : songs.map((e) => e.name);
+    const songIds = order.map((n) => byFile.get(n)).filter(Boolean);
+    if (songIds.length) toast(`Added the setlist “${await addSetlist({ name: list.name, date: list.date, songIds })}” (${songIds.length} songs). It’s in ☰ Setlists.`, 6000);
+  }
+  return out;
 }
 
 // Song files can be dropped anywhere, on any page.

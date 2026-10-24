@@ -1,5 +1,6 @@
 // The ☰ side drawer, reachable from every view: the song library (drawn by app.js) and setlists.
-import { listSongs, getValue, setValue } from './db.js';
+import { listSongs, getSong, getValue, setValue } from './db.js';
+import { dateText } from './sharecore.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -56,8 +57,9 @@ function renderDrawer() {
   const items = list.songIds.map((id) => songs.find((s) => s.id === id)).filter(Boolean);
   body.innerHTML = `
     <div class="row spread"><button class="small ghost" data-back>‹ Setlists</button>
-      <span class="row"><button class="small ghost" data-rename-set>Rename</button><button class="small ghost danger" data-delete-set>Delete</button></span></div>
+      <span class="row"><button class="small ghost" data-share-set title="Send all its songs, in order and in their keys, to MusicStand or anyone">⤴ Share</button><button class="small ghost" data-rename-set>Rename</button><button class="small ghost danger" data-delete-set>Delete</button></span></div>
     <h3 class="dr-title">${escape(list.name)}</h3>
+    ${list.date ? `<p class="muted small-text dr-date">${escape(dateText(list.date))}</p>` : ''}
     <div class="row">
       ${items.length ? `<a class="button small primary" href="#song/${items[0].id}" data-start-set>▶ Play from the top</a>` : ''}
       ${currentSongId() && !list.songIds.includes(currentSongId()) ? '<button class="small" data-add-current>+ Add the open song</button>' : ''}
@@ -110,6 +112,16 @@ export async function addToSetlist(songId) {
   toast(`Added ${song ? `“${song.title}” ` : ''}to “${target.name}”.`);
 }
 
+/** A setlist received (a shared .fretboard file or setlist zip): saved beside yours. Returns its name. */
+export async function addSetlist({ name, date = '', songIds }) {
+  await loadSetlists();
+  let n = name;
+  for (let i = 2; setlists.some((l) => l.name === n); i++) n = `${name} (${i})`;
+  setlists.push({ id: Date.now() + setlists.length, name: n, songIds: [...new Set(songIds)], ...(date ? { date } : {}) });
+  await saveSetlists();
+  return n;
+}
+
 /** focus: put the cursor in the song search (on a phone only when asked: the keyboard would cover the list). */
 export function openDrawer(show = true, { focus = false, songs: toSongs = false } = {}) {
   document.body.classList.toggle('drawer-open', show);
@@ -149,6 +161,13 @@ async function onDrawerClick(e) {
     return;
   }
   if (t.dataset.remove) { list.songIds.splice(Number(t.dataset.remove), 1); await saveSetlists(); return; }
+  if (t.hasAttribute('data-share-set')) {
+    const items = (await Promise.all(list.songIds.map((id) => getSong(id)))).filter(Boolean);
+    if (!items.length) { toast('This setlist has no songs to share yet.'); return; }
+    const { shareSetlist } = await import('./share.js');
+    await shareSetlist(list, items, { saveDate: async (date) => { list.date = date || undefined; await saveSetlists(); } });
+    return;
+  }
   if (t.hasAttribute('data-rename-set')) {
     const name = prompt('Setlist name', list.name);
     if (name?.trim()) { list.name = name.trim(); await saveSetlists(); }

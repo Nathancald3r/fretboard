@@ -258,69 +258,11 @@ async function keyDialog() {
   stop();
 }
 
-/* ---------- share: one .fretboard file with the songs in it ---------- */
+/* ---------- share: see share.js ---------- */
 
-// Kept on this device: practice history, rankings, folders, ids.
-const PRIVATE = ['id', 'uid', 'practiceSeconds', 'rating', 'folder', 'lastOpened', 'lastPracticed', 'bestSpeed', 'updated', 'deleted'];
-
-function pack(v) {
-  if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) {
-    const bytes = v instanceof ArrayBuffer ? new Uint8Array(v) : new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    return { $bytes: btoa(bin) };
-  }
-  if (Array.isArray(v)) return v.map(pack);
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, pack(x)]));
-  return v;
-}
-
-function unpack(v) {
-  if (Array.isArray(v)) return v.map(unpack);
-  if (v && typeof v === 'object') {
-    if (typeof v.$bytes === 'string') { const bin = atob(v.$bytes); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out.buffer; }
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unpack(x)]));
-  }
-  return v;
-}
-
-/** The songs in a shared .fretboard file, ready to save (null: not one). */
-export function readShared(text) {
-  let f;
-  try { f = JSON.parse(text); } catch { return null; }
-  if (f?.format !== 'fretboard-songs' || !Array.isArray(f.songs)) return null;
-  return f.songs.filter((s) => s && typeof s.title === 'string' && s.kind).map((s) => ({ ...unpack(s), added: Date.now() }));
-}
+export { readShared } from './sharecore.js';
 
 async function share() {
-  const songs = await pickedSongs();
-  const out = songs.map((s) => { const c = { ...s }; for (const k of PRIVATE) delete c[k]; return pack(c); });
-  const text = JSON.stringify({ format: 'fretboard-songs', version: 1, created: new Date().toISOString(), songs: out });
-  const name = (songs.length === 1 ? songs[0].title : `${songs.length} songs`).replace(/[\\/:*?"<>|]/g, '') + '.fretboard';
-  if (window.fretboardAndroid) { // the app's WebView can't save a blob: its bridge writes to Downloads
-    const bytes = new TextEncoder().encode(text);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    window.fretboardAndroid.postMessage(JSON.stringify({ name, mime: 'application/octet-stream', data: btoa(bin) }));
-    toast(`Saved “${name}” to Downloads. Send it to anyone with Fretboard: opening it adds the songs.`);
-    stop();
-    return;
-  }
-  const file = new File([text], name, { type: 'application/octet-stream' });
-  try {
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: name });
-      stop();
-      return;
-    }
-  } catch (e) { if (e?.name === 'AbortError') return; }
-  const url = URL.createObjectURL(file);
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast(`Saved “${name}”. Send it to anyone with Fretboard: dropping it in adds the songs.`);
-  stop();
+  const { shareSongs } = await import('./share.js');
+  if (await shareSongs(await pickedSongs())) stop();
 }
-

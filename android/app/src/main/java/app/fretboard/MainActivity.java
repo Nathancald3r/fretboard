@@ -92,14 +92,23 @@ public class MainActivity extends ComponentActivity {
         web.postDelayed(this::flushImports, 400);
     }
 
-    // A tab file opened or shared into the app (Files, Downloads, Share) joins the import queue.
+    // A song file opened or shared into the app (Files, Downloads, Share; one or several) joins the import queue.
     private void importFromIntent(Intent intent) {
         if (intent == null) return;
-        Uri uri = null;
-        if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
-        else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-        if (uri == null) return;
+        java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) uris.add(intent.getData());
+        else if (Intent.ACTION_SEND.equals(intent.getAction())) uris.add(intent.getParcelableExtra(Intent.EXTRA_STREAM));
+        else if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
+            java.util.ArrayList<Uri> many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (many != null) uris.addAll(many);
+        }
+        uris.removeIf(u -> u == null);
+        if (uris.isEmpty()) return;
         intent.setAction(null); // handle once
+        for (Uri uri : uris) importUri(uri);
+    }
+
+    private void importUri(Uri uri) {
         try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
             if (in == null) return;
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
@@ -107,7 +116,7 @@ public class MainActivity extends ComponentActivity {
             int n;
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
-                if (out.size() > 20 * 1024 * 1024) return;
+                if (out.size() > 40 * 1024 * 1024) return;
             }
             String name = uri.getLastPathSegment();
             try (android.database.Cursor c = getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
@@ -234,7 +243,9 @@ public class MainActivity extends ComponentActivity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             Set<String> origins = Collections.singleton(ORIGIN);
             WebViewCompat.addWebMessageListener(w, "fretboardAndroid", origins, (view, message, sourceOrigin, isMainFrame, reply) -> {
-                if (isMainFrame) saveFile(message);
+                if (!isMainFrame) return;
+                if (message.getData() != null && message.getData().startsWith("{\"share\"")) shareFiles(message);
+                else saveFile(message);
             });
         }
         return w;
@@ -431,6 +442,52 @@ public class MainActivity extends ComponentActivity {
             runOnUiThread(() -> Toast.makeText(this, "Saved " + name + " to Downloads", Toast.LENGTH_LONG).show());
         } catch (Exception e) {
             runOnUiThread(() -> Toast.makeText(this, "Could not save the file", Toast.LENGTH_LONG).show());
+        }
+    }
+
+    // {share: true, title, text, files: [{name, mime, data (base64)}]} from the page → Android's share sheet
+    // (Nearby Share, email, MusicStand…). The files are written to the app's cache and lent out by FileProvider.
+    private void shareFiles(WebMessageCompat message) {
+        try {
+            JSONObject o = new JSONObject(message.getData());
+            org.json.JSONArray list = o.getJSONArray("files");
+            if (list.length() == 0 || list.length() > 200) throw new IllegalArgumentException("no files");
+            File dir = new File(getCacheDir(), "share");
+            File[] old = dir.listFiles();
+            if (old != null) for (File f : old) f.delete(); // the last share's files
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("no folder");
+            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+            java.util.HashSet<String> mimes = new java.util.HashSet<>();
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject f = list.getJSONObject(i);
+                String name = f.getString("name").replaceAll("[\\\\/:*?\"<>|\\x00-\\x1f]", "_").trim();
+                if (name.isEmpty() || name.startsWith(".")) name = "song" + name;
+                File file = new File(dir, name);
+                try (OutputStream out = new FileOutputStream(file)) {
+                    out.write(Base64.decode(f.getString("data"), Base64.DEFAULT));
+                }
+                uris.add(androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".files", file));
+                mimes.add(f.optString("mime", "application/octet-stream"));
+            }
+            String mime = mimes.size() == 1 ? mimes.iterator().next() : "*/*";
+            Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
+            send.setType(mime);
+            if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+            else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            String title = o.optString("title", "Fretboard");
+            send.putExtra(Intent.EXTRA_SUBJECT, title);
+            String text = o.optString("text", "");
+            if (!text.isEmpty()) send.putExtra(Intent.EXTRA_TEXT, text);
+            // every file readable by the app picked, through the chooser too
+            android.content.ClipData clip = android.content.ClipData.newRawUri(title, uris.get(0));
+            for (int i = 1; i < uris.size(); i++) clip.addItem(new android.content.ClipData.Item(uris.get(i)));
+            send.setClipData(clip);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Share " + title);
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            runOnUiThread(() -> startActivity(chooser));
+        } catch (Exception e) {
+            runOnUiThread(() -> Toast.makeText(this, "Could not share the files", Toast.LENGTH_LONG).show());
         }
     }
 

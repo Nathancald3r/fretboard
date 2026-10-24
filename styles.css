@@ -2472,3 +2472,11 @@ body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var
   .qi-modes button { padding: .15rem .55rem; }
   .lib-more { width: 44px; height: 44px; }
 }
+/* Share a song or a setlist */
+.share-dialog { width: min(92vw, 560px); max-width: min(92vw, 560px); }
+.share-dialog h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
+.share-songs { list-style: none; margin: 0 0 .7rem; padding: 0; max-height: min(40vh, 300px); overflow-y: auto; }
+.share-songs li { padding: .3rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.share-date { display: flex; align-items: center; gap: .5rem; margin: 0 0 .7rem; }
+.share-dialog .row.spread { margin-top: .8rem; }
+.dr-date { margin: -.2rem 0 .6rem; }
