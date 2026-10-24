@@ -142,6 +142,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
      - Why: alphaTab queues only about 0.2 s of sound. When the page stalled (a redraw, an import, a busy PC, a background tab), the sound had gaps and the song fell behind. 0.25 s stalls lost 1.4 s in 4 s.
      - Checked: 0.6 s page stalls, and every CPU core busy, lose nothing.
      - To measure: play, block the page with a busy loop, and compare `api.timePosition` progress with wall time.
+  6. **Drum sounds on a second drum channel:** alphaTab loads drum samples only for keys played on channel 9. A channel set to bank 128 (`ownDrumChannels` moves a second percussion track there) counts too now. Without it, When I Go Down's drums and percussion were silent. That .gp5 also gives both tracks one shared `playbackInfo`, so `ownDrumChannels` copies it before moving a track.
 - **To measure the sound** in the preview:
   - `api.exportAudio(new alphaTab.synth.AudioExportOptions())` with `playbackRange` and `trackVolume` (a Map of track index → volume), then `render(500)` until it returns null. Sum the RMS and count NaN.
   - Use the default sample rate (22050 gives NaN everywhere).

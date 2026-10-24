@@ -145,5 +145,15 @@ fbPatch('direct channel (worker reset)', 'resetSamples() {\n\t\t\tthis._main.pos
   'resetSamples() {\n\t\t\t(this._fbDirect || this._main).postMessage({ cmd: "alphaSynth.output.resetSamples" });');
 fbPatch('direct channel (worker pause)', 'pause() {\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });',
   'pause() {\n\t\t\tthis._fbDirect?.close();\n\t\t\tthis._fbDirect = null;\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });');
+// Drum sounds load only for the keys played on a drum channel, and alphaTab counted only channel 9.
+// A second percussion track moved to its own channel with the drum kit bank (ownDrumChannels in
+// js/humanize.js) had none of its sounds loaded and played nothing (When I Go Down's percussion).
+// A channel given bank 128 (bank select 1) counts as a drum channel too.
+fbPatch('drum bank keys (set)', 'let maxChannel = 0;\n\t\t\tlet previousTick = 0;',
+  'let maxChannel = 0;\n\t\t\tconst fbDrumChannels = new Set([SynthConstants.PercussionChannel]);\n\t\t\tlet previousTick = 0;');
+fbPatch('drum bank keys (bank)', '} else if (mEvent.type === MidiEventType.ProgramChange) {\n\t\t\t\t\tconst programChange = mEvent;',
+  '} else if (mEvent.type === MidiEventType.ControlChange && mEvent.controller === ControllerType.BankSelectCoarse && mEvent.channel !== SynthConstants.PercussionChannel) {\n\t\t\t\t\tif (mEvent.value === 1) fbDrumChannels.add(mEvent.channel);\n\t\t\t\t\telse fbDrumChannels.delete(mEvent.channel);\n\t\t\t\t} else if (mEvent.type === MidiEventType.ProgramChange) {\n\t\t\t\t\tconst programChange = mEvent;');
+fbPatch('drum bank keys (note)', 'if (noteOn.channel === SynthConstants.PercussionChannel) this.percussionKeys.add(noteOn.noteKey);',
+  'if (fbDrumChannels.has(noteOn.channel)) this.percussionKeys.add(noteOn.noteKey);');
 writeFileSync(script, code);
 console.log('alphaTab copied to vendor/alphatab');

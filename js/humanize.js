@@ -151,7 +151,11 @@ export function ownDrumChannels(tracks) {
   let first = true;
   let moved = 0;
   for (const t of tracks) {
-    const p = t.playbackInfo;
+    // a .gp5 can give two tracks one shared playbackInfo (When I Go Down's drums and percussion):
+    // moving one moved both, onto a channel where the drums made no sound
+    const p = (t.playbackInfo.primaryChannel === DRUM_CHANNEL && !first) || t.playbackInfo.secondaryChannel === DRUM_CHANNEL
+      ? (t.playbackInfo = Object.assign(Object.create(Object.getPrototypeOf(t.playbackInfo)), t.playbackInfo))
+      : t.playbackInfo;
     if (p.primaryChannel === DRUM_CHANNEL) {
       if (first) { first = false; continue; }
       p.primaryChannel = p.secondaryChannel = free();

@@ -35100,6 +35100,7 @@
 			let metronomeTick = midiFile.tickShift;
 			let metronomeTime = 0;
 			let maxChannel = 0;
+			const fbDrumChannels = new Set([SynthConstants.PercussionChannel]);
 			let previousTick = 0;
 			for (const mEvent of midiFile.events) {
 				const synthData = new SynthEvent(state.synthData.length, mEvent);
@@ -35131,6 +35132,9 @@
 						state.firstTimeSignatureNumerator = meta.numerator;
 						state.firstTimeSignatureDenominator = timeSignatureDenominator;
 					}
+				} else if (mEvent.type === MidiEventType.ControlChange && mEvent.controller === ControllerType.BankSelectCoarse && mEvent.channel !== SynthConstants.PercussionChannel) {
+					if (mEvent.value === 1) fbDrumChannels.add(mEvent.channel);
+					else fbDrumChannels.delete(mEvent.channel);
 				} else if (mEvent.type === MidiEventType.ProgramChange) {
 					const programChange = mEvent;
 					const channel = programChange.channel;
@@ -35139,7 +35143,7 @@
 					if (!(channel === SynthConstants.PercussionChannel)) this.instrumentPrograms.add(programChange.program);
 				} else if (mEvent.type === MidiEventType.NoteOn) {
 					const noteOn = mEvent;
-					if (noteOn.channel === SynthConstants.PercussionChannel) this.percussionKeys.add(noteOn.noteKey);
+					if (fbDrumChannels.has(noteOn.channel)) this.percussionKeys.add(noteOn.noteKey);
 					if (noteOn.channel > maxChannel) maxChannel = noteOn.channel;
 				}
 			}
