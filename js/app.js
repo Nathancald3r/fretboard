@@ -935,6 +935,17 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;
     }
+    if (/\.(mid|midi|kar|rmi)$/i.test(file.name)) { // MIDI: written out as MusicXML, which alphaTab loads
+      try {
+        const { midiToMusicXml } = await import('./midi.js');
+        const r = midiToMusicXml(await file.arrayBuffer());
+        const fromName = parseFilename(file.name);
+        const id = await saveImported({ kind: 'xml', title: r.title || fromName?.song || base, artist: r.artist || fromName?.artist || '', data: new TextEncoder().encode(r.xml).buffer, fileName: base + '.musicxml', added: Date.now() }, replace);
+        got(id);
+        if (id) toast(`Read ${r.bars} bars and ${r.tracks.length} track${r.tracks.length > 1 ? 's' : ''} from the MIDI file: ${r.tracks.join(', ')}. MIDI has no note lengths of its own, so check the rhythm.`, 7000);
+      } catch (err) { console.error(err); failed.push(file.name); }
+      continue;
+    }
     const buf = await file.arrayBuffer();
     const fromName = parseFilename(file.name); // Ultimate Guitar's "Artist-Song-date" names
     const info = readScoreInfo(new Uint8Array(buf));
@@ -954,7 +965,7 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   if (added > 0) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
   if (dupReplaced) parts.push(`Updated ${dupReplaced} you already had.`);
   if (dupSkipped) parts.push(`Skipped ${dupSkipped} you already have.`);
-  if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
+  if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML / MIDI file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
   else if (!quietIfEmpty && pdfs.length < 2 && !combined && !dupSkipped) toast('Nothing to import.'); // a cancelled PDF import already said so
   if (openOne && ids.length === 1) open = ids[0]; // a file you picked or dropped: open it
@@ -1004,7 +1015,7 @@ function initImport() {
     zone.hidden = true;
     const all = [...e.dataTransfer.files];
     const songs = all.filter((f) => TAB_FILE.test(f.name) || /\.capx?$/i.test(f.name));
-    if (!songs.length) { toast('Not a song file. Fretboard reads Guitar Pro, Power Tab, MusicXML, ChordPro, PDF and text tabs.', 5000); return; }
+    if (!songs.length) { toast('Not a song file. Fretboard reads Guitar Pro, Power Tab, MusicXML, MIDI, ChordPro, PDF and text tabs.', 5000); return; }
     importFiles(songs, { openOne: true });
   });
 }

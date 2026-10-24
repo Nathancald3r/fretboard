@@ -5,7 +5,7 @@ import { bestMatch, matchScore } from './tabsources.js';
 import { popMenu } from './menu.js';
 
 const $ = (id) => document.getElementById(id);
-export const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|ptb|txt|pdf|cho|chordpro|chopro|crd|fretboard)$/i;
+export const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|mid|midi|kar|rmi|ptb|txt|pdf|cho|chordpro|chopro|crd|fretboard)$/i;
 const SCAN_DAYS = 14; // only look at recent downloads
 const fileKey = (f) => `${f.name}|${f.size}|${f.lastModified}`;
 
@@ -418,7 +418,7 @@ function helperMenu(anchor) {
 export function moreMenu(anchor) {
   const q = $('find-query').value.trim();
   popMenu(anchor, [
-    { k: 'files', label: 'Import files…', hint: 'Guitar Pro, Power Tab, MusicXML, ChordPro, PDF, text' },
+    { k: 'files', label: 'Import files…', hint: 'Guitar Pro, Power Tab, MusicXML, MIDI, ChordPro, PDF, text' },
     navigator.clipboard?.readText ? { k: 'clip', label: 'Paste from clipboard', hint: 'A text tab or chords you copied' } : null,
     { k: 'type', label: 'Type / paste text tab' },
     canWatch ? { k: 'downloads', label: 'Import new downloads', hint: 'Tab files from the last 14 days' } : null,
