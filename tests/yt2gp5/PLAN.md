@@ -54,20 +54,18 @@ The Python for all of this is `C:\Users\natha\.fretboard\yt2gp5-venv\Scripts\pyt
 
 **More songs available:** `Downloads\UG Songs` has 8 more official UG songs as PDFs only, such as Be My Escape and Candlelight. Next idea: import each through Fretboard's PDF importer in headless Chromium and save it as .gp (alphaTab's Gp7Exporter), so `songdb.py scan` can use them.
 
-## Save point (2026-10-24): adding the UG PDF songs
+## UG PDF songs as .gp (2026-10-24)
 
 The user asked: "import the PDF-only UG songs through Fretboard, save each as .gp, add them to songs.json, find their official audio, and score them."
 
 - **Usable folders** in `C:\Users\natha\Downloads\UG Songs` (PDF parts, no .gp yet): **Be My Escape** (Relient K), **Champion** (Bethel Music, Key Bb), **How Great Is Our God** (Chris Tomlin, Key C#), **Trust In God** (Elevation Worship, Key C).
 - **Not usable:** Candlelight (only .txt tabs), Champion (Maverick City), Rest On Us and Sun Come Down (chords only, no notes). "When I Go Down Power" duplicates a song that already has a .gp. Here I Am To Worship, How He Loves and When I Go Down already have .gp files.
-- **Converter plan** (step in progress): add a page function `ugFolderToGp(files, {title, artist, key})` to `render.js`. It mirrors `readParts` / `importPdfParts` in `js/app.js`:
-  - For each PDF (skip `Chords.txt`), take the part name from the file name (`"Song - Artist - Part.pdf"`). The program comes from the `PARTS` table in app.js.
-  - Run `pdfToTab(buf, ()=>{}, {lyrics:false, dynamics:false, bass:/bass/i, drums: drumKind(name)})` one PDF at a time.
-  - Sort: guitar parts with tab first, then the rest, then drums. Then `ugToAlphaTex(parts[0].strips, {title, artist, name, program, extra: parts.slice(1), key})`.
-  - Load the tex with `new alphaTab.importer.AlphaTexImporter()` (as in `js/player.js:1199`), then `new alphaTab.exporter.Gp7Exporter().export(score, settings)` (as in `js/editor.js:95`). Save it through the test server's POST `/__save/` to `tests/yt2gp5/cache/ug/<slug>.gp`.
-  - Drive it from a small Python script (Playwright, `run.serve()`, as in `real.py`).
-- **Then:** `songdb.py scan tests/yt2gp5/cache/ug` → `find` → `verify` (the artist's official Topic audio first) → `real.py -k <song>` for each → update this file and the README.
-- Nothing is committed (the user hasn't asked).
+- **Converter: done** (`ug_to_gp.py` → `render.js ugFolderToGp`, Fretboard's own PDF importer + alphaTab's Gp7Exporter → `cache/ug/Artist - Title.gp`).
+  - It reads the files listed in the helper's `fretboard-run.json` (the latest capture). A folder captured twice also holds old files, e.g. Be My Escape's old `Drums.pdf` (one squeezed low-res picture, 77 bars) beside the new `Drums (2).pdf`.
+  - **Bar-count guard:** the song's length is the bar count most parts agree on. A part that read more or fewer bars is left out of the .gp and printed as `WRONG BAR COUNT` (`--keep-off` keeps it).
+  - Drum reader fixes (pushed in `80869d9`): a one-bar last line is found, and a multi-bar rest's wide "4" is read. Be My Escape drums 77 → 103 of 103, Trust In God 175 → 181, How Great Is Our God 185 → 188.
+  - **Still left out** (2026-10-24): 10000 Reasons Piano 77/78 and Tambourine 76/78; Champion Piano 59, Synth Pad 60, Drums 206, Shaker 163 of 207; How Great Is Our God Bass 185/188; Stupid Deep Finger Snap 49/54 (Hand Clap unread); Trust In God Piano 73, Tambourines 159, Shaker 158 of 181. Piano and pad (sheet music) and one-line percussion are the weak readers.
+- **Next:** run the existing steps by hand on the official songs (Champion, Trust In God, How Great Is Our God, Here I Am To Worship) to see how many sync as one steady tempo; then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
 
 ## Matching the official songs to YouTube (2026-10-24)
 
