@@ -63,6 +63,7 @@ function fileHandler(rec) {
   el.addEventListener('loadedmetadata', () => sendPosition(el.currentTime * 1000));
   return {
     kind: 'file',
+    el,
     get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal() + lead()); },
     get rawDuration() { return (el.duration || 0) * 1000; },
     get isPlaying() { return !el.paused; },
@@ -574,6 +575,147 @@ export function playerStateChanged(playing) {
   if (!playing && taps) finishTaps();
 }
 
+/* ---------- hearing the tab with the recording ---------- */
+
+// To check a tab against its recording: the tab's own instruments play along with it. The tab is
+// rendered to audio once with the sync points, so its time is the recording's time, and kept in
+// step with the recording while it plays. 'right' puts the tab in the right ear and an audio-file
+// recording in the left (YouTube's sound can't be moved: it stays in both ears).
+const MINE_MODES = { off: 'Off', both: 'With the recording', right: 'My tracks in the right ear' };
+const mine = { mode: 'off', level: 0.8, buf: null, key: '', busy: null, ctx: null, src: null, gain: null, pan: null, at: 0, ctxAt: 0, rate: 1, timer: 0, fileEl: null, fileNode: null };
+try { mine.mode = MINE_MODES[localStorage.getItem('fretboard-mine')] ? localStorage.getItem('fretboard-mine') : 'off'; mine.level = Number(localStorage.getItem('fretboard-mine-level')) || 0.8; } catch { /* ignore */ }
+
+function mineCtx() {
+  if (!mine.ctx) {
+    mine.ctx = new AudioContext();
+    mine.gain = mine.ctx.createGain();
+    mine.pan = mine.ctx.createStereoPanner();
+    mine.gain.connect(mine.pan).connect(mine.ctx.destination);
+  }
+  if (mine.ctx.state === 'suspended') mine.ctx.resume().catch(() => {});
+  return mine.ctx;
+}
+
+// What the rendered audio depends on: the song, its sync and the mixer.
+const mineKey = () => JSON.stringify([song?.id, flatSyncPoints(syncPoints()), hooks.trackLevels?.()]);
+
+const mineState = (text) => { $('pa-mine-state').textContent = text; };
+
+async function renderMine(key) {
+  const api = hooks.api();
+  const ctx = mineCtx();
+  const opts = new AT.synth.AudioExportOptions();
+  opts.soundFonts = [await hooks.soundFontBytes()];
+  opts.useSyncPoints = true;
+  opts.sampleRate = ctx.sampleRate;
+  opts.masterVolume = hooks.synthGain();
+  hooks.trackLevels().forEach((v, i) => opts.trackVolume.set(i, v));
+  const ex = await api.exportAudio(opts);
+  const parts = [];
+  let n = 0;
+  try {
+    for (let c; (c = await ex.render(2000));) {
+      if (mine.busy?.key !== key) return null; // the sync or the mix changed: a newer render takes over
+      parts.push(c.samples);
+      n += c.samples.length;
+      mineState(`Getting your tracks ready… ${Math.round((100 * c.currentTime) / Math.max(1, c.endTime))}%`);
+    }
+  } finally { ex.destroy?.(); }
+  const buf = ctx.createBuffer(2, Math.max(1, n / 2), ctx.sampleRate);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  let j = 0;
+  for (const s of parts) for (let i = 0; i < s.length; i += 2, j++) { L[j] = s[i]; R[j] = s[i + 1]; }
+  return buf;
+}
+
+function mineRender() {
+  const key = mineKey();
+  if (mine.key === key || mine.busy?.key === key) return;
+  const busy = { key };
+  mine.busy = busy;
+  renderMine(key).then((buf) => {
+    if (mine.busy !== busy || !buf) return;
+    mine.buf = buf; mine.key = key; mine.busy = null;
+    mineStop(); // starts again with the new audio on the next tick
+    showMine();
+  }).catch((e) => { if (mine.busy === busy) { mine.busy = null; mine.key = key; mineState('Couldn’t make the tracks’ sound: ' + (e?.message || e)); } });
+}
+
+function mineStop() {
+  try { mine.src?.stop(); } catch { /* not started */ }
+  mine.src?.disconnect();
+  mine.src = null;
+}
+
+// The recording's ears: an audio file goes left while the tab is in the right ear.
+function mineEars() {
+  const right = mine.mode === 'right';
+  if (mine.pan) mine.pan.pan.value = right ? 1 : 0;
+  if (mine.gain) mine.gain.gain.value = mine.level;
+  const el = media?.kind === 'file' ? media.el : null;
+  if (el && right && mine.fileEl !== el) {
+    const ctx = mineCtx();
+    mine.fileEl = el;
+    mine.fileNode = ctx.createStereoPanner();
+    ctx.createMediaElementSource(el).connect(mine.fileNode).connect(ctx.destination);
+  }
+  if (mine.fileNode && mine.fileEl === el) mine.fileNode.pan.value = right ? -1 : 0;
+}
+
+// Every 100 ms while it's on: start, follow and stop the tab's sound with the recording.
+function mineTick() {
+  if (mine.mode === 'off' || !on || !media) { mineStop(); return; }
+  mineRender();
+  if (!mine.buf || !media.isPlaying) { mineStop(); return; }
+  const ctx = mineCtx();
+  // Where the recording is, in the rendered audio's time (the sync points' time).
+  const pos = (media.now() + lead() + btDelay()) / 1000;
+  const rate = media.playbackRate || 1;
+  if (mine.src) {
+    mine.at += (ctx.currentTime - mine.ctxAt) * mine.src.playbackRate.value;
+    mine.ctxAt = ctx.currentTime;
+    const ahead = mine.at - pos;
+    // Small drift is eased out (a 1 % speed change can't be heard); a jump starts again from there.
+    if (Math.abs(ahead) < 0.15 && rate === mine.rate) {
+      mine.src.playbackRate.value = rate * (1 - Math.max(-0.01, Math.min(0.01, ahead / 2)));
+      return;
+    }
+    mineStop();
+  }
+  if (pos < 0 || pos >= mine.buf.duration) return;
+  const src = ctx.createBufferSource();
+  src.buffer = mine.buf;
+  src.playbackRate.value = rate;
+  src.connect(mine.gain);
+  src.start(0, pos);
+  Object.assign(mine, { src, at: pos, ctxAt: ctx.currentTime, rate });
+}
+
+function setMine(mode = mine.mode, level = mine.level) {
+  mine.mode = MINE_MODES[mode] ? mode : 'off';
+  mine.level = level;
+  try { localStorage.setItem('fretboard-mine', mine.mode); localStorage.setItem('fretboard-mine-level', String(level)); } catch { /* ignore */ }
+  if (mine.mode !== 'off') mineCtx();
+  mineEars();
+  clearInterval(mine.timer);
+  mine.timer = mine.mode === 'off' ? 0 : setInterval(mineTick, 100);
+  mineTick();
+  showMine();
+}
+
+function showMine() {
+  $('pa-mine').value = mine.mode;
+  $('pa-mine-vol').value = mine.level;
+  const b = $('pa-mine-btn');
+  const yt = media?.kind === 'youtube';
+  b.classList.toggle('on', mine.mode !== 'off');
+  b.textContent = { off: '🎸 Mine: off', both: '🎸 Mine: on', right: '🎸 Mine: R ear' }[mine.mode];
+  b.title = `Hear this tab's own instruments with the video, to check it (now: ${MINE_MODES[mine.mode]}). Click to switch.`
+    + (mine.mode === 'right' && yt ? ' YouTube’s sound can’t be moved, so the video stays in both ears.' : '');
+  if (mine.busy) return; // the render shows its progress
+  mineState(mine.mode === 'right' && yt ? 'Your tracks are in the right ear. YouTube’s sound can’t be moved, so the video stays in both ears (an audio file goes to the left).' : '');
+}
+
 /* ---------- switching modes ---------- */
 
 export const recordingOn = () => on;
@@ -612,6 +754,7 @@ async function setOn(want) {
   }
   hooks.modeChanged(on);
   showState();
+  setMine();
 }
 
 // Every save here also refreshes the sync badge and checklist.
@@ -946,6 +1089,9 @@ export function initPlayAlong(h) {
   $('pa-using-change').addEventListener('click', () => { if (pages.length) renderPage(pageIdx); else findOnYouTube(); });
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
+  $('pa-mine').addEventListener('change', (e) => setMine(e.target.value));
+  $('pa-mine-vol').addEventListener('input', (e) => setMine(mine.mode, Number(e.target.value)));
+  $('pa-mine-btn').addEventListener('click', () => setMine({ off: 'both', both: 'right', right: 'off' }[mine.mode]));
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
   bindBtControls({ button: $('pa-bt'), input: $('pa-bt-ms'), nudges: document.querySelectorAll('#pa-bt-row [data-bt]') });
   onBtChange(() => { if (song && on) applySync(); });

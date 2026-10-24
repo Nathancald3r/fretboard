@@ -161,5 +161,9 @@ fbPatch('drum bank keys (note)', 'if (noteOn.channel === SynthConstants.Percussi
 // unpitched note.
 fbPatch('musicxml pitched instrument', 'if (instrumentId !== null) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);',
   'if (instrumentId !== null && (!isPitched || note.beat.voice.bar.staff.isPercussion)) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);');
+// An audio export (the tab heard along with its video) gets the same strums and sustain as
+// playback: api.fbExportMidi edits its MIDI the way the midiLoad handler edits the player's.
+fbPatch('export midi hook', 'generator.generate();\n\t\t\tconst optionsWithChannels = new AudioExportOptions();',
+  'generator.generate();\n\t\t\tthis.fbExportMidi?.(midiFile);\n\t\t\tconst optionsWithChannels = new AudioExportOptions();');
 writeFileSync(script, code);
 console.log('alphaTab copied to vendor/alphatab');

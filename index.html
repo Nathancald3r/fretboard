@@ -163,6 +163,7 @@
         <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
         <span id="pa-video-title" class="small-text">Linked video</span>
         <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
+        <button id="pa-mine-btn" class="ghost small" type="button">🎸 Mine: off</button>
         <button id="pa-video-sync" class="ghost small" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙ Settings</button>
         <button id="pa-video-close" class="ghost small phone-only" title="Minimize the video (it keeps playing)" aria-label="Minimize the video"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button id="pa-video-size" class="ghost small" title="Smaller / bigger" aria-label="Smaller or bigger">⤡</button>
@@ -373,6 +374,11 @@
                 <button id="pa-remove" class="ghost small danger" hidden title="Unlink the video from this song">Unlink</button>
                 <label class="toggle"><input id="pa-on" type="checkbox"> Play with the video</label>
               </div>
+              <div class="row" title="Hear this tab's own instruments with the video, to check that it matches. Uses the mixer's levels.">
+                <label>Hear my tracks <select id="pa-mine"><option value="off">Off</option><option value="both">With the recording</option><option value="right">My tracks in the right ear</option></select></label>
+                <input id="pa-mine-vol" type="range" min="0" max="1.5" step="0.05" value="0.8" aria-label="My tracks' level" style="width:6rem">
+              </div>
+              <p id="pa-mine-state" class="muted small-text" aria-live="polite"></p>
               <p id="pa-error" class="amp-error"></p>
             </div>
             <div class="pa-col">

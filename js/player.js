@@ -59,7 +59,8 @@ let customSoundFont = null; // { name, data: ArrayBuffer }
 // MuseScore General is mixed much quieter than other soundfonts; lift it to a normal level.
 const DEFAULT_SF_GAIN = 2;
 const synthVolume = (v) => (recordingOn() || customSoundFont ? v : v * DEFAULT_SF_GAIN);
-const customSoundFontReady = getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
+let sfBytes = null; // the built-in soundfont's bytes, fetched (from the cache) when the tab is rendered to audio
+const customSoundFontReady =getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
 
 const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING });
 
@@ -123,6 +124,8 @@ function ensureApi() {
   });
   // Guitar chords are strummed, and the click is written into the song's MIDI on a channel of its own.
   api.midiLoad.on((midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); addClickTrack(midiFile); });
+  // The tab rendered to hear along with its video (playalong.js): the same sound, no click.
+  api.fbExportMidi = (midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); };
   // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
   // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
   try {
@@ -2329,6 +2332,10 @@ export function initPlayer() {
     },
     sectionChoices: () => sections.map((sec) => ({ master: sec.index, name: sec.el.textContent.trim() })),
     songSeconds: () => endTime / 1000,
+    // For hearing the tab with its video: each track's level from the mixer (0 = silent), and the sounds.
+    trackLevels: () => (score?.tracks || []).map((t, i) => (mix[i] && isAudible(i) ? mix[i].volume * (i === trackIndex ? 1 : othersLevel()) : 0)),
+    synthGain: () => (customSoundFont ? 1 : DEFAULT_SF_GAIN),
+    soundFontBytes: async () => new Uint8Array(customSoundFont ? customSoundFont.data : (sfBytes ??= await (await fetch(DEFAULT_SF)).arrayBuffer())),
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
     closeSheets,
