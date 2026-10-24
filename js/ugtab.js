@@ -183,6 +183,7 @@ function glyphAt(comp) {
     const room = holes < HOLES[ch] ? 10 : 6;
     const alt = dist.find((t) => t.d <= dist[0].d + room && HOLES[t.ch] === holes);
     if (alt) ch = alt.ch;
+    if (dist[0].ch === '6' && holes === 0) ch = '5'; // a 6 with no loop is a 5 opened up, not a 3 (tightly spaced 5s, round-trip triplets)
   }
   // One loop: where it sits tells 0, 6 and 9 apart in any font (a 0's loop is central, a 6's low down,
   // a 9's high up). Another font's 9 matched 8 and then 0; its 6 matched 0 by a pixel.
@@ -351,6 +352,36 @@ export function stemsBelow(ink, w, h, st) { // exported for tests
     top: Math.min(...g.map((c) => c.top)),
     bot: Math.max(...g.map((c) => c.bot)),
   }));
+}
+
+// A tuplet's bracket under the rhythm row: a thin line in two halves with the number ("3") between
+// them, each half ending in a short tick up at its outer end. Returns the x span each bracket covers.
+export function tupletBrackets(ink, w, h, st, stems) {
+  const u = st.u, last = st.ys[st.ys.length - 1];
+  const y0 = Math.round(last + 1.5 * u), y1 = Math.min(h - 2, Math.round(last + 5.5 * u));
+  const segs = [];
+  for (let y = y0; y <= y1; y++) {
+    for (let x = st.x0; x <= st.x1; x++) {
+      if (!ink[y * w + x]) continue;
+      let e = x;
+      while (e + 1 <= st.x1 && ink[y * w + e + 1]) e++;
+      if (e - x + 1 >= 0.8 * u) segs.push({ y, x0: x, x1: e });
+      x = e;
+    }
+  }
+  // thin: the row two below has no run over the same span (a beam is thicker), and no stem ends on it
+  const thin = segs.filter((g) => !segs.some((o) => o.y >= g.y + 2 && o.y <= g.y + 3 && o.x0 < g.x1 && o.x1 > g.x0)
+    && !segs.some((o) => o.y <= g.y - 2 && o.y >= g.y - 3 && o.x0 < g.x1 && o.x1 > g.x0)
+    && !stems.some((s) => s.x >= g.x0 - 1 && s.x <= g.x1 + 1 && Math.abs(s.bot - g.y) <= 3));
+  const tick = (x, y) => { let n = 0; for (let k = 1; k <= u && ink[(y - k) * w + x]; k++) n++; return n >= 0.25 * u && n <= 0.8 * u; };
+  const hooked = (g, side) => [0, 1, -1].some((d) => tick(side === 'l' ? g.x0 + d : g.x1 + d, g.y) || tick(side === 'l' ? g.x0 + d : g.x1 + d, g.y + 1));
+  const out = [];
+  for (const L of thin) {
+    if (!hooked(L, 'l')) continue;
+    const R = thin.find((g) => Math.abs(g.y - L.y) <= 1 && g.x0 - L.x1 >= 0.3 * u && g.x0 - L.x1 <= 2 * u && hooked(g, 'r'));
+    if (R && !out.some((o) => o.x0 === L.x0)) out.push({ x0: L.x0, x1: R.x1, y: L.y });
+  }
+  return out;
 }
 
 function bandCount(ink, w, xa, xb, ya, yb, lines = []) {
@@ -540,6 +571,7 @@ export function readStrip(ink, light, w, h, st) {
   const rests = readRests(loose, st);
   const dots = repeatDots(loose, st);
   const stems = stemsBelow(ink, w, h, st);
+  const tuplets = tupletBrackets(ink, w, h, st, stems);
   const bars = [];
   let last = null; // the last column read so far, for a held note at the start of a bar
   for (let i = 0; i + 1 < bl.length; i++) {
@@ -590,6 +622,13 @@ export function readStrip(ink, light, w, h, st) {
     } else if (cols.length) { // rests between the notes keep them in time (a bar of only rests stays empty)
       const inside = rests.filter((r) => r.cx > bl[i] && r.cx < bl[i + 1] && !cols.some((c) => Math.abs(c.cx - r.cx) < 0.6 * st.u));
       if (inside.length) { cols.push(...inside.map((r) => ({ ...r }))); cols.sort((a, b) => a.cx - b.cx); }
+    }
+    // a triplet: the notes over a "3" bracket take two thirds of their written time (three eighths in a quarter)
+    for (const t of tuplets) {
+      const under = cols.filter((c) => c.cx >= t.x0 - 0.3 * st.u && c.cx <= t.x1 + 0.3 * st.u && !c.guess);
+      const written = under.reduce((a, c) => a + c.len, 0);
+      if (under.length < 2 || ![2, 4, 8, 16].includes((written * 2) / 3)) continue;
+      for (const c of under) { c.len = (c.len * 2) / 3; c.tu = 3; }
     }
     bars.push(bar);
   }
@@ -989,7 +1028,7 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   }
   // the bar length every part agrees on most (a part with no rhythm row has no say)
   const sums = [strips, ...extra.map((p) => p.strips)].flatMap((list) => list.flatMap((s) => s.bars))
-    .filter((b) => b.cols.length >= 3 && !b.cols.some((c) => c.guess)).map((b) => b.cols.reduce((a, c) => a + c.len, 0));
+    .filter((b) => b.cols.length >= 3 && !b.cols.some((c) => c.guess)).map((b) => Math.round(b.cols.reduce((a, c) => a + c.len, 0) * 1000) / 1000); // (a triplet's thirds don't add up exactly)
   const count = {};
   sums.forEach((s) => { count[s] = (count[s] || 0) + 1; });
   const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
@@ -1023,8 +1062,10 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       const span = ends[ends.length - 1] - ends[0];
       lens = b.cols.map((_, k) => snap(((ends[k + 1] - ends[k]) / span) * T));
     }
-    lens = lens.map((l) => (dur(l) ? l : snap(l)));
+    const kept = lens.every((l, k) => l === b.cols[k].len); // (spread out, a triplet is a triplet no more)
+    lens = lens.map((l, k) => (dur(l) || (kept && b.cols[k].tu) ? l : snap(l)));
     let total = lens.reduce((a, c) => a + c, 0);
+    if (Math.abs(total - T) < 1e-6) total = T;
     while (total > T) { // shorten the longest note until the bar fits
       const k = lens.indexOf(Math.max(...lens));
       const shorter = snap(lens[k] - (total - T));
@@ -1096,7 +1137,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
     }
     if (!b.cols.length) prevStrings = new Set();
     const beats = words[i]?.length ? [sungPart ? sungBeats(b, words[i]) : wordedBeats(b, words[i])]
-      : b.cols.map((c, k) => (pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k], '', c.fx) : tiedTex(c.notes, lens[k], '', c.fx)));
+      : b.cols.map((c, k) => (c.tu && b.times.length && lens[k] === c.len ? beatTex(c.notes, Math.round(lens[k] * 3) / 2, 'tu 3', c.fx)
+        : pieces(lens[k]).length === 1 ? beatTex(c.notes, lens[k], '', c.fx) : tiedTex(c.notes, lens[k], '', c.fx)));
     if (!beats.length) beats.push(restTex(T));
     const head = [];
     if (first) {
