@@ -20,8 +20,8 @@ Songs already collected are remembered (Downloads\\UG Songs\\collected.txt) and 
 again. A song you Skip or Cancel isn't asked again while its tab stays open.
 
 It runs out of sight: started from a console it starts itself again without one and that console
-closes (what it prints goes to helper.log beside it). Fretboard's Stop button ends it, and it ends
-by itself a minute after you close its Chrome while nothing is being saved.
+closes (what it prints goes to helper.log beside it). Fretboard's Stop button ends it, so does Quit
+on its icon by the clock (the notification area), and it ends by itself a minute after you close its Chrome while nothing is being saved.
 
   python tools/ug_watch.py            (in the background)
   python tools/ug_watch.py --visible  (in this console, Ctrl+C to stop)
@@ -646,9 +646,120 @@ def close_chrome(port):
         pass  # closed already
 
 
-def quit_helper():
-    """Stop from Fretboard (never while a song is being saved): its Chrome closes, then the helper ends."""
-    print("Stopped from Fretboard.")
+TRAY = {}  # the notification-area icon, so it can be taken away on quit
+
+
+def tray_icon():
+    """An icon by the clock (the notification area), always in the same spot: click it for Show UG
+    window and Quit UG helper. Plain Windows calls, nothing to install. Runs on its own thread."""
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    u32, sh, gdi, k32 = ctypes.windll.user32, ctypes.windll.shell32, ctypes.windll.gdi32, ctypes.windll.kernel32
+    LRESULT = ctypes.c_ssize_t
+    WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+    u32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    u32.DefWindowProcW.restype = LRESULT
+    u32.CreateWindowExW.restype = wintypes.HWND
+    u32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID]
+    u32.CreatePopupMenu.restype = wintypes.HMENU
+    u32.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t, wintypes.LPCWSTR]
+    u32.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.HWND, wintypes.LPVOID]
+    u32.DestroyMenu.argtypes = [wintypes.HMENU]
+    u32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    u32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    gdi.CreateBitmap.restype = wintypes.HBITMAP
+    u32.CreateIconIndirect.restype = wintypes.HICON
+    k32.GetModuleHandleW.restype = wintypes.HMODULE
+
+    class WNDCLASS(ctypes.Structure):
+        _fields_ = [("style", wintypes.UINT), ("lpfnWndProc", WNDPROC), ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", wintypes.HINSTANCE), ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE),
+                    ("hbrBackground", wintypes.HBRUSH), ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR)]
+
+    class NOTIFYICONDATA(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uID", wintypes.UINT), ("uFlags", wintypes.UINT),
+                    ("uCallbackMessage", wintypes.UINT), ("hIcon", wintypes.HICON), ("szTip", wintypes.WCHAR * 128),
+                    ("dwState", wintypes.DWORD), ("dwStateMask", wintypes.DWORD), ("szInfo", wintypes.WCHAR * 256),
+                    ("uVersion", wintypes.UINT), ("szInfoTitle", wintypes.WCHAR * 64), ("dwInfoFlags", wintypes.DWORD),
+                    ("guidItem", ctypes.c_ubyte * 16), ("hBalloonIcon", wintypes.HICON)]
+
+    class ICONINFO(ctypes.Structure):
+        _fields_ = [("fIcon", wintypes.BOOL), ("xHotspot", wintypes.DWORD), ("yHotspot", wintypes.DWORD),
+                    ("hbmMask", wintypes.HBITMAP), ("hbmColor", wintypes.HBITMAP)]
+
+    # The icon: Fretboard's orange disc with a white "UG".
+    n = 32
+    px = bytearray(n * n * 4)
+    letters = ["#..#.####", "#..#.#...", "#..#.#...", "#..#.#.##", "#..#.#..#", "####.####"]
+    for y in range(n):
+        for x in range(n):
+            i = (y * n + x) * 4
+            if (x - 15.5) ** 2 + (y - 15.5) ** 2 <= 15.5 ** 2:
+                px[i:i + 4] = bytes((0x41, 0xa5, 0xf2, 0xff))  # BGRA of #f2a541
+            gx, gy = (x - 7) // 2, (y - 10) // 2
+            if 0 <= gy < len(letters) and 0 <= gx < len(letters[0]) and letters[gy][gx] == "#":
+                px[i:i + 4] = bytes((0xff, 0xff, 0xff, 0xff))
+    info = ICONINFO(True, 0, 0, gdi.CreateBitmap(n, n, 1, 1, bytes(n * n // 8)), gdi.CreateBitmap(n, n, 1, 32, bytes(px)))
+    icon = u32.CreateIconIndirect(ctypes.byref(info))
+
+    WM_TRAY, WM_DESTROY, SHOW, QUIT = 0x8001, 0x0002, 1, 2
+    restarted = u32.RegisterWindowMessageW("TaskbarCreated")  # Explorer restarted: the icon is put back
+
+    def add(msg=0):  # NIM_ADD 0, NIM_DELETE 2
+        sh.Shell_NotifyIconW(msg, ctypes.byref(nid))
+
+    def menu():
+        m = u32.CreatePopupMenu()
+        u32.AppendMenuW(m, 0, SHOW, "Show UG window")
+        u32.AppendMenuW(m, 0x800, 0, None)  # a line
+        u32.AppendMenuW(m, 0, QUIT, "Quit UG helper (stops the song being saved)" if state.get("busy") else "Quit UG helper")
+        pt = wintypes.POINT()
+        u32.GetCursorPos(ctypes.byref(pt))
+        u32.SetForegroundWindow(hwnd)  # so the menu closes when you click elsewhere
+        pick = u32.TrackPopupMenu(m, 0x0100 | 0x0020, pt.x, pt.y, 0, hwnd, None)  # TPM_RETURNCMD | TPM_BOTTOMALIGN
+        u32.PostMessageW(hwnd, 0, 0, 0)
+        u32.DestroyMenu(m)
+        if pick == SHOW:
+            threading.Thread(target=show_window, daemon=True).start()
+        elif pick == QUIT:
+            print("Quit from its icon by the clock.")
+            threading.Thread(target=quit_helper, kwargs={"why": ""}, daemon=True).start()
+
+    def proc(h, msg, wp, lp):
+        if msg == WM_TRAY and lp in (0x0202, 0x0205):  # left or right button up
+            menu()
+            return 0
+        if msg == restarted:
+            add()
+        return u32.DefWindowProcW(h, msg, wp, lp)
+
+    TRAY["proc"] = WNDPROC(proc)  # kept alive: Windows calls it
+    hinst = k32.GetModuleHandleW(None)
+    wc = WNDCLASS(0, TRAY["proc"], 0, 0, hinst, icon, None, None, None, "FretboardUGHelperTray")
+    u32.RegisterClassW(ctypes.byref(wc))
+    hwnd = u32.CreateWindowExW(0, "FretboardUGHelperTray", "Fretboard UG helper", 0, 0, 0, 0, 0, None, None, hinst, None)
+    nid = NOTIFYICONDATA()
+    nid.cbSize, nid.hWnd, nid.uID, nid.uFlags, nid.uCallbackMessage, nid.hIcon = ctypes.sizeof(nid), hwnd, 1, 0x1 | 0x2 | 0x4, WM_TRAY, icon
+    nid.szTip = "Fretboard UG helper"
+    add()
+    TRAY["remove"] = lambda: add(2)
+    msg = wintypes.MSG()
+    while u32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        u32.TranslateMessage(ctypes.byref(msg))
+        u32.DispatchMessageW(ctypes.byref(msg))
+
+
+def quit_helper(why="Stopped from Fretboard."):
+    """Stop from Fretboard (never while a song is being saved) or from its icon: its Chrome closes, then the helper ends."""
+    if why:
+        print(why)
+    try:
+        TRAY.get("remove", lambda: None)()  # no icon left behind by the clock
+    except Exception:
+        pass
     close_chrome(state["chrome_port"])
     time.sleep(0.3)
     os._exit(0)
@@ -681,6 +792,7 @@ def start_helper():
         return False  # another copy of the helper is running
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     threading.Thread(target=watch_taskbar, daemon=True).start()
+    threading.Thread(target=tray_icon, daemon=True).start()
     print(f"Fretboard link on: Find tabs online opens Ultimate Guitar here, and Official / Pro songs are added by themselves.")
     return True
 

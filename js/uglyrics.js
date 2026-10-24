@@ -76,8 +76,10 @@ export async function readLyricLine(page, scale, st, limitY) {
   let words;
   try { words = (await recognize(wk, canvas)).data.words || []; } catch { return []; }
   // text that starts low in the crop is the next strip's section name poking in (the lone
-  // hyphens between syllables sit lower than the letters, so they are always kept)
-  return syllables(words.filter((w) => w.bbox.y0 < 0.45 * canvas.height || isDash(w)), x0);
+  // hyphens between syllables sit lower than the letters, so they are always kept). A row of
+  // three or more sure words down there is the lyric line itself, set lower than usual.
+  const low = words.filter((w) => w.bbox.y0 >= 0.45 * canvas.height && !isDash(w) && w.confidence >= 85 && /[A-Za-z]{2}/.test(w.text));
+  return syllables(low.length >= 3 ? words : words.filter((w) => w.bbox.y0 < 0.45 * canvas.height || isDash(w)), x0, 10 * K);
 }
 
 // Common misreads in this font: the word "I" read as "1", "|", "l" or "[I"; a stray capital
@@ -106,10 +108,12 @@ const isDash = (w) => w.symbols?.length > 0 && w.symbols.every((s) => DASH.test(
 const WORDLIKE = /^[-‐-―]?[A-Za-z'’]+([-‐-―]+[A-Za-z'’]+)*[-‐-―]?[,.!?;:]?$/;
 
 /** Tesseract words (with letter boxes) -> syllables; exported for tests. */
-export function syllables(words, xOffset = 0) {
+export function syllables(words, xOffset = 0, staffX = -Infinity) {
   const out = [];
   const px = (v) => v / K + xOffset;
-  const sorted = [...words].map(fixWord).sort((a, b) => a.bbox.x0 - b.bbox.x0);
+  // a triplet bracket ("3", "—3—") under the rhythm row is never a word, nor a stray mark
+  const tuplet = (w) => /^[-‐-―—–~_\s]*\d[-‐-―—–~_\s]*$/.test(w.text);
+  const sorted = [...words].map(fixWord).filter((w) => !tuplet(w)).sort((a, b) => a.bbox.x0 - b.bbox.x0);
   const lettered = sorted.filter((w) => !isDash(w) && w.symbols?.some((s) => /[A-Za-z]/.test(s.text)));
   const marks = sorted.filter((w) => !isDash(w)).length;
   // Real lyric words: sure ones, and unsure ones that still look like a word (Tesseract is
@@ -117,8 +121,14 @@ export function syllables(words, xOffset = 0) {
   const real = lettered.filter((w) => w.confidence >= 55 || (w.confidence >= 20 && WORDLIKE.test(w.text)));
   // a strip with no lyrics reads as scattered marks (bar numbers, beams, the staff): skip it
   // ("Oh!" and "He" count as words: a line of "Oh! how He loves us," was dropped)
-  const clean = lettered.filter((w) => w.confidence >= 55 && WORDLIKE.test(w.text) && /[A-Za-z][a-z]/.test(w.text)).length;
-  if (real.length < 2 || clean < 0.5 * marks) return [];
+  // (a short word read with high confidence counts too: "I trust i-n God")
+  const clean = lettered.filter((w) => WORDLIKE.test(w.text) && (w.confidence >= 85 || (w.confidence >= 55 && /[A-Za-z][a-z]/.test(w.text)))).length;
+  // a line can hold one word ("fail") when it is read as a sure, whole word that starts inside
+  // the staff (a section name cut at the left edge, "horus", starts before it)
+  const lone = real.length === 1 && clean === 1 && /[a-z]{2}/.test(real[0].text) && real[0].bbox.x0 > staffX;
+  // (and a line needs two plain words: a cut line's letter tops read as "I I TT I")
+  const plain = lettered.filter((w) => w.confidence >= 55 && /[A-Za-z][a-z]/.test(w.text)).length;
+  if ((real.length < 2 && !lone) || (plain < 2 && !lone) || clean < 0.5 * marks) return [];
   for (const w of sorted) {
     if (isDash(w)) { if (out.length) out[out.length - 1].joined = true; continue; }
     if (!real.includes(w)) continue;
@@ -135,7 +145,7 @@ export function syllables(words, xOffset = 0) {
   // when it is a word (I, a, O) or part of one ("E-" of "E-very", "t-" of "bat-tle").
   const kept = out.filter((s, i) => s.text && /[A-Za-z]/.test(s.text) && !/\d/.test(s.text) && (s.text.length > 1
     || /^[IaAO]$/.test(s.text) || s.joined || out[i - 1]?.joined));
-  if (kept.length < 3) return [];
+  if (kept.length < 3 && !(kept.length && clean === real.length)) return [];
   return kept.map((s) => ({ x: s.x, x1: s.x1, text: s.joined ? s.text + '-' : s.text }));
 }
 

@@ -14,6 +14,32 @@
 6. **Automatic checks** on the PDFs and the conversion: same bar count in every track, nothing cut or stretched, time signature and tempo agree.
 7. **Sync to a recording (separate test project, later):** find the right YouTube version, line up the start, match tempo, time signature and sections; if the arrangement differs, adapt (add rests, skip parts). Test and improve on its own first.
 
+## Trust In God fixes (the user's Notion list, 2026-10-23, in progress)
+
+The song: official UG, Elevation Worship, key C, 181 bars. Its PDFs are in `%USERPROFILE%\Downloads\UG Songs\Trust In God - Elevation Worship (Key C)\`.
+
+1. **Roman numerals:** the key part is done (`40ea297`). The spelling waits for the user's examples.
+2. **Piano read from sheet music:**
+   - read triplets ("3" brackets) as triplets
+   - no dot on the last note of a group
+   - keep ties (the "connecting notes"): the user says they matter most
+   - examples: bars 79, 80, 87, 99–101
+3. **Wrong notes in the bridge (bars 82–86):** sharps (#) the original doesn't have.
+4. **Notation marks:**
+   - notes in brackets, like (14), are tied notes held over: don't play them again
+   - ties across the bar line (bars 48–49)
+   - dynamics p, f, mf (bars 77–79, 146)
+5. **UG helper:** a Quit from a fixed spot on screen.
+6. **Lyrics in the player:**
+   - a line's words stay together, shown about 100 ms early
+   - the next line moves into the main spot 1–2 s before it's sung
+   - words are missing around bar 140
+   - **Still open (helper capture bug):** the Vocal PDF's words at bars 141–143 are cut in the PDF itself (only the letter tops), though it was saved after the cut-words fix (`108be84`). Fretboard now borrows those words from another part that has them. Test the helper's capture on this song with the collector Chrome running.
+7. **Lead Guitar 3 (Drive), bar 135:** reads 15 where the tab says 16.
+8. **Section labels** ("Bridge") sit on the notes; they should be higher.
+9. **The count-in** counts only to 2, not a full bar.
+10. **The slowdown at the end:** ♩=70 then ♩=64 in the Outro (bars 175–176) lands at the wrong bar.
+
 ## Chord charts as a songbook: columns, ChordPro in and out, live mode, Roman numerals fix (the user's plan, 2026-10-23, not started)
 
 **The goal:** chord charts that feel like Planning Center Music Stand when playing live, with the range of SongbookPro, and files that open cleanly in SongbookPro, OnSong and Music Stand.

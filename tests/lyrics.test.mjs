@@ -35,6 +35,11 @@ assert.equal(lines[1].start, 3 * 3840);
 assert.equal(lineAt(lines, 0), 0);
 assert.equal(lineAt(lines, 2 * 3840 + 100), 1, 'during the rest: the next line');
 assert.equal(lineAt(lines, 99999), 1);
+// With a lead, the next line comes up before it's sung, but only once the last word has started.
+const back = [{ start: 0, end: 2000, words: [{ tick: 0 }, { tick: 1000 }] }, { start: 2000, end: 4000, words: [{ tick: 2000 }] }];
+assert.equal(lineAt(back, 900, 1500), 0, 'the line is still being sung');
+assert.equal(lineAt(back, 1200, 1500), 1, 'last word started, next line within the lead');
+assert.equal(lineAt(back, 1200, 0), 0);
 
 // A repeated bar uses verse 2 the second time.
 const sc2 = load(`\\title "r" .

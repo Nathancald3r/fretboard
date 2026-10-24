@@ -154,13 +154,45 @@ function glyphAt(comp) {
   const ox = (UG_W - comp.w) >> 1, oy = (UG_H - comp.h) >> 1;
   if (comp.w > UG_W || comp.h > UG_H) return null;
   for (const [x, y] of comp.px) box[(y - comp.y0 + oy) * UG_W + (x - comp.x0 + ox)] = 1;
-  let best = Infinity, ch = null;
-  for (const t of TEMPLATES) {
+  const dist = TEMPLATES.map((t) => {
     let d = 0;
-    for (let i = 0; i < box.length && d < best; i++) d += box[i] ^ t.bits[i];
-    if (d < best) { best = d; ch = t.ch; }
+    for (let i = 0; i < box.length; i++) d += box[i] ^ t.bits[i];
+    return { ch: t.ch, d };
+  }).sort((a, b) => a.d - b.d);
+  if (dist[0].d > MAX_MISS) return null;
+  // A close call between digits with a different number of closed loops (a small 6 matched 5 by one
+  // pixel: Trust In God, Lead Guitar 3, bar 135) goes to the one whose loops the glyph has.
+  const holes = loops(box);
+  if (HOLES[dist[0].ch] !== undefined && HOLES[dist[0].ch] !== holes) {
+    const alt = dist.find((t) => t.d <= dist[0].d + 6 && HOLES[t.ch] === holes);
+    if (alt) return alt.ch;
   }
-  return best <= MAX_MISS ? ch : null;
+  return dist[0].ch;
+}
+
+// Closed loops in each digit (4 left out: fonts draw it open or closed).
+const HOLES = { 0: 1, 1: 0, 2: 0, 3: 0, 5: 0, 6: 1, 7: 0, 8: 2, 9: 1 };
+
+/** Background areas of a glyph box that don't reach its edge. */
+function loops(box) {
+  const seen = new Uint8Array(box.length);
+  let n = 0;
+  for (let s = 0; s < box.length; s++) {
+    if (box[s] || seen[s]) continue;
+    let edge = false, size = 0;
+    const stack = [s];
+    seen[s] = 1;
+    while (stack.length) {
+      const i = stack.pop(), x = i % UG_W, y = (i / UG_W) | 0;
+      size++;
+      if (x === 0 || y === 0 || x === UG_W - 1 || y === UG_H - 1) edge = true;
+      for (const j of [x > 0 && i - 1, x < UG_W - 1 && i + 1, y > 0 && i - UG_W, y < UG_H - 1 && i + UG_W]) {
+        if (j !== false && !box[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    if (!edge && size >= 2) n++;
+  }
+  return n;
 }
 
 export function components(ink, w, st, bars, dropLines = false) {
@@ -771,26 +803,57 @@ const pitchTex = (p, flats, tied) => `${(flats ? FLATS : SHARPS)[p % 12]}${Math.
 // A notation bar's events fitted to the bar: times scaled when the read lengths don't add up to it
 // (a triplet read as plain notes), to the nearest thirty-second.
 function fitScore(b, T) {
-  const k = b.end > 0 && Math.abs(b.end - T) > 1e-6 ? T / b.end : 1;
+  const all = b.staves.flat();
+  const groups = new Map(); // triplets ("3" groups), each staff's own
+  for (const e of all) if (e.tu != null) groups.set(e.tu, [...(groups.get(e.tu) || []), e]);
+  const k = !groups.size && b.end > 0 && Math.abs(b.end - T) > 1e-6 ? T / b.end : 1;
   const q = (v) => Math.min(T, Math.round(v * k * 2) / 2);
-  for (const e of b.staves.flat()) { e.at = q(e.t); e.dur = q(e.t + e.len) - e.at; }
+  for (const e of all) { e.at = q(e.t); e.dur = q(e.t + e.len) - e.at; }
+  // A triplet plays its written lengths in two thirds of the time. One that ends the bar fills the
+  // rest of it, and a group that doesn't add up to whole eighths has its last note put right (a
+  // misread length inside it).
+  b.tuplets = [];
+  groups.forEach((g, id) => {
+    const staff = b.staves.find((st) => st.includes(g[0]));
+    const order = [...new Set(g.map((e) => e.t))].sort((x, y) => x - y);
+    const firsts = order.map((t) => g.filter((e) => e.t === t));
+    const g0 = q(order[0]);
+    const W = firsts.reduce((sum, es) => sum + es[0].w, 0);
+    const last = !staff.some((e) => e.tu !== id && e.t > order[0]);
+    const D = last && T - g0 >= 2 ? T - g0 : Math.max(2, Math.round(W / 3) * 2);
+    const fix = 1.5 * D - W;
+    if (firsts[firsts.length - 1][0].w + fix > 0) for (const e of firsts[firsts.length - 1]) e.w += fix;
+    else for (const es of firsts) for (const e of es) e.w *= (1.5 * D) / W;
+    let cum = 0;
+    for (const es of firsts) {
+      for (const e of es) { e.at = g0 + (cum * 2) / 3; e.dur = (e.w * 2) / 3; }
+      cum += es[0].w;
+    }
+    b.tuplets.push({ staff: b.staves.indexOf(staff), t0: g0, t1: g0 + D });
+  });
   b.lens = b.cols.map((c) => c.len * k);
   b.times = [];
 }
+// A length as note values, inside a triplet written at 3/2 of it ("8{tu 3}").
+const scorePieces = (len, tu) => (tu ? pieces(len * 1.5).map((p) => withFx(dur(p), 'tu 3')) : pieces(len).map(dur));
 // One staff's bar: wherever a note starts on that staff, the notes sounding then (one still held
 // from before is tied on); silence is a rest.
 function scoreBeats(b, k, T, flats) {
   const evs = (b.staves?.[k] || []).filter((e) => e.notes.length && e.dur > 0);
-  const starts = [...new Set([0, ...evs.map((e) => e.at)])].filter((t) => t < T).sort((x, y) => x - y);
+  const eps = 1e-6; // triplet times are thirds
+  const starts = [...new Set([0, ...evs.map((e) => e.at)].map((t) => Math.round(t * 1e6) / 1e6))].filter((t) => t < T - eps).sort((x, y) => x - y);
+  const tus = (b.tuplets || []).filter((g) => g.staff === k);
   return starts.map((t, j) => {
     const len = (j + 1 < starts.length ? starts[j + 1] : T) - t;
+    const tu = tus.some((g) => t >= g.t0 - eps && t < g.t1 - eps);
     const held = new Map(); // pitch -> only tied on from before
-    for (const e of evs) if (e.at <= t && e.at + e.dur > t) for (const n of e.notes) held.set(n.p, (held.get(n.p) ?? true) && e.at < t);
-    if (!held.size) return restTex(len);
+    // (a note drawn with a tie into it is held on too, also over the bar line)
+    for (const e of evs) if (e.at <= t + eps && e.at + e.dur > t + eps) for (const n of e.notes) held.set(n.p, (held.get(n.p) ?? true) && (e.at < t - eps || !!n.tie));
+    if (!held.size) return scorePieces(len, tu).map((d) => `r.${d}`).join(' ');
     const ps = [...held.keys()].sort((x, y) => x - y);
-    return pieces(len).map((d, i) => {
+    return scorePieces(len, tu).map((d, i) => {
       const notes = ps.map((p) => pitchTex(p, flats, i > 0 || held.get(p)));
-      return `${notes.length === 1 ? notes[0] : `(${notes.join(' ')})`}.${dur(d)}`;
+      return `${notes.length === 1 ? notes[0] : `(${notes.join(' ')})`}.${d}`;
     }).join(' ');
   }).join(' ');
 }
@@ -805,8 +868,9 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   // each lyric syllable belongs to the bar it starts in
   // a multi-bar rest ("16" over a thick bar) stands for that many empty bars, so every part keeps the same bar count
   const barsOf = (list) => list.flatMap((s) => s.bars.flatMap((b) => {
-    const one = { ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4) };
-    return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [] }))] : [one];
+    const lineWords = (s.lyr || []).length; // a line with no words at all (cut off, or not read) can borrow another part's
+    const one = { ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4), lineWords };
+    return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [], lineWords }))] : [one];
   }));
   const bars = barsOf(strips);
   // Section names from every part: each part misses some (a name cut at the picture's edge, one
@@ -834,6 +898,17 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       const g = at.get(i);
       if (g) Object.assign(b, { heading: true, name: g.name, numbered: g.numbered });
       else { b.heading = false; b.name = ''; }
+    });
+    // Tempo changes the same way: a part can miss a mark or misread it (Trust In God: the first part
+    // had no ♩=70 at bar 175, and Lead Guitar 3 read the ♩=64 at bar 176 as 34). A change stands where
+    // enough parts read one, at the value most of them read.
+    const tempos = new Map();
+    for (const list of [bars, ...extra.map((p) => barsOf(p.strips))]) {
+      list.slice(0, bars.length).forEach((b, i) => { if (b.tempo) tempos.set(i, [...(tempos.get(i) || []), b.tempo]); });
+    }
+    bars.forEach((b, i) => {
+      const vs = tempos.get(i) || [];
+      b.tempo = vs.length >= need || i === 0 ? vs.reduce((top, v) => (vs.filter((x) => x === v).length > vs.filter((x) => x === top).length ? v : top), vs[0]) : undefined;
     });
   }
   // the bar length every part agrees on most (a part with no rhythm row has no say)
@@ -965,9 +1040,15 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   lists.forEach((list, k) => { const g = keysGrid(parts[k]); if (g) list.forEach((b) => simplifyKeys(b, g, T)); });
   // the lyrics come from whichever part has them (the vocal part, wherever it sits in the order);
   // drum and percussion parts show them under their notes too, as their own PDFs do
-  const sungBars = lists.find((l) => l.some((b) => b.lyr.length));
+  // (the part with the most words is the singer's; another part's words fill the singer's lines that have none)
+  const worded = lists.filter((l) => l.some((b) => b.lyr.length)).map((l) => [l, l.filter((b) => b.lyr.length).length]);
+  const sungBars = worded.sort((a, b) => b[1] - a[1])[0]?.[0];
   const sung = !!sungBars;
-  const words = sung ? sungBars.map((b) => (b.lyr.length ? lyricTimes(b, T) : [])) : [];
+  const words = sung ? sungBars.map((b, i) => {
+    if (b.lyr.length) return lyricTimes(b, T);
+    const other = b.lineWords === 0 && worded.find(([l]) => l !== sungBars && l[i]?.lyr.length)?.[0];
+    return other ? lyricTimes(other[i], T) : [];
+  }) : [];
   const sungAt = lists.indexOf(sungBars);
   const pitched = parts.map((p, k) => k).filter((k) => !isDrums(parts[k].strips));
   const capos = partCapos(parts, lists, key);

@@ -89,8 +89,9 @@ export function clickEvents(bars, { sub = 1, accent = true } = {}) {
  * the playing speed. count = the spoken number for beats, 0 for subdivisions.
  */
 export function countInPlan({ num = 4, den = 4, beatSeconds, bars = 1, sub = 1 }) {
-  // Fast 6/8, 9/8, 12/8: count the dotted-quarter pulse, like a drummer would.
-  const compound = den === 8 && num % 3 === 0 && num > 3;
+  // Fast 6/8, 9/8, 12/8: count the dotted-quarter pulse, like a drummer would. Slower (an eighth
+  // of more than 0.25 s), two counts a bar leave too long a gap, so every eighth is counted: 1 to 6.
+  const compound = den === 8 && num % 3 === 0 && num > 3 && beatSeconds <= 0.25;
   const pulse = compound ? 3 : 1;
   const beats = Math.max(1, Math.round((num / pulse) * bars));
   const pulseSeconds = beatSeconds * pulse;

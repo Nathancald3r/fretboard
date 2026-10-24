@@ -399,7 +399,10 @@ async function readParts(files, title) {
     const k = partIndex(name);
     return { file, name, program: k >= 0 ? PARTS[k][1] : 0 };
   });
-  const singer = Math.max(0, items.findIndex((it) => /vocal|voice|sing/i.test(it.name)));
+  // The lyrics come from the lead vocal: a backing vocal sings only some of the words (Trust In God's
+  // "Backing Vocal" comes first by name, so the lead vocal's words were never read).
+  const sung = (re) => items.findIndex((it) => re.test(it.name) && !/back|harmony|choir/i.test(it.name));
+  const singer = [sung(/lead vocal|^vocals?$/i), sung(/vocal|voice|sing/i), items.findIndex((it) => /vocal|voice|sing/i.test(it.name))].find((k) => k >= 0) ?? 0;
   try {
     for (const [i, it] of items.entries()) {
       const say = (extra = '', done = 0) => {
@@ -420,6 +423,23 @@ async function readParts(files, title) {
         if (err instanceof Cancelled || stop) throw new Cancelled();
         console.error(err);
         it.error = true; // kept as sheet music, so the part isn't lost
+      }
+    }
+    // A sung line with no words read (UG's Print cut them off, or they weren't made out): one more part is
+    // read for its words, since UG prints the words under every part, and they fill those lines.
+    const voc = items[singer];
+    const wordless = voc?.strips?.some((st) => !st.lyr?.length && st.bars.some((b) => b.cols?.some((c) => c.notes?.length)));
+    const spare = wordless && items.find((it, k) => k !== singer && it.strips && !it.strips.some((st) => st.score) && !drumKind(it.name) && !/vocal|voice|sing/i.test(it.name));
+    if (spare) {
+      dlg.querySelector('.parts-now').textContent = `Words: reading them from ${spare.name} too`;
+      try {
+        const read = pdfToTab(await spare.file.arrayBuffer(), () => { if (stop) throw new Cancelled(); }, { title, lyrics: true, bass: /bass/i.test(spare.name), signal: ctl.signal });
+        read.catch(() => {});
+        const r = await Promise.race([read, cancelled]);
+        if (r.strips?.length) spare.strips = r.strips;
+      } catch (err) {
+        if (err instanceof Cancelled || stop) throw new Cancelled();
+        console.error(err); // the song keeps the words it has
       }
     }
     return items;

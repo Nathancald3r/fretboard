@@ -69,7 +69,7 @@ function ensureApi() {
   installTone();
   api = new AT.AlphaTabApi($('alphatab'), {
     core: { fontDirectory: VENDOR + 'font/', scriptFile: VENDOR + 'alphaTab.js' },
-    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, effectBandPaddingBottom: 5, resources: { barNumberColor: '#222222' } }, // a little air between chord names and swells
+    display: { layoutMode: AT.LayoutMode.Page, staveProfile: AT.StaveProfile.Tab, scale: 1, effectBandPaddingBottom: 5, systemPaddingTop: 30, resources: { barNumberColor: '#222222' } }, // a little air between chord names and swells
     player: {
       playerMode: AT.PlayerMode.EnabledSynthesizer,
       soundFont: customSoundFont ? undefined : DEFAULT_SF,
@@ -1341,6 +1341,7 @@ function drawSectionLabels() {
     const bar = sys?.bars.find((b) => b.index === sec.index);
     if (!bar || sec.index === 0) continue; // the title block already sits above bar 1
     const box = bar.realBounds || bar.visualBounds;
+    // The label sits just above the line, in the room systemPaddingTop leaves, clear of its chord names.
     const top = Math.max(18, (sys.visualBounds || sys.realBounds).y);
     const el = document.createElement('span');
     el.className = 'sec-label';
@@ -1712,14 +1713,17 @@ function showLyricsAt(tick) {
   if ($('pl-lyrics').hidden || !score) return;
   const lines = lyricLines();
   if (!lines.length) return;
-  const i = lineAt(lines, tick);
+  // seconds → ticks at the tempo playing now: the next line comes up 1.5 s before it's sung, and each
+  // word lights up 0.1 s early (it reads as on time)
+  const perSecond = (960 * (currentBarLookup()?.tempo || baseTempo) * (api.playbackSpeed || 1)) / 60;
+  const i = lineAt(lines, tick, 1.5 * perSecond);
   if (i !== shownLine) {
     lineHtml($('ly-now'), lines[i]);
     lineHtml($('ly-next'), lines[i + 1]);
     shownLine = i;
   }
   const spans = $('ly-now').children;
-  lines[i].words.forEach((w, k) => spans[k]?.classList.toggle('sung', tick >= w.tick));
+  lines[i].words.forEach((w, k) => spans[k]?.classList.toggle('sung', tick >= w.tick - 0.1 * perSecond));
 }
 
 export function closePlayer() {

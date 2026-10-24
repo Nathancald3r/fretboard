@@ -334,7 +334,7 @@ const accidentalOf = (img, w, b, u) => {
  * positive, flats negative), the time signature's lower number if there is one, and the chords and
  * rests, each { x, notes: [{ d (letter steps from C0), acc, hollow, y }], len (sixteenths), rest }.
  */
-export function readStaff(ink, light, w, st, ya, yb, bars) {
+export function readStaff(ink, light, w, st, ya, yb, bars, near = {}) {
   const u = st.u;
   const band = cleanBand(ink, w, st, ya, yb), pale = cleanBand(light, w, st, ya, yb);
   const { img, y0, H } = band;
@@ -424,11 +424,87 @@ export function readStaff(ink, light, w, st, ya, yb, bars) {
     c.len = c.dot ? base * 1.5 : base;
   }
   // accidentals: a sharp, flat or natural just left of a note, level with it
-  const accs = all.filter((b) => b.h >= 1.5 * u && b.h <= 3.2 * u && b.w >= 0.35 * u && b.w <= 1.2 * u && b.x0 >= xa - 0.3 * u);
   const notes = [];
   for (const c of chords) {
     c.notes = c.heads.map((h) => ({ d: top - posOf(h.cy), acc: null, hollow: h.hollow, y: h.cy, x: h.cx }));
     notes.push(...c.notes);
+  }
+  // brackets: "(" and ")" around notes (a held note, not played again). A bracket is a thin tall stroke
+  // (a flat is as tall but has a bowl), and isn't an accidental.
+  const thinTall = all.filter((b) => b.w <= 0.5 * u && b.h >= 1.0 * u && b.h <= 3.2 * u && b.x0 >= xa - 0.3 * u);
+  const parens = new Set();
+  for (const l of thinTall) {
+    for (const r of thinTall) {
+      if (r.x0 <= l.x1 || r.x0 - l.x1 > 3.5 * u || Math.abs(r.cy - l.cy) > 0.5 * u || Math.abs(r.h - l.h) > 0.5 * u) continue;
+      const inside = notes.filter((n) => n.x > l.x1 && n.x < r.x0 && n.y > l.y0 && n.y < l.y1);
+      if (!inside.length) continue;
+      for (const n of inside) n.tie = true;
+      parens.add(l).add(r);
+    }
+  }
+  const accs = all.filter((b) => !parens.has(b) && b.h >= 1.5 * u && b.h <= 3.2 * u && b.w >= 0.35 * u && b.w <= 1.2 * u && b.x0 >= xa - 0.3 * u);
+  // ties: a thin arc from just right of a note to just left of the next note at the same pitch, or
+  // in from the line's start (a tie from the line before). Staff lines and bar lines cut an arc into
+  // pieces, so a tie is a piece leaving the first note and a piece reaching the second, level with
+  // each other on the same side of the notes (the bar lines are wiped first).
+  const open = img.slice();
+  for (const bx of bars) for (let x = Math.round(bx) - 2; x <= Math.round(bx) + 2; x++) for (let y = 0; y < H; y++) open[y * w + x] = 0;
+  const bits = blobs(open, w, H, xL, xR).map((b) => ({ x0: b.x0, x1: b.x1, y0: b.y0 + y0, y1: b.y1 + y0, n: b.n }))
+    .filter((b) => b.x1 - b.x0 + 1 >= 0.5 * u && b.y1 - b.y0 + 1 <= 1.1 * u && b.n <= 0.5 * (b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1));
+  const mid = (b) => (b.y0 + b.y1) / 2;
+  const level = (b, h) => Math.min(Math.abs(b.y0 - h.n.y), Math.abs(b.y1 - h.n.y), Math.abs(mid(b) - h.n.y)) <= 1.0 * u; // an arc's end is level with its note
+  const hd = notes.map((n) => ({ n, x0: n.x - 0.6 * u, x1: n.x + 0.6 * u }));
+  const starts = (b, h) => b.x0 - h.x1 >= -0.6 * u && b.x0 - h.x1 <= 2.6 * u && level(b, h);
+  const reaches = (b, h) => {
+    const gap = h.x0 - b.x1, over = bars.some((bx) => bx > b.x1 - 3 && bx < h.x0); // the piece past a bar line can be too small
+    return gap >= -0.6 * u && gap <= (over ? 2.5 : 1.2) * u && level(b, h);
+  };
+  // a short tie touches its notes (no piece of its own): an unbroken line of ink just over or under
+  // the notes, all the way from one to the next
+  const path = (L, R) => {
+    const a = Math.round(L.x1), b = Math.round(R.x0);
+    if (b - a < 0.3 * u) return false;
+    for (const side of [-1, 1]) {
+      let hit = 0;
+      for (let x = a; x <= b; x++) {
+        for (let k = Math.round(0.3 * u); k <= 1.6 * u; k++) {
+          const y = Math.round(L.n.y + side * k - y0);
+          if (y >= 0 && y < H && open[y * w + x]) { hit++; break; }
+        }
+      }
+      if (hit >= 0.8 * (b - a + 1)) return true;
+    }
+    return false;
+  };
+  for (const R of hd) {
+    if (R.n.tie) continue; // in brackets
+    const L = hd.filter((h) => Math.abs(h.n.y - R.n.y) < 0.3 * u && h.n.x < R.n.x - 0.5 * u).sort((p, q) => q.n.x - p.n.x)[0];
+    const ends = bits.filter((b) => reaches(b, R) && b.x0 < R.x0);
+    const first = !notes.some((n) => n.x < R.n.x - 0.5 * u);
+    if (first && !L) { // an arc in from the line's start often touches its note: any ink just left of it
+      // (only thin single strokes count: a key signature's sharp or flat has tall ones, or two)
+      // (above and below apart: a chord's next note has its own arc)
+      R.n.tie = [-1, 1].some((side) => {
+        let cols = 0;
+        for (let x = Math.max(xL + u, Math.round(R.x0 - 1.5 * u)); x <= R.x0 - 0.15 * u; x++) {
+          let runs = 0, ink = 0;
+          for (let k = Math.round(0.2 * u); k <= 1.3 * u; k++) {
+            const y = Math.round(R.n.y + side * k - y0);
+            if (y < 1 || y >= H) continue;
+            if (open[y * w + x]) { ink++; if (!open[(y - side) * w + x]) runs++; }
+          }
+          if (runs === 1 && ink <= 0.4 * u) cols++;
+        }
+        return cols >= 0.3 * u;
+      });
+      continue;
+    }
+    if (L && path(L, R)) { R.n.tie = true; continue; }
+    if (!ends.length) continue;
+    if (L) {
+      R.n.tie = ends.some((e) => bits.some((b) => starts(b, L) && b.x0 <= e.x0 && Math.abs(mid(b) - mid(e)) < 0.6 * u
+        && Math.sign(mid(b) - L.n.y) === Math.sign(mid(e) - R.n.y)));
+    }
   }
   for (const b of accs) {
     const a = accidentalOf(img, w, local(b), u);
@@ -454,7 +530,35 @@ export function readStaff(ink, light, w, st, ya, yb, bars) {
     const dot = dots.some((d) => d.x0 > c.x1 && d.x0 - c.x1 < 0.8 * u && Math.abs(d.cy - c.cy) < 1.0 * u);
     rests.push({ x: (c.x0 + c.x1) / 2, len: dot ? len * 1.5 : len, rest: true, notes: [], whole: len === 16, box: c });
   }
-  return { clef, key, den, xa, events: [...chords, ...rests].sort((a, b) => a.x - b.x) };
+  // triplets: a "3" with a bracket on each side of it, over or under the staff (looked for a little
+  // past the band: the band can cut a bracket over the top staff); the notes under the bracket are a
+  // triplet
+  // (raw ink with the staff's own rows blanked: a bracket arm on a ledger-line row is not a ledger line)
+  const wide = { y0: Math.max(0, Math.round(st.ys[0] - 4.5 * u)) };
+  wide.H = Math.min(Math.round(st.ys[4] + 4.5 * u), ink.length / w - 1) - wide.y0 + 1;
+  wide.img = ink.slice(wide.y0 * w, (wide.y0 + wide.H) * w);
+  wide.img.fill(0, Math.max(0, Math.round(st.ys[0] - 0.3 * u) - wide.y0) * w, (Math.round(st.ys[4] + 0.3 * u) - wide.y0 + 1) * w);
+  const marks = blobs(wide.img, w, wide.H, xL, xR).map((b) => ({ ...b, y0: b.y0 + wide.y0, y1: b.y1 + wide.y0, cy: b.cy + wide.y0, w: b.x1 - b.x0 + 1, h: b.y1 - b.y0 + 1 }));
+  // (a mark nearer the staff above or below is that staff's)
+  const off = (b) => (b.y1 < st.ys[0] - 0.3 * u && st.ys[0] - b.cy <= 3.6 * u && !(b.cy - near.up < st.ys[0] - b.cy))
+    || (b.y0 > st.ys[4] + 0.3 * u && b.cy - st.ys[4] <= 3.6 * u && !(near.down - b.cy < b.cy - st.ys[4]));
+  const tuplets = [];
+  for (const d of marks) {
+    if (!off(d) || d.h < 0.9 * u || d.h > 1.9 * u || d.w < 0.5 * u || d.w > 1.3 * u) continue;
+    const arm = (b) => b !== d && b.h <= 1.0 * u && b.w >= 1.0 * u && Math.abs(b.cy - d.cy) <= 1.0 * u;
+    const l = marks.find((b) => arm(b) && b.x1 < d.x0 && d.x0 - b.x1 <= 1.2 * u);
+    const r = marks.find((b) => arm(b) && b.x0 > d.x1 && b.x0 - d.x1 <= 1.2 * u);
+    if (l && r) { tuplets.push({ x0: l.x0 - 0.9 * u, x1: r.x1 + 0.9 * u }); continue; }
+    // a short bracket, "(3)": only small hooks, so the notes are the ones under the "3" (heads sit left
+    // of their up stems)
+    const hook = (b) => b !== d && b.h >= 0.5 * u && b.h <= 1.0 * u && b.w >= 0.25 * u && b.w <= 0.7 * u && Math.abs(b.cy - d.cy) <= 0.7 * u;
+    const near = d.y1 < st.ys[0] && st.ys[0] - d.y1 <= 1.6 * u; // over the staff (under it are words: "let ring", lyrics)
+    if (near && marks.some((b) => hook(b) && b.x1 < d.x0 && d.x0 - b.x1 <= 0.8 * u) && marks.some((b) => hook(b) && b.x0 > d.x1 && b.x0 - d.x1 <= 0.8 * u)) {
+      const c = (d.x0 + d.x1) / 2 - 0.6 * u;
+      tuplets.push({ x0: c - 1.8 * u, x1: c + 1.8 * u });
+    }
+  }
+  return { clef, key, den, xa, tuplets, events: [...chords, ...rests].sort((a, b) => a.x - b.x) };
 }
 
 /**
@@ -471,7 +575,7 @@ export function readPage(ink, light, w, h) {
       const i = all.indexOf(st), up = all[i - 1], down = all[i + 1];
       const ya = Math.max(st.ys[0] - 6 * st.u, up ? (up.ys[4] + st.ys[0]) / 2 : 0);
       const yb = Math.min(st.ys[4] + 6 * st.u, down ? (st.ys[4] + down.ys[0]) / 2 : h - 1);
-      return { ...readStaff(ink, light, w, st, Math.round(ya), Math.round(yb), bars), st };
+      return { ...readStaff(ink, light, w, st, Math.round(ya), Math.round(yb), bars, { up: up?.ys[4], down: down?.ys[0] }), st };
     });
     return { staves, bars, u: sys[0].u };
   });
@@ -517,6 +621,7 @@ export function readScorePage(ink, light, w, h, key = null) {
   return readPage(ink, light, w, h).map(({ staves, bars: xs, u }) => {
     const top = staves[0].st;
     const bars = [];
+    const last = staves.map(() => new Map()); // each staff's latest pitch at each letter step
     for (let i = 0; i + 1 < xs.length; i++) {
       const bar = { x0: xs[i], x1: xs[i + 1], cols: [], staves: staves.map(() => []) };
       bars.push(bar);
@@ -532,7 +637,15 @@ export function readScorePage(ink, light, w, h, key = null) {
         const sig = s.key || key || 0;
         for (const e of s.events) {
           if (e.x <= xs[i] || e.x >= xs[i + 1] || (e.rest && e.whole)) continue; // a whole rest is the whole bar
-          const ev = { x: e.x, len: e.len, staff: k, notes: e.notes.map((n) => ({ p: pitchOf(n, sig, held) })) };
+          // a tied note keeps the pitch it is tied from (its sharp or flat carries over the bar line)
+          const ev = { x: e.x, len: e.len, staff: k, notes: e.notes.map((n) => {
+            const p = n.tie && last[k].has(n.d) ? last[k].get(n.d) : pitchOf(n, sig, held);
+            last[k].set(n.d, p);
+            return n.tie ? { p, tie: true } : { p };
+          }) };
+          // a triplet's note: written length w, played in two thirds of it (see fitScore in ugtab.js)
+          const tu = s.tuplets.findIndex((g) => e.x >= g.x0 && e.x <= g.x1);
+          if (tu >= 0) Object.assign(ev, { tu: `${k}:${tu}`, w: e.len, len: (e.len * 2) / 3 });
           evs.push(ev);
           bar.staves[k].push(ev);
         }

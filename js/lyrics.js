@@ -88,9 +88,14 @@ export function buildLyrics(score, trackIndex, bars) {
   return lines;
 }
 
-/** The line to show at a tick: the one playing, or the next one coming up. */
-export function lineAt(lines, tick) {
+/**
+ * The line to show at a tick: the one playing, or the next one coming up. Once a line's last word
+ * has started, the next line takes its place `lead` ticks before it's sung (time to read it).
+ */
+export function lineAt(lines, tick, lead = 0) {
   let i = lines.findIndex((l) => tick < l.end);
   if (i === -1) i = lines.length - 1;
+  const next = lines[i + 1];
+  if (next && tick >= lines[i].words[lines[i].words.length - 1].tick && tick >= next.start - lead) i++;
   return i;
 }

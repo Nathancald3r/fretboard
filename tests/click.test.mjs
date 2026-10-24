@@ -46,6 +46,10 @@ plan = countInPlan({ num: 6, den: 8, beatSeconds: 0.25 });
 assert.equal(plan.clicks.length, 2);
 assert.equal(plan.length, 1.5);
 
+// Slow 6/8 (♩=74, an eighth 0.405 s) counts the whole bar: 1 to 6.
+plan = countInPlan({ num: 6, den: 8, beatSeconds: 60 / 148 });
+assert.deepEqual(plan.clicks.map((k) => k.count), [1, 2, 3, 4, 5, 6]);
+
 // Settings: bad values fall back to defaults and volumes are clamped.
 const s = sanitize({ sound: 'nope', sub: 7, volume: 9, countBars: '2', countSound: 'x' });
 assert.equal(s.sound, DEFAULTS.sound);
