@@ -269,6 +269,25 @@ def youtube_id(url):
     return m.group(1) if m else None
 
 
+def steady(x, y, w=5, most=0.15):
+    """The line-up puts each bar a little off (±0.1 s), so the tab played with it sped up and slowed
+    down bar to bar (Be My Escape bar 32 was 4% slow, 33 3.5% fast). Each bar is moved onto a steady
+    tempo fitted to the w bars on each side (Theil-Sen: medians, so one bad bar can't pull it). A bar
+    further than `most` seconds from that is a real change (a pause, a slower ending) and stays."""
+    out = y.copy()
+    for i in range(len(x)):
+        j = slice(max(0, i - w), i + w + 1)
+        xi, yi = x[j], y[j]
+        slopes = [(yi[b] - yi[a]) / (xi[b] - xi[a]) for a in range(len(xi)) for b in range(a + 1, len(xi)) if xi[b] > xi[a]]
+        if not slopes:
+            continue
+        s = np.median(slopes)
+        fit = s * x[i] + np.median(yi - s * xi)
+        if abs(fit - y[i]) < most:
+            out[i] = fit
+    return out
+
+
 def fretboard_file(song, info, out):
     """The song for Fretboard (a .fretboard file): the tab, its YouTube video, and where every bar starts in
     that video (the line-up), so Fretboard plays the tab in step with the video straight away."""
@@ -276,12 +295,14 @@ def fretboard_file(song, info, out):
     A, step = np.array(info["tabAt"]), info["step"]
     rec_s = np.arange(len(A)) * step
     keep = np.r_[True, np.diff(A) > 0]  # tab time only moves on: np.interp needs it rising
+    x = np.array([b[0] for b in info["bars"]], float)
+    y = steady(x, np.interp(x, A[keep], rec_s[keep]))
     points, last = [], -1
-    for p, b in enumerate(info["bars"]):
-        ms = int(round(float(np.interp(b[0], A[keep], rec_s[keep])) * 1000))
+    for p, t in enumerate(y):
+        ms = max(0, int(round(float(t) * 1000)))
         if ms > last:  # bars before the video begins all sit at 0: keep the first
-            points.append([p, max(0, ms)])
-            last = max(0, ms)
+            points.append([p, ms])
+            last = ms
     vid = youtube_id(info["url"])
     video = song.get("video") or {}
     gp = Path(song["gp"])
