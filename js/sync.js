@@ -149,7 +149,19 @@ export function githubRemote({ repo, token, fetch: fetchFn = globalThis.fetch.bi
       return { sha: info.sha, text: await raw.text() };
     },
     async put(p, text, sha, message) {
-      const res = await call('PUT', `${base}/contents/${path(p)}`, { message, content: utf8(text), ...(sha ? { sha } : {}) });
+      const send = (s) => call('PUT', `${base}/contents/${path(p)}`, { message, content: utf8(text), ...(s ? { sha: s } : {}) });
+      let res;
+      try {
+        res = await send(sha);
+      } catch (e) {
+        // The file is there already, or changed since we read it (a sync that stopped halfway
+        // uploads songs but not library.json): write over the version that is there now.
+        if (e.status !== 422 && e.status !== 409) throw e;
+        const now = await call('GET', `${base}/contents/${path(p)}`);
+        const nowSha = now && (await now.json()).sha;
+        if (!nowSha || nowSha === sha) throw e;
+        res = await send(nowSha);
+      }
       return (await res.json()).content.sha;
     },
     async remove(p, sha, message) {

@@ -162,6 +162,21 @@ assert.equal(puts.length, 2, 'one song file and the manifest');
 assert.match(puts[0].url, /contents\/fretboard\/songs\/\w+\.json$/);
 assert.match(puts[1].url, /contents\/fretboard\/library\.json$/);
 assert.equal(new TextDecoder().decode(Uint8Array.from(atob(puts[0].body.content), (c) => c.charCodeAt(0))).includes('Über'), true, 'UTF-8 content');
+// A sync that stopped halfway left a song file but no library.json: GitHub wants that file's
+// sha ("422 sha wasn't supplied"), so the client reads it and writes over it.
+const strict = { 'fretboard/songs/x.json': 'old' };
+const strictFetch = async (url, opts) => {
+  const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
+  const p = decodeURIComponent(url.split('/contents/')[1] || '');
+  if (opts.method === 'GET') return p in strict ? json(200, { sha: 'cur', size: 1, content: btoa(strict[p]) }) : json(404, {});
+  const body = JSON.parse(opts.body);
+  if (p in strict && body.sha !== 'cur') return json(422, { message: 'Invalid request. "sha" wasn\'t supplied.' });
+  strict[p] = atob(body.content);
+  return json(201, { content: { sha: 'cur2' } });
+};
+const half = githubRemote({ repo: 'me/lib', token: 't', fetch: strictFetch });
+assert.equal(await half.put('fretboard/songs/x.json', 'new', undefined, 'm'), 'cur2');
+assert.equal(strict['fretboard/songs/x.json'], 'new');
 const refused = githubRemote({ repo: 'me/lib', token: 'x', fetch: async () => ({ ok: false, status: 401, json: async () => ({}) }) });
 await assert.rejects(refused.get('fretboard/library.json'), /token was refused/);
 
