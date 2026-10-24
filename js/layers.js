@@ -10,6 +10,7 @@ const BODY_LAYERS = [
 ];
 
 let stack = []; // names, bottom to top
+const at = new Map(); // name → the page's address when its history entry was added
 let skipPop = 0;
 
 const openNow = () => {
@@ -26,19 +27,25 @@ const close = (name) => {
 function sync() {
   const on = openNow();
   for (const name of on) {
-    if (!stack.includes(name)) { stack.push(name); history.pushState({ fbLayer: name }, ''); }
+    if (!stack.includes(name)) { stack.push(name); history.pushState({ fbLayer: name }, ''); at.set(name, location.href); }
   }
   for (const name of [...stack]) {
     if (on.has(name)) continue;
     const top = stack[stack.length - 1] === name;
     stack = stack.filter((n) => n !== name);
-    if (top) { skipPop++; history.back(); } // closed from the screen: drop its history entry too
+    // Closed from the screen: drop its history entry too. Not after a link moved to another page
+    // (a song tapped in the drawer): going back then undid the link, and the song never opened.
+    // The link moves after this runs, so look one tick later.
+    const href = at.get(name);
+    at.delete(name);
+    if (top) setTimeout(() => { if (location.href === href) { skipPop++; history.back(); } });
   }
 }
 
 /** Forget open layers when the page changes (their history entries stay, as harmless duplicates). */
 export function resetLayers() {
   stack = [];
+  at.clear();
   for (const [, cls] of BODY_LAYERS) document.body.classList.remove(cls);
   document.querySelectorAll('.sheet').forEach((s) => { s.hidden = true; });
   document.querySelectorAll('[data-sheet-btn].on').forEach((b) => b.classList.remove('on'));
