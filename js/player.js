@@ -34,7 +34,7 @@ import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 import { humanize, liftCymbals, sustainPads, ownDrumChannels } from './humanize.js';
 import { highlight } from './texttab.js';
 import { autoLevels } from './mixlevels.js';
-import { GM } from './midi.js';
+import { SOUNDS, TYPICAL, soundFor, soundName } from './sounds.js';
 
 const $ = (id) => document.getElementById(id);
 const AT = window.alphaTab;
@@ -808,34 +808,7 @@ const ICONS = { Guitar: '🎸', Bass: '🎸', Drums: '🥁', Piano: '🎹', Voca
 const iconOf = (track) => ICONS[instrumentOf(track)] || '🎵';
 
 // Sounds you can give a track the file leaves unnamed or unclear ("Untitled" in UG's Power PDFs):
-// [name, General MIDI program]. The choice is kept per song (song.sounds: track index → program).
-const SOUNDS = [
-  ['Acoustic guitar', 25], ['Nylon guitar', 24], ['Clean electric guitar', 27], ['Jazz guitar', 26],
-  ['Overdriven guitar', 29], ['Distortion guitar', 30], ['Bass', 33], ['Bass (pick)', 34],
-  ['Piano', 0], ['Electric piano', 4], ['Organ', 16], ['Strings', 48], ['Synth pad', 89],
-  ['Synth lead', 81], ['Choir', 52], ['Brass', 61], ['Flute', 73],
-  ...GM.map((name, p) => [name, p]), // and every General MIDI sound, to type in
-].filter(([name], k, all) => all.findIndex(([n]) => n.toLowerCase() === name.toLowerCase()) === k);
-const soundName = (program) => SOUNDS.find(([, p]) => p === program)?.[0] || '';
-// The sound a typed name means: the same name, else one starting with it, else one holding all its words.
-function soundFor(text) {
-  const t = text.trim().toLowerCase();
-  if (!t) return null;
-  const words = t.split(/\s+/);
-  return SOUNDS.find(([n]) => n.toLowerCase() === t) || SOUNDS.find(([n]) => n.toLowerCase().startsWith(t))
-    || SOUNDS.find(([n]) => words.every((w) => n.toLowerCase().includes(w))) || bestWords(words);
-}
-// Else the one matching the most words, the last word ("electric BASS") counting most.
-function bestWords(words) {
-  const stems = words.filter((w) => w.length > 2).map((w) => w.replace(/s$/, ''));
-  let best = null, top = 0;
-  for (const sound of SOUNDS) {
-    const n = sound[0].toLowerCase();
-    const score = stems.reduce((a, w, k) => a + (n.includes(w) ? (k === stems.length - 1 ? 3 : 2) : 0), 0);
-    if (score > top) { best = sound; top = score; }
-  }
-  return best;
-}
+// The choice is kept per song (song.sounds: track index → program); names → sounds in sounds.js.
 const unnamed = (name) => !name?.trim() || /^(untitled\b.*|track \d+)$/i.test(name.trim());
 const unsure = (track, i) => !isDrums(track) && (song?.sounds?.[i] != null || unnamed(track.name) || !instrumentOf(track));
 
@@ -973,7 +946,7 @@ function buildTrackControls() {
       if (!$('fb-sounds')) {
         const list = document.createElement('datalist');
         list.id = 'fb-sounds';
-        for (const [name] of SOUNDS) list.append(new Option(name));
+        for (const [name] of TYPICAL) list.append(new Option(name)); // any other name is found as you type it
         document.body.append(list);
       }
     }
@@ -1070,7 +1043,14 @@ function onMixerInput(e) {
   if (e.type === 'change' && act === 'sound') {
     stopPreview();
     const sound = soundFor(e.target.value);
-    if (e.target.value.trim() && !sound) { window.dispatchEvent(new CustomEvent('fbtoast', { detail: `No instrument called “${e.target.value.trim()}”. Try piano, strings, bells or flute.` })); e.target.value = soundName(song?.sounds?.[i]); return; }
+    const typed = e.target.value.trim();
+    const toast = (detail) => window.dispatchEvent(new CustomEvent('fbtoast', { detail }));
+    if (typed && (!sound || sound.drum)) {
+      toast(sound ? `“${typed}” is a drum-kit sound: it plays only on a drum track.` : `No instrument like “${typed}”. Try piano, strings, bells or flute.`);
+      e.target.value = soundName(song?.sounds?.[i]);
+      return;
+    }
+    if (sound && sound[0].toLowerCase() !== typed.toLowerCase()) toast(`Using the ${sound[0]} sound`);
     setSound(i, sound ? sound[1] : null);
     pendingPreview = i; // heard as soon as it's read again
     return;
