@@ -7,6 +7,7 @@ const WORDS = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Bridge', 'Interlude', 
 // each name without its first letter or two (cut at the picture's left edge) -> the name
 const CUT = new Map(WORDS.flatMap((wd) => [1, 2].map((k) => [wd.slice(k), wd]).filter(([s]) => s.length >= 4 && /^[a-z]/.test(s))));
 const FONT ='bold 40px "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif';
+const SANS = '40px Arial, Helvetica, sans-serif';
 const GW = 48, GH = 14; // comparison grid
 
 function labelRegion(ink, w, x0, x1, y0, y1) {
@@ -200,6 +201,68 @@ export function readRestCount(ink, w, st, x0, x1, { debug = null } = {}) {
   }
   const n = Number(txt);
   return n >= 2 && n <= 400 ? n : 0;
+}
+
+// A small digit matched against the ten drawn in a plain sans-serif, on a coarse grid of its box
+// (it is only ~11 px tall), and by its width for height.
+const SANS_DIGITS = [];
+function sansDigit(c) {
+  const coarse = (on, bw, bh) => {
+    const g = new Float32Array(6 * 8), n = new Float32Array(6 * 8);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const k = Math.min(7, Math.floor((y / bh) * 8)) * 6 + Math.min(5, Math.floor((x / bw) * 6));
+      n[k]++; if (on(x, y)) g[k]++;
+    }
+    return g.map((v, i) => (n[i] ? v / n[i] : 0));
+  };
+  if (!SANS_DIGITS.length) {
+    const cv = document.createElement('canvas'); cv.width = 60; cv.height = 70;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    for (const ch of '0123456789') {
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 60, 70);
+      ctx.fillStyle = '#000'; ctx.font = SANS; ctx.textBaseline = 'alphabetic'; ctx.fillText(ch, 10, 55);
+      const { data } = ctx.getImageData(0, 0, 60, 70);
+      const at = (x, y) => data[(y * 60 + x) * 4] < 140;
+      let a = 60, b = 0, t = 70, d = 0;
+      for (let y = 0; y < 70; y++) for (let x = 0; x < 60; x++) if (at(x, y)) { a = Math.min(a, x); b = Math.max(b, x); t = Math.min(t, y); d = Math.max(d, y); }
+      SANS_DIGITS.push({ ch, ar: (b - a + 1) / (d - t + 1), g: coarse((x, y) => at(a + x, t + y), b - a + 1, d - t + 1) });
+    }
+  }
+  const on = new Set(c.px.map(([x, y]) => (y - c.y0) * c.w + (x - c.x0)));
+  const g = coarse((x, y) => on.has(y * c.w + x), c.w, c.h);
+  let top = [Infinity, null];
+  for (const t of SANS_DIGITS) {
+    let d = 0;
+    for (let i = 0; i < g.length; i++) d += Math.abs(g[i] - t.g[i]);
+    d = d / g.length + 0.5 * Math.abs(c.w / c.h - t.ar);
+    if (d < top[0]) top = [d, t.ch];
+  }
+  return top;
+}
+
+/**
+ * How many times an end repeat plays ("x3" just above the staff, left of its bar line at x).
+ * Returns 0 when there is no number.
+ */
+export function readRepeatCount(ink, w, st, x, { debug = null } = {}) {
+  const u = st.u;
+  const y0 = Math.max(0, Math.round(st.ys[0] - 1.8 * u)), y1 = Math.round(st.ys[0] - 0.1 * u);
+  const comps = labelRegion(ink, w, Math.max(st.x0, Math.round(x - 2.5 * u)), Math.min(st.x1, Math.round(x + 0.2 * u)), y0, y1)
+    .filter((c) => c.h >= 0.3 * u && c.h <= 1.2 * u && c.w <= 1.2 * u && c.y0 > y0 && c.y1 < y1 && c.x1 <= x + 0.2 * u)
+    .sort((a, b) => a.x0 - b.x0);
+  if (debug) debug.push(comps.map((c) => [c.x0 - x, c.y0 - st.ys[0], c.w, c.h]));
+  // the "x", then the digits right after it, all on one baseline
+  const xi = comps.findIndex((c, i) => comps[i + 1] && comps[i + 1].x0 - c.x1 <= 0.4 * u && c.h < comps[i + 1].h && Math.abs(c.y1 - comps[i + 1].y1) <= 2);
+  if (xi < 0) return 0;
+  let txt = '';
+  for (const c of comps.slice(xi + 1)) {
+    const [d, ch] = sansDigit(c);
+    if (debug) debug.push({ ch, d });
+    if (d > 0.3) break;
+    txt += ch;
+  }
+  const n = Number(txt);
+  return txt && n >= 2 && n <= 99 ? n : 0;
 }
 
 /**

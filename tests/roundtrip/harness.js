@@ -14,10 +14,10 @@ let song = null; // { score, title, artist }
 
 // UG's Tablature view shows no time signature, and alphaTab always draws one on a tab-only staff.
 // Its digits are the music font's timeSig glyphs (U+E080-E08F), so those are simply not drawn.
-// (Multi-bar rests use the same digits, but alphaTab only draws those when asked to.)
+// A multi-bar rest's count uses the same digits, drawn centred over the rest, so those stay.
 const fillText = CanvasRenderingContext2D.prototype.fillText;
 CanvasRenderingContext2D.prototype.fillText = function (text, ...rest) {
-  if (typeof text === 'string' && /^[-]+$/.test(text)) return;
+  if (typeof text === 'string' && /^[-]+$/.test(text) && this.textAlign !== 'center') return;
   // UG's TAB clef is bold; the music font's is thin
   if (text === '' || text === '') {
     this.save(); this.lineWidth = 1.6; this.strokeStyle = this.fillStyle; this.strokeText(text, ...rest); this.restore();

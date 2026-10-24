@@ -3,7 +3,7 @@
 // stems, beams, flags and dots, and builds alphaTex. Image sizes are normalised to a staff
 // spacing of UG_UNIT pixels by the caller (see pdftab.js).
 import { UG_ATLAS, UG_W, UG_H } from './ugatlas.js';
-import { readHeading, readRestCount } from './ugtext.js';
+import { readHeading, readRestCount, readRepeatCount } from './ugtext.js';
 
 export const UG_UNIT = 18;
 const TEMPLATES = UG_ATLAS.map(([ch, bits]) => ({ ch, bits: Uint8Array.from(bits, (c) => +c) }));
@@ -443,6 +443,26 @@ export function stemLength(ink, w, s, u) {
   return { len: dot ? base * 1.5 : base, beamed: false };
 }
 
+// A repeat sign's two dots: small round blobs in the two spaces either side of the staff's middle
+// (the 2nd and 4th of a guitar staff's five), one above the other. Returns where each pair stands.
+function repeatDots(comps, st) {
+  const u = st.u, mid = (st.ys[0] + st.ys[st.ys.length - 1]) / 2;
+  const inSpace = (c) => st.ys.every((ly) => c.y0 > ly + 1 || c.y1 < ly - 1);
+  const dots = comps.filter((c) => c.w >= 0.15 * u && c.w <= 0.55 * u && c.h >= 0.15 * u && c.h <= 0.55 * u
+    && Math.abs(c.w - c.h) <= 0.15 * u + 1 && c.area >= 0.6 * c.w * c.h && inSpace(c));
+  const off = st.ys.length % 2 ? 0.5 * u : u; // (the middle is a line, or a space)
+  const out = [];
+  for (const a of dots) {
+    const ya = (a.y0 + a.y1) / 2, xa = (a.x0 + a.x1) / 2;
+    if (Math.abs(ya - (mid - off)) > 0.3 * u) continue;
+    const b = dots.find((d) => Math.abs((d.x0 + d.x1) / 2 - xa) <= 2 && Math.abs((d.y0 + d.y1) / 2 - (mid + off)) <= 0.3 * u);
+    // nothing else in the staff at that x (bits of a TAB clef, the dots of a dotted note's rhythm)
+    const top = st.ys[0] - 0.3 * u, bot = st.ys[st.ys.length - 1] + 0.3 * u;
+    if (b && !comps.some((c) => c !== a && c !== b && c.x0 <= a.x1 + 1 && c.x1 >= a.x0 - 1 && c.y1 > top && c.y0 < bot && c.w < 3 * u)) out.push(xa);
+  }
+  return out;
+}
+
 // A multi-bar rest is a thick horizontal bar across the middle of the staff, between two lines.
 export function thickRest(ink, w, st, xa, xb) {
   const mid = (st.ys[0] + st.ys[st.ys.length - 1]) / 2;
@@ -516,7 +536,9 @@ export function readStrip(ink, light, w, h, st) {
   if (bl.length < 2) return null;
   const comps = components(ink, w, st, bl);
   const notes = readNotes(ink, w, st, bl, comps);
-  const rests = readRests(components(ink, w, st, bl, true), st);
+  const loose = components(ink, w, st, bl, true);
+  const rests = readRests(loose, st);
+  const dots = repeatDots(loose, st);
   const stems = stemsBelow(ink, w, h, st);
   const bars = [];
   let last = null; // the last column read so far, for a held note at the start of a bar
@@ -554,6 +576,9 @@ export function readStrip(ink, light, w, h, st) {
     }
     if (cols.length) last = cols[cols.length - 1];
     const bar = { x0: bl[i], x1: bl[i + 1], cols };
+    // a repeat's two dots sit just inside the bar, by its thick and thin bar lines
+    if (dots.some((x) => x > bl[i] && x - bl[i] < 1.6 * st.u)) bar.repeatStart = true;
+    if (dots.some((x) => x < bl[i + 1] && bl[i + 1] - x < 1.6 * st.u)) bar.repeatEnd = readRepeatCount(ink, w, st, bl[i + 1]) || 2;
     const thick = !cols.length && thickRest(ink, w, st, bl[i], bl[i + 1]);
     if (thick) { // the number sits centred over the thick bar
       const c = (thick.x0 + thick.x1) / 2;
@@ -907,9 +932,23 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
   const barsOf = (list) => list.flatMap((s) => s.bars.flatMap((b) => {
     const lineWords = (s.lyr || []).length; // a line with no words at all (cut off, or not read) can borrow another part's
     const one = { ...b, lyr: (s.lyr || []).filter((l) => l.x >= b.x0 - 4 && l.x < b.x1 - 4), lineWords };
-    return b.rest > 1 ? [one, ...Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [], lineWords }))] : [one];
+    if (!(b.rest > 1)) return [one];
+    const more = Array.from({ length: b.rest - 1 }, () => ({ x0: b.x0, x1: b.x1, cols: [], lyr: [], lineWords }));
+    if (one.repeatEnd) { more[more.length - 1].repeatEnd = one.repeatEnd; delete one.repeatEnd; } // the repeat closes after the last of them
+    return [one, ...more];
   }));
   const bars = barsOf(strips);
+  // Repeat signs from every part, the same way: one stands where enough parts read it.
+  {
+    const lists = [bars, ...extra.map((p) => barsOf(p.strips))];
+    const need = extra.length >= 2 ? 2 : 1;
+    bars.forEach((b, i) => {
+      const starts = lists.filter((l) => l[i]?.repeatStart).length;
+      const ends = lists.map((l) => l[i]?.repeatEnd).filter(Boolean);
+      b.repeatStart = starts >= need;
+      b.repeatEnd = ends.length >= need ? ends.reduce((top, v) => (ends.filter((x) => x === v).length > ends.filter((x) => x === top).length ? v : top), ends[0]) : 0;
+    });
+  }
   // Section names from every part: each part misses some (a name cut at the picture's edge, one
   // printed over another part's staff only) and misreads a few. A name two parts agree on (give or
   // take a bar) starts a section; with fewer than 3 parts, any name does.
@@ -1044,6 +1083,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
         if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
         if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
         if (i === 0) head.push(`\\ts ${num} ${den}`);
+        if (b.repeatStart) head.push('\\ro');
+        if (b.repeatEnd) head.push(`\\rc ${b.repeatEnd}`);
       }
       if (i === 0) head.push(`\\clef ${staff.clef}`, `\\ks ${KS_NAMES[staff.key + 7]}`);
       return `${head.join(' ')} ${scoreBeats(b, staff.k, T, staff.key < 0, i === 0 ? 'f' : null) || restTex(T)}`.trim();
@@ -1062,6 +1103,8 @@ export function ugToAlphaTex(strips, { title = '', artist = '', tempo = 100, nam
       if (b.heading || i === 0) head.push(`\\section ${JSON.stringify(sectionName(b))}`);
       if (b.tempo && b.tempo !== lastTempo) { head.push(`\\tempo ${b.tempo}`); lastTempo = b.tempo; }
       if (i === 0) head.push(`\\ts ${num} ${den}`);
+      if (b.repeatStart) head.push('\\ro');
+      if (b.repeatEnd) head.push(`\\rc ${b.repeatEnd}`);
     }
     if (i === 0 && ks) head.push(`\\ks ${ks}`);
     return `${head.join(' ')} ${beats.join(' ')}`.trim();
