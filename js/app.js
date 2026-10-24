@@ -133,6 +133,7 @@ async function renderLibrary() {
   const cur = openSongId();
   const letters = !q && libSongs.length > 12;
   let letter = '';
+  const focused = document.activeElement?.closest?.('#library-list .lib-row')?.dataset.id; // (a redraw keeps a row stepped to with Tab)
   $('library-list').innerHTML = libSongs.map((s) => {
     const type = chartType(s);
     const L = initial(s.title);
@@ -147,6 +148,7 @@ async function renderLibrary() {
   }).join('') || `<li class="lib-empty">${q
     ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button></div>`
     : songsOnly.length ? '<p class="muted">No songs here.</p>' : '<p class="muted">No songs yet. Type a song above to get it from Ultimate Guitar, or drop a file here.</p>'}</li>`;
+  if (focused) $('library-list').querySelector(`.lib-row[data-id="${focused}"] > a`)?.focus();
   drawBar();
 }
 
@@ -1114,16 +1116,28 @@ function initFind() {
     m.textContent = 'Find on UG';
   }
   input.addEventListener('input', () => { modes(); renderLibrary(); });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; modes(); renderLibrary(); } });
+  // the songs found, as links: Tab steps from the box to the first and on down them
+  const found = () => [...$('library-list').querySelectorAll('.lib-row > a')];
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; modes(); renderLibrary(); }
+    // Enter is handled here: the form would take it as a press of its first button (Quick) and search UG
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      if (libSongs.length) { location.hash = `song/${libSongs[0].id}`; openDrawer(false); return; } // already in the library: open it
+      findSong(helperPossible() ? 'quick' : 'manual');
+    }
+    if (e.key === 'Tab' && !e.shiftKey && input.value.trim() && libSongs.length) { e.preventDefault(); found()[0]?.focus(); }
+  });
+  $('library-list').addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || !input.value.trim() || !e.target.matches('.lib-row > a')) return;
+    const links = found(), k = links.indexOf(e.target) + (e.shiftKey ? -1 : 1);
+    if (k < 0) { e.preventDefault(); input.focus(); } // back up to the box
+    else if (k < links.length) { e.preventDefault(); links[k].focus(); }
+  });
   $('find-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const mode = e.submitter?.dataset.mode;
-    if (!mode && libSongs.length) { // Enter with the song in the library: open it
-      location.hash = `song/${libSongs[0].id}`;
-      openDrawer(false);
-      return;
-    }
-    findSong(mode || (helperPossible() ? 'quick' : 'manual'));
+    findSong(e.submitter?.dataset.mode || (helperPossible() ? 'quick' : 'manual'));
   });
   $('lib-type-btn').addEventListener('click', typeMenu);
   $('lib-type-chip').addEventListener('click', () => { chartFilter = 'all'; renderLibrary(); });
