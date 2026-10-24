@@ -11,7 +11,7 @@ Skip). While it saves, a window stays on top with the progress and a Cancel butt
 can be used meanwhile. Cancel stops it and removes everything this run saved, so nothing is left
 half done. Your login is never touched.
 
-Each track's PDF is the score as UG's player shows it (sharp, every lyric complete) set on A4
+Each track's PDF is the score as UG's player shows it (sharp, every lyric complete) set on Letter
 pages, written by Chrome directly: no Print or Save As window. (UG's own Print button cuts the
 lyrics off the last line of each page.)
 
@@ -1232,10 +1232,10 @@ def wait_idle(ui, i, n, name, eta):
         time.sleep(0.5)
 
 
-# ---------- an official track as a PDF: the score as UG shows it, laid out on A4 ----------
+# ---------- an official track as a PDF: the score as UG shows it, laid out on Letter ----------
 # UG's own Print cuts the lyrics off the last line of each of its pages (whatever the zoom), so the
 # score is taken from the player itself instead: drawn on a tall, sharp screen (2x pixels), cut
-# into lines between the gaps (a line keeps its name, bar numbers and lyrics), and set on A4 pages,
+# into lines between the gaps (a line keeps its name, bar numbers and lyrics), and set on Letter pages,
 # which this Chrome writes to the PDF straight away (no Print or Save As window).
 
 SHOT_W, SHOT_H, SHOT_DSF = 1536, 7000, 2
@@ -1393,7 +1393,7 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
     const s = Math.max(0, u.s - pad), e = Math.min(h, u.e + pad);
     const k = document.createElement('canvas'); k.width = x1 - x0; k.height = e - s;
     k.getContext('2d').drawImage(c, x0, s, x1 - x0, e - s, 0, 0, x1 - x0, e - s);
-    return { src: k.toDataURL('image/png'), h: e - s, mm: 186 / (x1 - x0) };
+    return { src: k.toDataURL('image/png'), h: e - s, mm: 191.9 / (x1 - x0) };
   });
   return { parts, full: last >= h - 3, pictures: at.length };
   };
@@ -1467,7 +1467,7 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   };
   const given = async (srcs) => {
     const imgs = await Promise.all(srcs.map(async (s) => { const i = await load(s), m = mend(i); return m === i.src ? i : load(m); }));
-    const ps = imgs.map((i) => { const px = pixels(i); return { src: i.src, h: i.height, mm: 186 / i.width, ink: inked(px), px }; });
+    const ps = imgs.map((i) => { const px = pixels(i); return { src: i.src, h: i.height, mm: 191.9 / i.width, ink: inked(px), px }; });
     const parts = [];
     ps.forEach((p, i) => {
       const t = ps[i + 1] ? repeats(p, ps[i + 1]) : -1;
@@ -1485,7 +1485,7 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   if (tab.error) return tab;
   // A take gone wrong (the score not cut into its lines) comes out as one or a few tall pieces,
   // squashed onto a page: the whole song's bars blur together and Fretboard misreads them.
-  const tall = tab.parts.filter((p) => p.h * p.mm > 272).length;
+  const tall = tab.parts.filter((p) => p.h * p.mm > 254).length;
   const glitch = !printed && (tall > 0 || (tab.parts.length === 1 && tab.parts[0].h * tab.parts[0].mm > 90));
   // the same score with its music staff (Standard + Tablature): Fretboard reads only the dynamics and
   // the words ("w/sustainer", "let ring") from these pages, which come after a page headed "Notation"
@@ -1493,13 +1493,13 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   if (notesPrinted && notesPrinted.length) more = await given(notesPrinted);
   else if (notes && notes.length) { try { more = await cut(notes); } catch (e) { more = null; } }
   if (more && more.error) more = null;
-  // A4, 12 mm margins: 186 x 273 mm to fill. The score is set 5 mm in from each side (side): what
+  // Letter, 12 mm margins: 191.9 x 255.4 mm to fill. The score is set 5 mm in from each side (side): what
   // it has at its very edges (a bar line, the first bar's number) isn't on the page's edge.
-  const pageW = 186, pageH = 272, side = 5, k = (pageW - 2 * side) / pageW;
+  const pageW = 191.9, pageH = 254, side = 5, k = (pageW - 2 * side) / pageW;
   // a picture on the page, with a little paper over and under its ink (a print picture's own
   // blank rows are left off)
   const place = (p) => {
-    const w = 186 / p.mm;
+    const w = 191.9 / p.mm;
     const [t, b] = p.ink || [0, p.h], y0 = p.ink ? Math.max(0, t - Math.round(0.02 * w)) : 0, y1 = p.ink ? Math.min(p.h, b + Math.round(0.02 * w)) : p.h;
     const hh = Math.min((y1 - y0) * p.mm * k, pageH);
     const box = document.createElement('div'); box.className = 'pic'; box.style.height = hh + 'mm';
@@ -1509,7 +1509,7 @@ PAGES_JS = r"""async ({ shots, title, lines, notes, printed, notesPrinted }) => 
   };
   document.title = title;
   const st = document.createElement('style');
-  st.textContent = '@page{size:A4;margin:12mm}body{margin:0;font-family:Georgia,"Times New Roman",serif;color:#000}'
+  st.textContent = '@page{size:letter;margin:12mm}body{margin:0;font-family:Georgia,"Times New Roman",serif;color:#000}'
     + '.pg{height:' + pageH + 'mm;overflow:hidden;break-after:page}.pg:last-child{break-after:auto}'
     + 'h1{font-size:22pt;text-align:center;margin:0 0 1mm;font-weight:normal}.sub{text-align:center;font-size:13pt;margin:0 0 3mm}'
     + '.info{font-size:10pt;margin:0 0 2mm}.pic{overflow:hidden;margin:0 ' + side + 'mm}img{display:block;width:' + (pageW - 2 * side) + 'mm}';
@@ -1916,7 +1916,7 @@ class Cdp:
 
 
 def write_pdf(job, dest):
-    """One track's PDF: PAGES_JS sets its pictures on A4 pages in a background tab of this Chrome,
+    """One track's PDF: PAGES_JS sets its pictures on Letter pages in a background tab of this Chrome,
     which writes them to the PDF (no Print or Save As window). (ok, why, res)"""
     with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/version", timeout=5) as r:
         browser = json.load(r)["webSocketDebuggerUrl"]
