@@ -1,0 +1,9 @@
+\title "Quarter Melody"
+\artist "Fretboard tests"
+\tempo 90
+.
+\track "Guitar"
+\staff {tabs}
+\ts 4 4
+:4 0.6 3.6 0.5 2.5 | 0.4 2.4 0.3 2.3 | 3.6 2.5 0.4 2.4 | :2 0.3 :4 2.3 0.3 |
+:4 0.2 1.2 3.2 1.2 | 0.1 3.1 1.1 0.1 | 3.2 0.2 2.3 0.3 | :1 0.4 |

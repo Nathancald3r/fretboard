@@ -19,6 +19,11 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - Use preview_start with the `fretboard` entry in `.claude/launch.json`.
   - Never start a second server on 8420: the user may be using it.
 - **Tests:** `for f in tests/*.test.mjs; do node "$f" || echo FAIL $f; done` (Git Bash). Run them after any change to `js/ugtab.js`, `js/pdftab.js`, `js/chordsheet.js` or `js/player.js`.
+- **Round-trip import test:** `python tests/roundtrip/roundtrip.py` (`-k NAME`, `--keep`, `--verbose`).
+  - Draws each song in `tests/roundtrip/songs/` as UG-style tab PDFs (Letter), reads them back with `pdfToTab` and `ugToAlphaTex`, and prints a score per song and check. Exits 1 below the pass mark in `config.json`.
+  - Needs Python Playwright with Chromium; no server (it serves itself on a free port). About 6 s.
+  - The PDFs are alphaTab's, styled like UG (stems and TAB clef patched in `harness.js`). See `tests/roundtrip/README.md`.
+  - Use it to check an importer change: the score should not drop.
 - **Website:** GitHub Pages from `Nathancald3r/fretboard`, branch `main`.
   - A push to `main` updates the website **and** the UG helper, which downloads its files from there.
   - The user has approved pushing helper/importer fixes.
