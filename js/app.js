@@ -275,6 +275,7 @@ async function cardAct(act, id) {
     } catch { /* ignore */ }
     toast(`Deleted “${song.title}”.`);
     renderLibrary();
+    return true;
   } else if (act === 'rename') {
     if (song.kind === 'text') { openEditor(song); return; }
     const fields = await ask({ title: 'Rename', ok: 'Save', fields: { title: song.title, artist: song.artist || '' } });
@@ -1126,6 +1127,12 @@ function initFind() {
   });
   $('lib-type-btn').addEventListener('click', typeMenu);
   $('lib-type-chip').addEventListener('click', () => { chartFilter = 'all'; renderLibrary(); });
+  $('pl-delete').addEventListener('click', async () => { // the ⚙ menu: delete the song you're on
+    const id = Number(location.hash.match(/^#(?:song|edit)\/(\d+)/)?.[1]);
+    document.body.classList.remove('menu-open');
+    if (!id || !await cardAct('delete', id)) return;
+    location.hash = 'library'; // opens the latest song left
+  });
   $('lib-folder-btn').addEventListener('click', folderMenu);
   $('welcome-find').addEventListener('click', () => openDrawer(true, { focus: true }));
   modes();

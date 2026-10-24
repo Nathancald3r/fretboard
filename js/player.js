@@ -23,7 +23,7 @@ import { parseSource, sourceLine, facts as tabFacts } from './tabinfo.js';
 import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, tapVideoBeat, setStartHere, toggleRecording, startVideoHere } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
-import { lyricsTrack, buildLyrics, lineAt } from './lyrics.js';
+import { lyricsTrack, buildLyrics, lineAt, repeatVerses } from './lyrics.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
 import { initKeyView, keyRange, setKeys, showKeys } from './keyview.js';
 import { initDrumView, setKit, showDrums, drumMidi } from './drumview.js';
@@ -1167,6 +1167,7 @@ function songKey() {
 function readScore(s) {
   const score = parseScore(s);
   ownDrumChannels(score.tracks); // a shaker beside the drums gets its own volume and mute
+  repeatVerses(score); // a hymn with verses under its notes: once through per verse
   applySounds(score, s.sounds);
   return score;
 }

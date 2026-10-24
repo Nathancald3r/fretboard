@@ -1,6 +1,6 @@
 // Run: node tests/lyrics.test.mjs
 import assert from 'node:assert/strict';
-import { lyricsTrack, buildLyrics, lineAt } from '../js/lyrics.js';
+import { lyricsTrack, buildLyrics, lineAt, repeatVerses } from '../js/lyrics.js';
 
 const alphaTab = await import('@coderline/alphatab');
 const load = (tex) => {
@@ -63,5 +63,16 @@ const words3 = ['Hey,', 'let', 'it', 'h-', 'Je-', 'sus'];
 sc3.masterBars.forEach((mb, i) => sc3.tracks[0].staves[0].bars[i].voices[0].beats.filter((b) => !b.isRest)
   .forEach((b) => { b.lyrics = [words3.shift()]; }));
 assert.deepEqual(buildLyrics(sc3, 0, straight(sc3)).map(text), ['Hey, let it h- Jesus']);
+
+// A hymn with three verses under its notes plays through three times; one with its own repeats doesn't change.
+const hymn = load(`\\title "h" .
+\\track "Voice" \\staff {score}
+C4.4 C4.4 C4.4 C4.4 | C4.4 C4.4 C4.4 C4.4 | C4.1`);
+hymn.tracks[0].staves[0].bars.slice(0, 2).forEach((bar) => bar.voices[0].beats.forEach((b) => { b.lyrics = ['one', 'two', 'three']; }));
+assert.equal(repeatVerses(hymn), 3);
+assert.equal(hymn.masterBars[0].isRepeatStart, true);
+assert.equal(hymn.masterBars[2].repeatCount, 3);
+assert.equal(repeatVerses(hymn), 0, 'already repeats');
+assert.equal(repeatVerses(sc3), 0, 'one lyric line');
 
 console.log('lyrics: all tests passed');

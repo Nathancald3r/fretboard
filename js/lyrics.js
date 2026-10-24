@@ -15,6 +15,29 @@ export function lyricsTrack(score) {
   return (vocal || withLyrics[0])?.[1] ?? -1;
 }
 
+/**
+ * A hymn prints its verses as lines of words under one staff, to be sung through once per verse.
+ * When a song has 2 or more lyric lines and no repeats of its own, the whole song is repeated that
+ * many times (a repeat sign at each end), so it plays every verse and the lyrics follow (buildLyrics
+ * takes the next line on each pass). Returns the number of verses, or 0 when nothing changed.
+ * A line counts as a verse when it has words under at least a third as many notes as the first.
+ */
+export function repeatVerses(score) {
+  const bars = score.masterBars;
+  if (bars.length < 2 || bars.some((mb) => mb.isRepeatStart || mb.repeatCount > 0)) return 0;
+  const counts = [];
+  for (const track of score.tracks) for (const staff of track.staves) for (const bar of staff.bars) for (const voice of bar.voices) for (const beat of voice.beats) {
+    (beat.lyrics || []).forEach((l, k) => { if (l && l.trim()) counts[k] = (counts[k] || 0) + 1; });
+  }
+  let verses = 0;
+  while (verses < counts.length && (counts[verses] || 0) >= (counts[0] || 0) / 3) verses++;
+  if (verses < 2) return 0;
+  bars[0].isRepeatStart = true;
+  bars[bars.length - 1].repeatCount = verses;
+  score.rebuildRepeatGroups?.();
+  return verses;
+}
+
 const BREAK_GAP = 1440; // a rest of a dotted quarter (or more) ends a line
 const LONG_LINE = 40; // characters
 const MAX_LINE = 56;
