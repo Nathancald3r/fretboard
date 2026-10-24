@@ -3,6 +3,7 @@
 //   bars       the bar count
 //   timeSig    bars whose time signature matches
 //   tempo      the opening tempo (within 1 bpm)
+//   repeats    bars whose repeat signs match (a repeat start, and how many times an end plays)
 //   frets      the right string/fret numbers in the right order in each bar, timing aside (F1)
 //   onsets     the right string/fret at the right moment in the bar (F1)
 //   durations  notes that start right and also last the right length
@@ -36,7 +37,7 @@ const show = (beats) => beats.map((b) => (b.notes.length ? (b.notes.length > 1 ?
 export function compareTracks(want, wi, got, gi, { listBars = 5 } = {}) {
   const wBars = want.tracks[wi].staves[0].bars, gBars = got.tracks[gi].staves[0].bars;
   const n = Math.max(wBars.length, gBars.length);
-  let tsHit = 0;
+  let tsHit = 0, repHit = 0;
   let fretHit = 0, onsetHit = 0, durHit = 0, wantNotes = 0, gotNotes = 0, wantBeats = 0;
   const diffs = [];
   for (let i = 0; i < n; i++) {
@@ -44,6 +45,8 @@ export function compareTracks(want, wi, got, gi, { listBars = 5 } = {}) {
     const why = [];
     if (wm && gm && wm.timeSignatureNumerator === gm.timeSignatureNumerator && wm.timeSignatureDenominator === gm.timeSignatureDenominator) tsHit++;
     else why.push(`time ${wm ? `${wm.timeSignatureNumerator}/${wm.timeSignatureDenominator}` : '-'} -> ${gm ? `${gm.timeSignatureNumerator}/${gm.timeSignatureDenominator}` : '-'}`);
+    const rep = (m) => (m ? `${m.isRepeatStart ? '|:' : ''}${m.repeatCount ? `:|x${m.repeatCount}` : ''}` : '');
+    if (rep(wm) === rep(gm)) repHit++; else why.push(`repeat '${rep(wm)}' -> '${rep(gm)}'`);
     const wb = beatsOf(wBars[i]).filter((b) => b.notes.length), gb = beatsOf(gBars[i]).filter((b) => b.notes.length);
     const wn = wb.flatMap((b) => b.notes.map((x) => ({ x, b }))), gn = gb.flatMap((b) => b.notes.map((x) => ({ x, b })));
     wantNotes += wn.length; gotNotes += gn.length; wantBeats += wb.length;
@@ -69,6 +72,7 @@ export function compareTracks(want, wi, got, gi, { listBars = 5 } = {}) {
     bars: wBars.length ? Math.max(0, 1 - Math.abs(gBars.length - wBars.length) / wBars.length) : 1,
     timeSig: n ? tsHit / n : 1,
     tempo: Math.abs(want.tempo - got.tempo) <= 1 ? 1 : 0,
+    repeats: n ? repHit / n : 1,
     frets: f1(fretHit, wantNotes, gotNotes),
     onsets: f1(onsetHit, wantNotes, gotNotes),
     durations: wantBeats ? durHit / wantBeats : 1,

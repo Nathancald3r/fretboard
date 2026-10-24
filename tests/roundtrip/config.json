@@ -1,6 +1,6 @@
 {
   "pass": 0.9,
-  "weights": { "bars": 2, "timeSig": 1, "tempo": 1, "frets": 3, "onsets": 2, "durations": 2 },
+  "weights": { "bars": 2, "timeSig": 1, "tempo": 1, "repeats": 1, "frets": 3, "onsets": 2, "durations": 2 },
   "listBars": 5,
   "render": { "width": 1000, "scale": 1, "paper": "letter" },
   "default": {},

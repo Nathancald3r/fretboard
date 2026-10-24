@@ -138,8 +138,20 @@ window.renderTrack = async (index, { width = 1000, scale = 1, paper = 'letter' }
   r.partialRenderFinished.on((e) => { if (e.renderResult && e.firstMasterBarIndex >= 0) lines.push({ y: e.y, canvas: e.renderResult }); });
   r.error.on((e) => { error = e; });
   const done = new Promise((ok) => r.renderFinished.on(() => ok()));
-  r.renderScore(song.score, [index]);
-  await Promise.race([done, new Promise((ok) => setTimeout(ok, 20000))]);
+  // UG's tab writes a tied note as its fret in brackets, "(12)", with no tie arc; alphaTab draws arcs and
+  // hides tied notes inside a bar. For the drawing only, each tied note becomes a bracketed (ghost) note.
+  const ties = [];
+  for (const bar of song.score.tracks[index].staves[0].bars) for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes) {
+    if (!n.isTieDestination || !n.tieOrigin) continue;
+    ties.push([n, n.tieOrigin, n.isGhost, n.fret]);
+    n.fret = n.tieOrigin.fret; n.isGhost = true; n.isTieDestination = false; n.tieOrigin.tieDestination = null; n.tieOrigin = null;
+  }
+  try {
+    r.renderScore(song.score, [index]);
+    await Promise.race([done, new Promise((ok) => setTimeout(ok, 20000))]);
+  } finally {
+    for (const [n, o, ghost, fret] of ties) { n.tieOrigin = o; o.tieDestination = n; n.isTieDestination = true; n.isGhost = ghost; n.fret = fret; }
+  }
   if (error) throw error;
   lines.sort((a, b) => a.y - b.y);
   const t = song.score.tracks[index], st = t.staves[0];
