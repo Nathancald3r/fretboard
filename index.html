@@ -13,16 +13,11 @@
 </head>
 <body>
   <header class="topbar">
-    <button id="menu-btn" class="icon-btn" aria-label="Library and setlists" title="Library and setlists">
+    <button id="menu-btn" class="icon-btn lib-menu-btn" aria-label="Library and setlists" title="Your songs and setlists ( / )">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span class="menu-label">Library</span><span id="menu-badge" class="menu-badge" hidden></span>
     </button>
-    <a id="back-songs" class="back-songs" href="#library" aria-label="Back to your songs">‹ Songs</a>
     <a class="brand" href="#library">Fretboard</a>
-    <div class="search">
-      <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input id="song-search" type="search" placeholder="Search your songs  ( / )" autocomplete="off" aria-label="Search your songs">
-      <div id="search-results" class="search-results" hidden></div>
-    </div>
     <nav class="nav">
       <a href="#library" data-nav="library">Songs</a>
       <a href="#practice" data-nav="practice">Practice</a>
@@ -41,59 +36,50 @@
       </div>
       <button id="dr-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
-    <input id="dr-search" type="search" placeholder="Filter songs" autocomplete="off">
-    <div id="dr-body" class="drawer-body"></div>
+    <div id="dr-songs" class="dr-songs">
+      <form id="find-form" class="qi" autocomplete="off">
+        <div class="qi-bar">
+          <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="find-query" type="search" placeholder="Find a song" enterkeyhint="search" aria-label="Find a song in your library or on Ultimate Guitar">
+          <span id="qi-modes" class="qi-modes" hidden>
+            <button type="submit" data-mode="quick" class="primary small" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here (Enter)">Quick</button>
+            <button type="submit" data-mode="manual" class="ghost small" title="Opens the Ultimate Guitar search: download the file yourself">Manual</button>
+          </span>
+        </div>
+        <button type="button" id="lib-type-btn" class="icon-btn qi-btn" aria-label="Song types" title="Song types" aria-haspopup="menu">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4 1.5v-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" id="lib-more-btn" class="icon-btn qi-btn" aria-label="Add and more" title="Import files, paste a tab, sync…" aria-haspopup="menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+      </form>
+      <div id="qi-status" class="qi-status small-text"></div>
+      <div id="lib-ready" class="lib-tidy" hidden></div>
+      <div id="lib-tidy" class="lib-tidy" hidden></div>
+      <div class="lib-head">
+        <button type="button" id="lib-folder-btn" class="ghost small lib-folder-btn" aria-haspopup="menu"></button>
+        <button type="button" id="lib-type-chip" class="chip small" hidden></button>
+      </div>
+      <ul id="library-list" class="dr-list lib-list"></ul>
+      <input id="file-input" type="file" multiple hidden
+        accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.gp8,.xml,.musicxml,.mxl,.cap,.capx,.ptb,.txt,.pdf">
+    </div>
+    <div id="dr-body" class="drawer-body" hidden></div>
   </aside>
 
   <!-- LIBRARY -->
   <main id="view-library" class="view">
-    <section class="panel find hero" id="find-panel">
-      <h2><span class="hero-icon" aria-hidden="true">🔎</span> Find tabs online</h2>
-      <p class="muted">The quickest way to add a song: type it, press a site's button, and download the Guitar Pro file there (the one step a site makes you do yourself). With auto-import on, the tab then opens here by itself, ready for play-along; otherwise press <b>Import new downloads</b> below. For text tabs and chord charts, copy the page's text and press <b>Paste from clipboard</b>.</p>
-      <form id="find-form">
-        <div class="row">
-          <input id="find-query" type="search" placeholder="Song, or Artist - Song" autocomplete="off">
-        </div>
-        <div id="find-sources" class="row find-sources"></div>
-      </form>
-      <p id="find-helper" class="small-text muted" hidden></p>
-      <p id="find-auto" class="small-text muted" hidden></p>
-    </section>
-
-    <section class="panel">
-      <div class="row spread">
-        <h2>Your songs</h2>
-        <div class="row">
-          <button id="btn-add-song" class="primary" title="Find a song online, import a file, or paste a tab">+ Song</button>
-          <input id="lib-filter" type="search" placeholder="Filter songs">
-          <button id="btn-downloads" class="primary" title="Import tab files you downloaded recently (asks for the folder once)" hidden>Import new downloads</button>
-          <button id="btn-song-pdfs" class="primary" title="Type the song in the box at the top, then press this: every PDF in your Downloads folder for it (guitar, bass, drums…) is read and added" hidden>PDFs for this song</button>
-          <button id="btn-folder" class="ghost small" title="Choose a different folder to check" hidden>Folder…</button>
-          <button id="btn-clip" class="ghost" title="Paste a text tab you copied (e.g. from Ultimate Guitar)" hidden>Paste from clipboard</button>
-          <button id="btn-paste" class="ghost">Type / paste text tab</button>
-          <label class="button">Import files<input id="file-input" type="file" multiple hidden
-            accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.gp8,.xml,.musicxml,.mxl,.cap,.capx,.ptb,.txt,.pdf"></label>
-        </div>
+    <section class="panel welcome">
+      <h2>Add your first song</h2>
+      <p class="muted">Your songs live in the library (☰). Search for a song there: <b>Quick</b> gets it from Ultimate Guitar by itself, <b>Manual</b> opens Ultimate Guitar for you to download it. You can also drop a Guitar Pro, Power Tab, PDF or text file anywhere on this page.</p>
+      <div class="row">
+        <button id="welcome-find" class="primary big">Find a song</button>
+        <a class="button big ghost" href="#practice">Go to Practice</a>
       </div>
-      <div id="lib-controls" class="row lib-controls">
-        <span class="seg" id="lib-chart" role="group" aria-label="Type of chart">
-          <button data-chart="all" class="on">All</button>
-          <button data-chart="pro" title="Guitar Pro / MusicXML: notation and tab you can play back">Pro tabs</button>
-          <button data-chart="tab" title="Tab typed as text">Text tabs</button>
-          <button data-chart="chords" title="Chords over lyrics">Chord charts</button>
-          <button data-chart="sheet" title="PDF sheet music shown as pages (piano, vocal staff)">Sheet music</button>
-        </span>
-        <label>Folder <select id="lib-folder"><option value="all">All songs</option></select></label>
-        <label>Sort <select id="lib-sort">
-          <option value="recent">Recent</option><option value="rating">My ranking</option>
-          <option value="title">Title</option><option value="practiced">Most practiced</option></select></label>
-      </div>
-      <div id="drop-zone" class="drop-zone">Drop Guitar Pro, MusicXML or .txt tab files here</div>
-      <div id="lib-ready" class="lib-tidy" hidden></div>
-      <div id="lib-tidy" class="lib-tidy" hidden></div>
-      <div id="library-list" class="cards"></div>
     </section>
+  </main>
 
+  <dialog id="sync-dialog" class="sync-dialog">
     <section class="panel sync-panel">
       <h2>Sync and backup</h2>
       <p class="muted">Keep your songs, setlists and practice log the same on every device, through a <b>private</b> GitHub repository of your own. Audio files added for play-along stay on the device that has them (YouTube links sync).</p>
@@ -123,8 +109,9 @@
         <button id="backup-export" class="small ghost" title="Everything in one file (play-along audio files not included)">Download a backup file</button>
         <label class="button small ghost">Restore a backup…<input id="backup-import" type="file" accept=".json,application/json" hidden></label>
       </div>
+      <form method="dialog" class="row spread"><span></span><button class="ghost">Close</button></form>
     </section>
-  </main>
+  </dialog>
 
   <!-- PLAYER -->
   <main id="view-player" class="view player-view" hidden>
@@ -1007,6 +994,7 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
+  <div id="drop-zone" class="drop-over" hidden><span>Drop to import</span></div>
 
   <script type="module" src="js/app.js"></script>
 </body>

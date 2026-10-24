@@ -1,4 +1,4 @@
-// App shell: routing, library, file import, text-tab editor and "find tabs online" links.
+// App shell: routing, the library (in the ☰ drawer), file import, text-tab editor and the Quick Song Importer.
 import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { askVersion } from './version.js';
@@ -10,15 +10,16 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
-import { versionLabel, syncState, chartType, CHART_LABEL, SORTS, filterSongs, folderNames, stars, splitGroups } from './songmeta.js';
-import { loadFolders, moveSong, rateSong, addFolder } from './folders.js';
-import { formatDuration, recoverPendingSessions } from './practice.js';
+import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, splitGroups } from './songmeta.js';
+import { loadFolders, moveSong, rateSong, addFolder, renameFolder, deleteFolder } from './folders.js';
+import { recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
-import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showHelper, setupUG } from './quickimport.js';
-import { TAB_SOURCES, sourceUrl } from './tabsources.js';
+import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showStatus, setupUG, TAB_FILE } from './quickimport.js';
+import { sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
-import { initDrawer } from './drawer.js';
+import { initDrawer, openDrawer, addToSetlist, setlistTargetName } from './drawer.js';
+import { popMenu } from './menu.js';
 import { initSync } from './syncui.js';
 import { parseFilename } from './tabinfo.js';
 
@@ -26,6 +27,7 @@ const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const VIEWS = ['library', 'player', 'text', 'sheet', 'practice', 'scales', 'keys', 'tools', 'vocal', 'log'];
 const PRACTICE_VIEWS = ['practice', 'scales', 'keys', 'tools', 'vocal']; // all highlight the Practice tab
+const SONG_VIEWS = ['player', 'text', 'sheet']; // a song open: the Songs tab
 let currentView = null;
 let editingId = null;
 
@@ -39,11 +41,24 @@ function toast(message, ms = 3000) {
 
 /* ---------- routing ---------- */
 
+// Songs (#library) opens the song you had open last; the library itself is in the ☰ drawer.
+const LAST_SONG = 'fretboard-last-song';
+const lastSongId = () => { try { return Number(localStorage.getItem(LAST_SONG)) || null; } catch { return null; } };
+
 async function route() {
   const [name, arg] = (location.hash.slice(1) || 'library').split('/');
   let view = VIEWS.includes(name) ? name : 'library';
   let song = null;
   let editing = false;
+  if (view === 'library' && name !== 'song' && name !== 'edit') {
+    const last = lastSongId();
+    const to = last && await getSong(last) ? last
+      : (await listSongs()).filter((s) => chartType(s) !== 'exercise').sort(SORTS.recent)[0]?.id; // deleted: the latest one
+    if (to) { location.replace(`#song/${to}`); return; }
+  }
+  if (name === 'song' || name === 'edit') {
+    try { if (await getSong(Number(arg))) localStorage.setItem(LAST_SONG, String(Number(arg))); } catch { /* fine */ }
+  }
   if (name === 'song') {
     song = await getSong(Number(arg));
     const sub = location.hash.split('/')[2];
@@ -67,9 +82,8 @@ async function route() {
 
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== view; });
   document.body.classList.toggle('in-player', view === 'player');
-  document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view || (a.dataset.nav === 'practice' && PRACTICE_VIEWS.includes(view))));
+  document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view || (a.dataset.nav === 'library' && SONG_VIEWS.includes(view)) || (a.dataset.nav === 'practice' && PRACTICE_VIEWS.includes(view))));
 
-  if (view === 'library') renderLibrary();
   if (view === 'log') renderLog();
   if (view === 'practice') renderPractice();
   if (view === 'scales') renderScales();
@@ -80,59 +94,90 @@ async function route() {
   if (view !== 'text') window.scrollTo(0, 0);
 }
 
-/* ---------- library ---------- */
+/* ---------- library (the ☰ drawer's Songs tab) ---------- */
 
+// One list, A–Z by title, filtered by the search, a song type and a folder ("All songs" holds every song).
 let chartFilter = 'all';
+let folderFilter = 'all'; // 'all' | '' (no folder) | a folder's name
 let folderList = [];
+let lastAll = [];
+let libSongs = [];
+let libNames = [];
+const TYPES = [['all', 'All types'], ['pro', 'Pro tabs'], ['tab', 'Text tabs'], ['chords', 'Chord charts'], ['sheet', 'Sheet music']];
+const folderLabel = (f) => (f === 'all' ? 'All songs' : f === '' ? 'No folder' : f);
+const openSongId = () => { const [n, id] = location.hash.slice(1).split('/'); return n === 'song' || n === 'edit' ? Number(id) : null; };
+const initial = (t) => { const c = String(t || '').trim().replace(/^(the|a)\s+/i, '').charAt(0).toUpperCase(); return /[A-Z]/.test(c) ? c : '#'; };
+const drawerOpen = () => document.body.classList.contains('drawer-open');
 
 async function renderLibrary() {
   const all = await listSongs();
+  lastAll = all;
   folderList = await loadFolders();
-  const names = folderNames(all.filter((s) => chartType(s) !== 'exercise'), folderList);
-  const folderSel = $('lib-folder');
-  const wanted = folderSel.value || 'all';
-  folderSel.innerHTML = `<option value="all">All songs</option><option value="">No folder</option>${names.map((n) => `<option>${escape(n)}</option>`).join('')}`;
-  folderSel.value = [...folderSel.options].some((o) => o.value === wanted) ? wanted : 'all';
-
-  const songs = filterSongs(all, { text: $('lib-filter').value, chart: chartFilter, folder: folderSel.value })
-    .sort(SORTS[$('lib-sort').value] || SORTS.recent);
-  const total = all.filter((s) => chartType(s) !== 'exercise').length;
-  document.querySelectorAll('#lib-chart [data-chart]').forEach((b) => b.classList.toggle('on', b.dataset.chart === chartFilter));
-  $('lib-controls').hidden = !total;
+  const songsOnly = all.filter((s) => chartType(s) !== 'exercise');
+  libNames = folderNames(songsOnly, folderList);
+  if (folderFilter !== 'all' && folderFilter !== '' && !libNames.includes(folderFilter)) folderFilter = 'all';
+  const q = $('find-query').value.trim();
+  const shown = filterSongs(all, { chart: chartFilter, folder: folderFilter });
+  libSongs = filterSongs(shown, { text: q }).sort(SORTS.title);
+  $('lib-folder-btn').innerHTML = `📁 <b>${escape(folderLabel(folderFilter))}</b> <span class="muted">${shown.length}</span> ▾`;
+  $('lib-folder-btn').title = 'Folders';
+  $('lib-type-chip').hidden = chartFilter === 'all';
+  $('lib-type-chip').textContent = `${TYPES.find(([k]) => k === chartFilter)?.[1] || ''} ✕`;
+  $('lib-type-chip').title = 'Show every type';
+  $('lib-type-btn').classList.toggle('dot', chartFilter !== 'all');
   renderTidy(all);
   showReady();
 
-  $('library-list').innerHTML = songs.map((s) => {
+  const cur = openSongId();
+  const letters = !q && libSongs.length > 12;
+  let letter = '';
+  $('library-list').innerHTML = libSongs.map((s) => {
     const type = chartType(s);
-    return `<article class="card" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
-      <div class="title">${escape(s.title)}</div>
-      <div class="meta">${escape(s.artist || '')}</div>
-      <div class="meta">
-        ${s.chordSheet && (type === 'pro' || type === 'tab') // the song has its chord sheet too: open either one
-          ? `<button class="badge open type-${type}" data-act="open-tab" title="Open the tab">${escape(CHART_LABEL[type])}</button><button class="badge open type-chords" data-act="open-chords" title="Open the chord sheet: chords over the words">Chords</button>`
-          : `<span class="badge type-${type}">${escape(CHART_LABEL[type])}</span>`}
-        ${versionLabel(s) ? `<span class="badge ver-${s.version.type}" title="The recording this tab follows">${escape(versionLabel(s))}</span>` : ''}
-        ${type === 'pro' || type === 'tab' ? (() => { const y = syncState(s); return `<span class="badge sync-${y.state}" title="Play-along video">${y.state === 'synced' ? '✓ Synced' : y.state === 'none' ? '○ No video' : '◐ ' + escape(y.label)}</span>`; })() : ''}
-        ${s.folder ? `<span class="badge folder">📁 ${escape(s.folder)}</span>` : ''}
-        ${s.practiceSeconds ? `<span>${formatDuration(s.practiceSeconds)} practiced</span>` : ''}
-        ${s.bestSpeed ? `<span>top ${escape(s.bestSpeed)}%</span>` : ''}
-      </div>
-      <div class="rate" role="group" aria-label="Your ranking">${[1, 2, 3, 4, 5].map((n) => `<button class="star${n <= (s.rating || 0) ? ' on' : ''}" data-act="rate" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}" aria-label="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</div>
-      <div class="actions">
-        <label class="folder-pick" title="Move to a folder">📁<select data-act="folder" aria-label="Folder">
-          <option value="">No folder</option>${names.map((n) => `<option${n === s.folder ? ' selected' : ''}>${escape(n)}</option>`).join('')}<option value="__new__">New folder…</option></select></label>
-        <button class="small ghost" data-act="menu" aria-label="More options for ${escape(s.title)}" aria-haspopup="menu">⋮</button>
-        <button class="small ghost" data-act="rename">${s.kind === 'text' ? 'Edit' : 'Rename'}</button>
-        <button class="small ghost danger" data-act="delete">Delete</button>
-      </div>
-    </article>`;
-  }).join('') || (total ? '<div class="empty">No songs match these filters.</div>' : `<div class="empty-start">
-      <p>No songs yet.</p>
-      <div class="row">
-        <button class="primary big" data-start="add">+ Song</button>
-        <a class="button big ghost" href="#practice">Go to Practice</a>
-      </div>
-      <p class="muted small-text">Add a song by searching for it above, importing a Guitar Pro file, or pasting a tab. Scales, chord changes, rhythm and vocal training are on the Practice page.</p></div>`);
+    const L = initial(s.title);
+    const head = letters && L !== letter ? `<li class="lib-letter" aria-hidden="true">${L}</li>` : '';
+    letter = L;
+    return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
+      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span></a>
+      ${s.rating ? `<span class="lib-stars" title="Your ranking">★${s.rating}</span>` : ''}
+      <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu">⋮</button></li>`;
+  }).join('') || `<li class="lib-empty">${q
+    ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button></div>`
+    : songsOnly.length ? '<p class="muted">No songs here.</p>' : '<p class="muted">No songs yet. Type a song above to get it from Ultimate Guitar, or drop a file here.</p>'}</li>`;
+}
+
+// The folder menu: which folder you're in, and making, renaming and deleting folders.
+function folderMenu() {
+  const count = (f) => filterSongs(lastAll, { folder: f }).length;
+  const real = folderFilter && folderFilter !== 'all';
+  popMenu($('lib-folder-btn'), [
+    { k: 'f:all', label: 'All songs', hint: `${count('all')} songs`, check: folderFilter === 'all' },
+    { k: 'f:none', label: 'No folder', hint: `${count('')} songs`, check: folderFilter === '' },
+    ...libNames.map((n, i) => ({ k: `f:${i}`, label: n, hint: `${count(n)} songs`, check: folderFilter === n })),
+    '-',
+    { k: 'new', label: 'New folder…' },
+    real ? { k: 'rename', label: `Rename “${folderFilter}”…` } : null,
+    real ? { k: 'delete', label: `Delete “${folderFilter}”…`, hint: 'Its songs stay in All songs', danger: true } : null,
+  ], async (k) => {
+    if (k.startsWith('f:')) { const v = k.slice(2); folderFilter = v === 'all' ? 'all' : v === 'none' ? '' : libNames[Number(v)]; renderLibrary(); return; }
+    if (k === 'new') {
+      const f = await ask({ title: 'New folder', ok: 'Create', fields: { title: '', artist: '' }, single: true });
+      const name = f?.title.trim();
+      if (name) { await addFolder(name); folderFilter = name; renderLibrary(); }
+    } else if (k === 'rename') {
+      const f = await ask({ title: 'Rename folder', ok: 'Save', fields: { title: folderFilter, artist: '' }, single: true });
+      const name = f?.title.trim();
+      if (name && name !== folderFilter) { await renameFolder(folderFilter, name); folderFilter = name; renderLibrary(); }
+    } else if (k === 'delete') {
+      if (!(await ask({ title: `Delete the folder “${folderFilter}”?`, text: 'Its songs stay in your library.', ok: 'Delete' }))) return;
+      await deleteFolder(folderFilter);
+      folderFilter = 'all';
+      renderLibrary();
+    }
+  });
+}
+
+function typeMenu() {
+  popMenu($('lib-type-btn'), TYPES.map(([k, label]) => ({ k, label, check: chartFilter === k })), (k) => { chartFilter = k; renderLibrary(); });
 }
 
 /* ---------- combining songs that older imports split up ---------- */
@@ -185,20 +230,12 @@ async function undoCombineSplit() {
 }
 
 async function onLibraryClick(e) {
-  const card = e.target.closest('.card');
-  if (!card) return;
-  const id = Number(card.dataset.id);
-  const act = e.target.closest('button')?.dataset.act;
-  if (e.target.closest('select, .folder-pick')) return; // handled on change
-  if (!act) { location.hash = `song/${id}`; return; }
-  if (act === 'rate') {
-    const n = Number(e.target.closest('button').dataset.n);
-    await rateSong(id, (await getSong(id)).rating === n ? 0 : n); // pressing the same star again clears it
-    return;
-  }
-
-  if (act === 'menu') { openCardMenu(card, null); return; }
-  return cardAct(act, id);
+  const qi = e.target.closest('[data-qi]');
+  if (qi) { findSong(qi.dataset.qi); return; }
+  const row = e.target.closest('.lib-row');
+  if (!row) return;
+  if (e.target.closest('[data-act=menu]')) { openCardMenu(row, null); return; }
+  if (e.target.closest('a')) openDrawer(false); // the song opens (its link)
 }
 
 async function cardAct(act, id) {
@@ -206,6 +243,8 @@ async function cardAct(act, id) {
   if (!song) return;
   if (act === 'edit') { location.hash = `edit/${id}`; return; }
   if (act === 'practice') { location.hash = `song/${id}`; return; }
+  if (act === 'setlist') { await addToSetlist(id); return; }
+  if (act === 'folder') { folderPick(song); return; }
   if (act === 'open-tab') { location.hash = `song/${id}/tab`; return; }
   if (act === 'open-chords') { location.hash = `song/${id}/chords`; return; }
   if (act === 'version') { await askVersion(song); renderLibrary(); return; }
@@ -262,62 +301,74 @@ function ask({ title, text = '', ok = 'OK', fields = null, single = false }) {
   });
 }
 
-// ⋮ button, right-click and long-press on a song: edit mode, version, rename, delete.
-let menuEl = null;
-function closeCardMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
-function openCardMenu(card, at) {
-  closeCardMenu();
-  const id = Number(card.dataset.id);
-  const editable = card.dataset.type !== 'chords' && card.dataset.type !== 'exercise';
-  menuEl = document.createElement('div');
-  menuEl.className = 'card-menu';
-  menuEl.setAttribute('role', 'menu');
-  menuEl.innerHTML = [
-    editable ? ['edit', '✎ Edit mode', 'Arrange bars, fix notes, match a recording'] : null,
-    ['practice', '▶ Open in Practice'],
-    ['version', '🎧 Version…', 'Studio, live or cover'],
-    card.dataset.parts ? ['split', 'Split tabs apart', 'One song for each tab again'] : null,
-    card.dataset.type === 'text' && combinePref !== 'ask' ? ['combine-ask', 'Ask before combining tabs', `Now: always ${combinePref === 'yes' ? 'combine' : 'keep apart'}`] : null,
-    ['rename', 'Rename'],
-    ['delete', 'Delete'],
-  ].filter(Boolean).map(([k, label, hint]) => `<button role="menuitem" data-m="${k}" class="${k === 'delete' ? 'danger' : ''}">${label}${hint ? `<small>${hint}</small>` : ''}</button>`).join('');
-  document.body.append(menuEl);
-  const r = card.getBoundingClientRect();
-  const x = at ? at.x : r.right - 220;
-  const y = at ? at.y : r.bottom;
-  Object.assign(menuEl.style, { left: Math.max(8, Math.min(x, innerWidth - 240)) + 'px', top: Math.max(8, Math.min(y, innerHeight - menuEl.offsetHeight - 8)) + 'px' });
-  menuEl.addEventListener('click', (e) => {
-    const k = e.target.closest('[data-m]')?.dataset.m;
-    if (!k) return;
-    closeCardMenu();
+// ⋮ button, right-click and long-press on a song: setlist, folder, ranking, edit mode, version, rename, delete.
+function openCardMenu(row, at) {
+  const id = Number(row.dataset.id);
+  const song = libSongs.find((s) => s.id === id);
+  if (!song) return;
+  const type = row.dataset.type;
+  const editable = type !== 'chords' && type !== 'exercise';
+  const list = setlistTargetName();
+  popMenu(at || row.querySelector('[data-act=menu]'), [
+    { k: 'setlist', label: list ? `Add to “${list}”` : 'Add to a setlist', hint: list ? '' : 'Starts “My setlist”' },
+    { k: 'folder', label: 'Move to folder…', hint: song.folder || 'No folder' },
+    { stars: song.rating || 0 },
+    '-',
+    song.chordSheet && (type === 'pro' || type === 'tab') ? { k: 'open-chords', label: 'Open the chord sheet', hint: 'Chords over the words' } : null,
+    editable ? { k: 'edit', label: '✎ Edit mode', hint: 'Arrange bars, fix notes, match a recording' } : null,
+    { k: 'version', label: '🎧 Version…', hint: 'Studio, live or cover' },
+    row.dataset.parts ? { k: 'split', label: 'Split tabs apart', hint: 'One song for each tab again' } : null,
+    type === 'text' && combinePref !== 'ask' ? { k: 'combine-ask', label: 'Ask before combining tabs', hint: `Now: always ${combinePref === 'yes' ? 'combine' : 'keep apart'}` } : null,
+    { k: 'rename', label: song.kind === 'text' ? 'Edit' : 'Rename' },
+    { k: 'delete', label: 'Delete', danger: true },
+  ], async (k, b) => {
+    if (k === 'star') { const n = Number(b.dataset.n); await rateSong(id, (song.rating || 0) === n ? 0 : n); return; } // the same star again clears it
+    if (k === 'open-chords') openDrawer(false);
     cardAct(k, id);
   });
-  menuEl.querySelector('button')?.focus();
 }
+
+// Move to folder: the folders as a second menu, with New folder…
+function folderPick(song) {
+  const row = $('library-list').querySelector(`.lib-row[data-id="${song.id}"]`);
+  popMenu(row?.querySelector('[data-act=menu]') || $('lib-folder-btn'), [
+    { k: 'none', label: 'No folder', check: !song.folder },
+    ...libNames.map((n, i) => ({ k: String(i), label: n, check: song.folder === n })),
+    '-',
+    { k: 'new', label: 'New folder…' },
+  ], async (k) => {
+    let name = k === 'none' ? '' : libNames[Number(k)];
+    if (k === 'new') {
+      const f = await ask({ title: 'New folder', ok: 'Create', fields: { title: '', artist: '' }, single: true });
+      name = f?.title.trim() || '';
+      if (!name) return;
+      await addFolder(name);
+    }
+    await moveSong(song.id, name);
+  });
+}
+
 function initCardMenu() {
   const list = $('library-list');
   list.addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.card');
-    if (!card) return;
+    const row = e.target.closest('.lib-row');
+    if (!row) return;
     e.preventDefault();
-    openCardMenu(card, { x: e.clientX, y: e.clientY });
+    openCardMenu(row, { x: e.clientX, y: e.clientY });
   });
   let timer = 0;
   let from = null;
   list.addEventListener('pointerdown', (e) => {
-    const card = e.target.closest('.card');
-    if (!card || e.pointerType === 'mouse' || e.target.closest('button, select, label')) return;
+    const row = e.target.closest('.lib-row');
+    if (!row || e.pointerType === 'mouse' || e.target.closest('button')) return;
     from = { x: e.clientX, y: e.clientY };
-    timer = setTimeout(() => { list.dataset.held = '1'; openCardMenu(card, { x: from.x, y: from.y }); }, 550);
+    timer = setTimeout(() => { list.dataset.held = '1'; openCardMenu(row, { x: from.x, y: from.y }); }, 550);
   });
   const stop = () => clearTimeout(timer);
   list.addEventListener('pointermove', (e) => { if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10) stop(); });
   list.addEventListener('pointerup', stop);
   list.addEventListener('pointercancel', stop);
   list.addEventListener('click', (e) => { if (list.dataset.held) { delete list.dataset.held; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
-  document.addEventListener('pointerdown', (e) => { if (menuEl && !e.target.closest('.card-menu, [data-act=menu]')) closeCardMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCardMenu(); });
-  window.addEventListener('hashchange', closeCardMenu);
 }
 
 /* ---------- import ---------- */
@@ -634,7 +685,7 @@ function importFiles(files, opts) {
   return run;
 }
 
-async function importFilesNow(files, { quietIfEmpty = false, auto = null, replace = false } = {}) {
+async function importFilesNow(files, { quietIfEmpty = false, auto = null, replace = false, openOne = false } = {}) {
   // the UG helper's own notes (its run note, latest.txt, collected.txt), not songs
   files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name) && !/^(latest|collected)\.txt$/i.test(f.name));
   let added = 0;
@@ -719,24 +770,30 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
   else if (!quietIfEmpty && pdfs.length < 2 && !combined) toast('Nothing to import.'); // a cancelled PDF import already said so
+  if (openOne && ids.length === 1) open = ids[0]; // a file you picked or dropped: open it
   if (open) { location.hash = `#song/${open}`; return { added, failed, ids }; } // straight to the new song
   renderLibrary();
   return { added, failed, ids };
 }
 
+// Song files can be dropped anywhere, on any page.
 function initImport() {
-  $('file-input').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
+  $('file-input').addEventListener('change', (e) => { importFiles([...e.target.files], { openOne: true }); e.target.value = ''; });
   const zone = $('drop-zone');
-  ['dragenter', 'dragover'].forEach((t) => document.addEventListener(t, (e) => {
-    if (currentView !== 'library') return;
-    e.preventDefault();
-    zone.classList.add('over');
-  }));
-  ['dragleave', 'drop'].forEach((t) => document.addEventListener(t, () => zone.classList.remove('over')));
+  const files = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  let depth = 0;
+  document.addEventListener('dragenter', (e) => { if (!files(e)) return; depth++; zone.hidden = false; });
+  document.addEventListener('dragover', (e) => { if (files(e)) e.preventDefault(); });
+  document.addEventListener('dragleave', (e) => { if (files(e) && --depth <= 0) { depth = 0; zone.hidden = true; } });
   document.addEventListener('drop', (e) => {
-    if (currentView !== 'library') return;
+    if (!files(e)) return;
     e.preventDefault();
-    importFiles([...e.dataTransfer.files]);
+    depth = 0;
+    zone.hidden = true;
+    const all = [...e.dataTransfer.files];
+    const songs = all.filter((f) => TAB_FILE.test(f.name) || /\.capx?$/i.test(f.name));
+    if (!songs.length) { toast('Not a song file. Fretboard reads Guitar Pro, Power Tab, MusicXML, PDF and text tabs.', 5000); return; }
+    importFiles(songs, { openOne: true });
   });
 }
 
@@ -753,7 +810,6 @@ function openEditor(song, prefill = {}) {
 }
 
 function initEditor() {
-  $('btn-paste').addEventListener('click', () => openEditor(null));
   $('tab-dialog').addEventListener('close', async () => {
     if ($('tab-dialog').returnValue !== 'save') return;
     const fields = {
@@ -782,45 +838,61 @@ function openPlayAlongSheet(tries = 20) {
   else if (tries > 0) setTimeout(() => openPlayAlongSheet(tries - 1), 150);
 }
 
-function initFind() {
-  const box = $('find-sources');
-  for (const s of TAB_SOURCES) {
-    const b = document.createElement('button');
-    b.type = 'submit';
-    b.dataset.site = s.id;
-    b.textContent = s.label;
-    b.title = s.note;
-    if (!s.primary) b.className = 'ghost';
-    box.append(b);
-  }
-  $('find-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const query = $('find-query').value;
-    if (!query.trim()) { $('find-query').focus(); return; }
-    const site = e.submitter?.dataset.site || 'ug-gp';
-    const url = sourceUrl(site, query);
-    // Ultimate Guitar with the UG helper running (tools/ug_watch.py): the search opens in the helper's
-    // Chrome, every type listed. Open an Official or Pro song there and its PDFs are saved and added
-    // here as one song by themselves.
-    // Not running yet: it's started (its link) when it has run in this browser before.
-    if (site === 'ug-gp' && helperPossible()) {
-      await setupUG(); // the first time only: auto-import and the UG helper explained
-      let up = await ugHelper();
-      const tried = !up && localStorage.getItem('fretboard-ug-helper-set') === '1';
-      if (tried) up = await startHelper();
-      const all = url.replace(/&type=\d+/, '');
-      if (up && (await openInCollector(all))) {
-        watchRuns();
-        watchDownloads({ query, url: all });
-        showHelper(up);
-        toast('Next step: pick your song in the Ultimate Guitar window that just opened. Click the version you want; it’s added here by itself.', 9000);
-        return;
-      }
-      if (tried) return; // too late for a new tab (the browser would block it); the line under the search says what to do
+// The Quick Song Importer: the library's search box. Typing filters the library; Quick (or Enter, when
+// no song in the library matches) has the UG helper find, save and add the song; Manual opens the
+// Ultimate Guitar search to download it yourself (auto-import picks the file up).
+async function findSong(mode) {
+  const query = $('find-query').value;
+  if (!query.trim()) { $('find-query').focus(); return; }
+  const url = sourceUrl('ug-gp', query);
+  // The UG helper (tools/ug_watch.py): the search opens in its Chrome, every type listed. Open an Official
+  // or Pro song there and its files are saved and added here as one song by themselves.
+  // Not running yet: it's started (its link) when it has run in this browser before.
+  if (mode === 'quick' && helperPossible()) {
+    await setupUG(); // the first time only: auto-import and the UG helper explained
+    let up = await ugHelper();
+    const tried = !up && localStorage.getItem('fretboard-ug-helper-set') === '1';
+    if (tried) up = await startHelper();
+    const all = url.replace(/&type=\d+/, '');
+    if (up && (await openInCollector(all))) {
+      watchRuns();
+      watchDownloads({ query, url: all });
+      showStatus(up);
+      toast('Pick your song in the Ultimate Guitar window that just opened. It’s added here by itself.', 9000);
+      return;
     }
-    window.open(url, '_blank', 'noopener');
-    watchDownloads({ query, url });
+    if (tried) { toast('The UG helper didn’t start. Press “UG helper” under the search, or use Manual.', 7000); return; } // too late for a new tab (the browser would block it)
+  }
+  window.open(url, '_blank', 'noopener');
+  watchDownloads({ query, url });
+}
+
+function initFind() {
+  const input = $('find-query');
+  const modes = () => { $('qi-modes').hidden = !input.value.trim(); };
+  if (!helperPossible()) { // Quick needs the UG helper (Windows); Manual is the way here
+    $('qi-modes').querySelector('[data-mode=quick]').remove();
+    const m = $('qi-modes').querySelector('[data-mode=manual]');
+    m.className = 'primary small';
+    m.textContent = 'Find on UG';
+  }
+  input.addEventListener('input', () => { modes(); renderLibrary(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; modes(); renderLibrary(); } });
+  $('find-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const mode = e.submitter?.dataset.mode;
+    if (!mode && libSongs.length) { // Enter with the song in the library: open it
+      location.hash = `song/${libSongs[0].id}`;
+      openDrawer(false);
+      return;
+    }
+    findSong(mode || (helperPossible() ? 'quick' : 'manual'));
   });
+  $('lib-type-btn').addEventListener('click', typeMenu);
+  $('lib-type-chip').addEventListener('click', () => { chartFilter = 'all'; renderLibrary(); });
+  $('lib-folder-btn').addEventListener('click', folderMenu);
+  $('welcome-find').addEventListener('click', () => openDrawer(true, { focus: true }));
+  modes();
 }
 
 /* ---------- start ---------- */
@@ -846,7 +918,7 @@ async function main() {
   initLayers();
   initVocal();
   initDrawer();
-  initQuickImport({ importFiles, openEditor, toast, openSong: (id, { playAlong = false } = {}) => {
+  initQuickImport({ importFiles, openEditor, toast, renderLibrary, openSong: (id, { playAlong = false } = {}) => {
     location.hash = `song/${id}`;
     if (playAlong) openPlayAlongSheet();
   } });
@@ -868,40 +940,15 @@ async function main() {
   });
   window.addEventListener('hashchange', () => { undoCombine = null; });
   initCardMenu();
-  $('library-list').addEventListener('change', async (e) => {
-    if (e.target.dataset.act !== 'folder') return;
-    let name = e.target.value;
-    if (name === '__new__') {
-      const f = await ask({ title: 'New folder', ok: 'Create', fields: { title: '', artist: '' }, single: true });
-      name = f?.title.trim() || '';
-      if (name) await addFolder(name);
-    }
-    await moveSong(Number(e.target.closest('.card').dataset.id), name);
-  });
-  $('lib-filter').addEventListener('input', renderLibrary);
-  $('lib-sort').addEventListener('change', renderLibrary);
-  $('lib-folder').addEventListener('change', renderLibrary);
-  $('lib-chart').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-chart]');
-    if (b) { chartFilter = b.dataset.chart; renderLibrary(); }
-  });
-  window.addEventListener('songschange', () => { if (!$('view-library').hidden) renderLibrary(); });
+  window.addEventListener('fblibrary', renderLibrary); // the drawer's Songs tab is showing
+  window.addEventListener('songschange', () => { if (drawerOpen()) renderLibrary(); });
   window.addEventListener('fbtoast', (e) => toast(e.detail));
-  window.addEventListener('findonline', (e) => { // "Find … online" from the top-bar search
-    location.hash = 'library';
-    $('find-query').value = e.detail || '';
-    setTimeout(() => { $('find-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('find-query').focus(); }, 50);
-  });
-  // "+ Song": jump to the prominent Find panel (the quickest way to add one)
-  const addSong = () => $('find-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }) || $('find-query').focus();
-  $('btn-add-song').addEventListener('click', addSong);
-  $('library-list').addEventListener('click', (e) => { if (e.target.closest('[data-start="add"]')) addSong(); });
   window.addEventListener('hashchange', route);
   await recoverPendingSessions();
   await seedDemos();
   route();
   initSync({ toast });
-  window.addEventListener('librarysynced', () => { if (!$('view-library').hidden) renderLibrary(); });
+  window.addEventListener('librarysynced', () => { if (drawerOpen()) renderLibrary(); });
   if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.fretboardAndroid) { // the Android app bundles its files
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

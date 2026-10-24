@@ -1,10 +1,11 @@
-// One-click imports: paste a text tab straight from the clipboard, and pick up new
-// tab files from the Downloads folder (Chrome / Edge on desktop).
+// One-click imports: the UG helper and its status under the library's search, the + menu (paste a
+// text tab from the clipboard, pick up new tab files from the Downloads folder, Chrome / Edge on desktop).
 import { getValue, setValue, getSong, updateSong } from './db.js';
 import { bestMatch, matchScore } from './tabsources.js';
+import { popMenu } from './menu.js';
 
 const $ = (id) => document.getElementById(id);
-const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|ptb|txt|pdf)$/i;
+export const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|ptb|txt|pdf)$/i;
 const SCAN_DAYS = 14; // only look at recent downloads
 const fileKey = (f) => `${f.name}|${f.size}|${f.lastModified}`;
 
@@ -73,7 +74,7 @@ async function* pdfsIn(dir, path = '', depth = 0) {
 // folder and its UG Songs song folders: one click for each instrument's tab. Files already imported are skipped.
 async function importSongPdfs(importFiles, toast) {
   const query = $('find-query').value.trim();
-  if (!query) { toast('Type the song in the box at the top first, then press this.', 5000); $('find-query').focus(); return; }
+  if (!query) { toast('Type the song in the search first, then press this.', 5000); $('find-query').focus(); return; }
   let dir;
   try { dir = await folderHandle(); } catch { return; }
   const seen = new Set((await getValue('importedFiles')) || []);
@@ -112,7 +113,7 @@ async function pickFiles(importFiles) {
     $('file-input').click(); // picker not allowed here: the plain file chooser
     return;
   }
-  importFiles(await Promise.all(handles.map((h) => h.getFile())));
+  importFiles(await Promise.all(handles.map((h) => h.getFile())), { openOne: true });
 }
 
 /* ---------- songs the UG collector finished ---------- */
@@ -164,8 +165,8 @@ export async function showReady() {
     if (!dir) { // after a browser restart reading the folder needs a click again
       box.hidden = !stored;
       if (stored) {
-        box.append('Songs saved by the UG collector show up here. ');
-        const b = button('Check for them', 'ghost small', async () => {
+        box.append('Songs the UG helper saved: ');
+        const b = button('Check', 'ghost small', async () => {
           try { await stored.requestPermission({ mode: 'read' }); } catch { return; }
           showReady();
         });
@@ -179,10 +180,10 @@ export async function showReady() {
     const r = runs[0];
     const text = document.createElement('span');
     const n = r.tracks.length;
-    const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'a text file' : 'a Guitar Pro file';
-    const held = r.held ? ` ${r.missing.length} not saved (${r.missing.join(', ')}).` : '';
-    text.textContent = `“${r.song}” is ready: ${kind} saved by the UG collector.${held}${runs.length > 1 ? ` ${runs.length - 1} more after this.` : ''}`;
-    box.append(text, button('Review & create', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.id); showReady(); }));
+    const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'text' : 'Guitar Pro';
+    const held = r.held ? `, ${r.missing.length} not saved` : '';
+    text.textContent = `“${r.song}” is ready (${kind}${held})${runs.length > 1 ? ` · ${runs.length - 1} more` : ''}`;
+    box.append(text, button('Add', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.id); showReady(); }));
   } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
 }
 
@@ -259,7 +260,7 @@ let helperPoll = 0;
 export async function startHelper(waitMs = 30000) {
   if (!helperPossible()) return null;
   helperState = 'starting';
-  showHelper();
+  showStatus();
   location.href = 'fretboard-helper://start';
   const until = Date.now() + waitMs;
   let s = null;
@@ -270,92 +271,126 @@ export async function startHelper(waitMs = 30000) {
   helperState = s ? '' : 'failed';
   // didn't come up: Find tabs online stops waiting for it (and opens the site as before) until it answers again
   if (!s) try { localStorage.removeItem(HELPER_SET); } catch { /* fine */ }
-  await showHelper(s);
+  await showStatus(s);
   return s;
 }
 
-/** The UG helper line in Find tabs online: running, or a button that starts it. */
-export async function showHelper(status) {
-  const el = $('find-helper');
-  if (!el || !helperPossible()) return;
-  const s = status === undefined ? await ugHelper() : status;
-  el.hidden = false;
-  el.innerHTML = '';
-  const setup = document.createElement('a');
-  setup.href = SETUP_URL;
-  setup.download = 'Set up UG helper.cmd';
-  setup.textContent = 'Set up UG helper';
-  setup.title = 'Once per computer: download and run it (it installs the helper for your Windows user only)';
-  if (s) {
-    const on = document.createElement('span');
-    on.className = 'find-auto-on';
-    on.textContent = '● UG helper running: a search shows the results in its Chrome: pick the song and it’s saved (with its chords) and added here by itself. ';
-    const show = document.createElement('button');
-    show.type = 'button';
-    show.className = 'ghost small';
-    show.textContent = 'Show UG window';
-    show.title = 'Brings the UG helper\'s Chrome up, full screen (clicking it in the taskbar does too)';
-    show.addEventListener('click', showCollector);
-    el.append(on, show);
-    if (s.version >= 4) { // it runs out of sight: this is how it's closed
-      const stop = document.createElement('button');
-      stop.type = 'button';
-      stop.className = 'ghost small';
-      stop.textContent = 'Stop helper';
-      stop.title = 'Closes the UG helper and its Chrome window';
-      stop.addEventListener('click', async () => {
-        try {
-          const r = await (await fetch(HELPER + '/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })).json();
-          if (r.busy) { stop.textContent = 'Saving a song: wait, or Cancel it in its window'; return; }
-        } catch { /* gone already */ }
-        await new Promise((r) => setTimeout(r, 800));
-        showHelper();
-      });
-      el.append(' ', stop);
-    }
-    if (s.wait) { // UG's player isn't loading the song (often UG checking a public wifi network)
-      const w = document.createElement('strong');
-      w.className = 'find-wait';
-      w.textContent = ' ⚠ ' + s.wait + ' ';
-      el.append(w);
-    }
-    // while a song saves, look again in a few seconds (a wait shows or clears)
-    clearTimeout(helperPoll);
-    if (s.busy) helperPoll = setTimeout(() => { if (el.offsetParent) showHelper(); }, 3000);
-    if (typeof s.notation === 'boolean') { // older helpers have no such setting
-      const lab = document.createElement('label');
-      lab.title = 'Fretted tracks are also printed with the music staff, so Fretboard gets their dynamics (mf, ff) and words. Off, a save is about 15 s quicker';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = s.notation;
-      box.addEventListener('change', async () => {
-        try {
-          const r = await fetch(HELPER + '/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notation: box.checked }), signal: AbortSignal.timeout(5000) });
-          box.checked = (await r.json()).notation === true;
-        } catch { box.checked = !box.checked; }
-      });
-      lab.append(' ', box, ' Also save the Standard + Tab pages (dynamics, words; slower)');
-      el.append(lab);
-    }
+/* ---------- the status under the search: ✓ UG helper  ✓ Auto-import  ⋯ ---------- */
+
+let lastStatus = null;
+
+function chip(label, state, title, onClick) {
+  const b = button(label, `chip small qi-chip qi-${state}`, onClick);
+  b.title = title;
+  return b;
+}
+
+/** The marks under the library's search: is the UG helper running, is auto-import on; ⋯ has the rest. */
+export async function showStatus(status) {
+  const el = $('qi-status');
+  if (!el || !ctx) return;
+  if (!canWatch) { // the Android app and other browsers: no helper, no folder to watch
+    el.textContent = window.fretboardAndroid ? 'Download the Guitar Pro file on UG, then + › Import files.' : 'Quick add and auto-import need Chrome or Edge on a computer.';
+    el.classList.add('muted');
     return;
   }
-  if (helperState === 'starting') {
-    el.append('Starting the UG helper… (if Chrome asks to open it, tick Always allow and press Open)');
-    return;
+  const s = !helperPossible() ? null : status === undefined ? await ugHelper() : status;
+  lastStatus = s;
+  const dir = await grantedFolder();
+  el.replaceChildren();
+  if (helperPossible()) {
+    if (s) el.append(chip(s.busy ? '◌ UG helper saving' : '✓ UG helper', 'on', 'The UG helper is running: Quick finds songs in its Chrome window and adds them here', showCollector));
+    else if (helperState === 'starting') el.append(chip('◌ Starting…', 'busy', 'If Chrome asks to open it, tick Always allow and press Open', () => {}));
+    else if (helperState === 'failed') el.append(chip('⚠ UG helper didn’t start', 'bad', 'First time on this computer? Set it up once', () => setupUG(true)));
+    else el.append(chip('○ UG helper', 'off', helperKnown() ? 'Start the UG helper' : 'Set up the UG helper (once per computer)', () => (helperKnown() ? startHelper() : setupUG(true))));
   }
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'ghost small';
-  b.textContent = 'Start UG helper';
-  b.title = 'Opens the UG helper: Official / Pro songs and Guitar Pro tabs are then added here by themselves';
-  b.addEventListener('click', () => startHelper());
-  if (helperState === 'failed') {
-    el.append('The UG helper didn’t start. First time on this computer? Download and run ', setup, ' once, then ', b);
-  } else if (helperKnown()) {
-    el.append(b, ' Official and Pro songs and Guitar Pro tabs you open in it are added here by themselves.');
+  if (dir) {
+    el.append(chip(watch ? '◌ Waiting for your download' : '✓ Auto-import', 'on', watch ? 'Save the file on the site and it opens here by itself' : `New tab files in “${dir.name}” are added by themselves`, () => {}));
   } else {
-    el.append(b, ' First time on this computer? ', setup, ' once (Windows).');
+    el.append(chip('○ Auto-import', 'off', 'Pick your Downloads folder once: new tab files there are added by themselves', async () => {
+      try { await folderHandle(); } catch { return; }
+      showStatus();
+    }));
   }
+  const more = button('⋯', 'icon-btn small qi-gear', () => helperMenu(more));
+  more.setAttribute('aria-label', 'UG helper settings');
+  more.setAttribute('aria-haspopup', 'menu');
+  more.title = 'UG helper settings';
+  el.append(more);
+  if (s?.wait) { // UG's player isn't loading the song (often UG checking a public wifi network)
+    const w = document.createElement('strong');
+    w.className = 'find-wait';
+    w.textContent = '⚠ ' + s.wait;
+    el.append(w);
+  }
+  // while a song saves, look again in a few seconds (a wait shows or clears)
+  clearTimeout(helperPoll);
+  if (s?.busy) helperPoll = setTimeout(() => { if (el.offsetParent) showStatus(); }, 3000);
+}
+
+// ⋯: Show UG window, Stop helper, the Standard + Tab setting, the folder, setup.
+function helperMenu(anchor) {
+  const s = lastStatus;
+  popMenu(anchor, [
+    s ? { k: 'show', label: 'Show UG window', hint: 'Brings the helper’s Chrome up' } : null,
+    s && s.version >= 4 ? { k: 'stop', label: 'Stop helper', hint: 'Closes the UG helper and its Chrome window' } : null,
+    s && typeof s.notation === 'boolean' ? { k: 'notation', label: 'Also save Standard + Tab pages', hint: 'On: dynamics and lyrics for fretted tracks, about 15 s slower per song', check: s.notation } : null,
+    !s && helperPossible() ? { k: 'start', label: 'Start UG helper' } : null,
+    helperPossible() && !helperKnown() ? { k: 'setup-file', label: 'Set up UG helper', hint: 'Once per computer: download and run it' } : null,
+    '-',
+    { k: 'folder', label: 'Downloads folder…', hint: 'Where auto-import looks' },
+    { k: 'how', label: 'How it works' },
+  ], async (k) => {
+    if (k === 'show') showCollector();
+    else if (k === 'start') startHelper();
+    else if (k === 'how') setupUG(true);
+    else if (k === 'folder') changeFolder(ctx.toast);
+    else if (k === 'setup-file') {
+      const a = document.createElement('a');
+      a.href = SETUP_URL;
+      a.download = 'Set up UG helper.cmd';
+      a.click();
+    } else if (k === 'notation') {
+      try {
+        const r = await fetch(HELPER + '/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notation: !s.notation }), signal: AbortSignal.timeout(5000) });
+        const on = (await r.json()).notation === true;
+        ctx.toast(on ? 'Standard + Tab pages on: dynamics and lyrics, about 15 s slower per song.' : 'Standard + Tab pages off: quicker saves.', 5000);
+      } catch { ctx.toast('The UG helper didn’t answer.'); }
+      showStatus();
+    } else if (k === 'stop') {
+      try {
+        const r = await (await fetch(HELPER + '/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })).json();
+        if (r.busy) { ctx.toast('It’s saving a song: wait, or Cancel it in UG downloads.', 6000); return; }
+      } catch { /* gone already */ }
+      await new Promise((r) => setTimeout(r, 800));
+      showStatus();
+    }
+  });
+}
+
+/** The + menu next to the search: every other way to add a song, and sync. */
+export function moreMenu(anchor) {
+  const q = $('find-query').value.trim();
+  popMenu(anchor, [
+    { k: 'files', label: 'Import files…', hint: 'Guitar Pro, Power Tab, MusicXML, PDF, text' },
+    navigator.clipboard?.readText ? { k: 'clip', label: 'Paste from clipboard', hint: 'A text tab or chords you copied' } : null,
+    { k: 'type', label: 'Type / paste text tab' },
+    canWatch ? { k: 'downloads', label: 'Import new downloads', hint: 'Tab files from the last 14 days' } : null,
+    canWatch ? { k: 'pdfs', label: q ? `PDFs for “${q}”` : 'PDFs for a song', hint: q ? 'Every part in Downloads and UG Songs' : 'Type the song first', disabled: !q } : null,
+    '-',
+    { k: 'sync', label: 'Sync and backup…' },
+    canWatch ? { k: 'how', label: 'How it works', hint: 'Auto-import and the UG helper' } : null,
+  ], (k) => {
+    if (k === 'files') {
+      if (canWatch && 'showOpenFilePicker' in window) pickFiles(ctx.importFiles);
+      else $('file-input').click();
+    } else if (k === 'clip') pasteFromClipboard(ctx.openEditor);
+    else if (k === 'type') ctx.openEditor(null);
+    else if (k === 'downloads') checkDownloads(ctx.importFiles, ctx.toast).then(() => showStatus());
+    else if (k === 'pdfs') importSongPdfs(ctx.importFiles, ctx.toast);
+    else if (k === 'sync') $('sync-dialog').showModal();
+    else if (k === 'how') setupUG(true);
+  });
 }
 
 /** Brings the helper's Chrome window up (it works out of sight). */
@@ -473,6 +508,12 @@ export async function showQueue() {
     said.set(x.url, x.state);
   }
   const going = songs.some((x) => x.state === 'waiting' || x.state === 'saving');
+  const badge = $('menu-badge');
+  if (badge) { // on ☰: songs still saving, or one that needs you
+    const n = songs.filter((x) => ['waiting', 'saving', 'held', 'failed'].includes(x.state)).length;
+    badge.hidden = !n;
+    badge.textContent = n ? `⇣${n}` : '';
+  }
   if (going || songs.some((x) => x.state === 'held')) { // songs still to come in: keep picking them up
     if (runs) runs.until = Math.max(runs.until, Date.now() + 10 * 60e3); else watchRuns();
   }
@@ -557,7 +598,7 @@ export async function setupUG(always = false) {
             await setValue('downloadsDir', d);
           }
         } catch { return; } // cancelled
-        showAuto();
+        showStatus();
         draw();
       }));
     }
@@ -600,8 +641,8 @@ export async function setupUG(always = false) {
       dlg.append(step(2, !!helper, helper ? 'The UG helper is running' : 'The UG helper (Ultimate Guitar)',
         para('It opens Ultimate Guitar in its own Chrome window, where you log in once. Search here, pick the version you want there, and you’re back here while it saves the song:'),
         kinds,
-        para(helper ? 'It works out of sight. Stop it from the UG helper line under the search.'
-          : 'It works out of sight: no command window. Stop it from the UG helper line under the search. First time on this computer? Press Set up UG helper and run the file it downloads (once), then Start UG helper.'),
+        para(helper ? 'It works out of sight. Stop it from the ⋯ menu under the search.'
+          : 'It works out of sight: no command window. Stop it from the ⋯ menu under the search. First time on this computer? Press Set up UG helper and run the file it downloads (once), then Start UG helper.'),
         helperRow));
     }
     const row = document.createElement('div');
@@ -623,7 +664,7 @@ let runsBusy = false;
 
 async function checkRuns() {
   if (!runs || runsBusy) return;
-  if (Date.now() > runs.until) { clearInterval(runs.timer); runs = null; showAuto(); return; }
+  if (Date.now() > runs.until) { clearInterval(runs.timer); runs = null; showStatus(); return; }
   // taken before the first await: the timer, the window's focus and the tab showing again all call
   // this at once, and each found the same song and added it again (How Great Is Our God, 3 times)
   runsBusy = true;
@@ -646,7 +687,7 @@ export async function watchRuns() {
   const since = runs?.since ?? Date.now() - 60e3;
   clearInterval(runs?.timer);
   runs = { since, until: Date.now() + RUNS_MINUTES * 60e3, timer: setInterval(checkRuns, 4000) };
-  await showAuto();
+  await showStatus();
 }
 
 async function changeFolder(toast) {
@@ -654,7 +695,7 @@ async function changeFolder(toast) {
     const dir = await window.showDirectoryPicker({ id: 'tab-downloads', startIn: 'downloads', mode: 'read' });
     await setValue('downloadsDir', dir);
     toast(`Will check “${dir.name}” for new tabs.`);
-    showAuto();
+    showStatus();
   } catch { /* cancelled */ }
 }
 
@@ -666,7 +707,7 @@ async function changeFolder(toast) {
 // given once with "Turn on auto-import" (Chrome can remember it).
 const WATCH_MINUTES = 20;
 const WATCH_EVERY = 3000;
-let ctx = null; // { importFiles, toast, openSong }
+let ctx = null; // { importFiles, openEditor, toast, openSong }
 let watch = null; // { since, until, timer, query, url }
 let busy = false;
 
@@ -678,42 +719,6 @@ async function grantedFolder() {
 
 // Watching the Downloads folder is a desktop Chrome / Edge feature; the Android app picks files instead.
 const canWatch = 'showDirectoryPicker' in window && !window.fretboardAndroid;
-
-async function showAuto() {
-  const el = $('find-auto');
-  if (!canWatch) {
-    el.hidden = false;
-    el.textContent = window.fretboardAndroid
-      ? 'GProTab and 911tabs add the file to your library by themselves. For Ultimate Guitar: in your browser tick Desktop site (⋮ menu), log in, tap Download Guitar Pro tab, then press Import files here and pick it from Downloads.'
-      : 'Auto-import needs Chrome or Edge on a computer. Elsewhere, drop the downloaded file onto the library.';
-    return;
-  }
-  const dir = await grantedFolder();
-  el.hidden = false;
-  el.innerHTML = '';
-  if (dir) {
-    const on = document.createElement('span');
-    on.className = 'find-auto-on';
-    on.textContent = runs ? '● Auto-import on: what the UG helper saves is added here as one song.'
-      : watch ? '● Waiting for your download: save the Guitar Pro file on the site and it opens here, ready for play-along.' : `● Auto-import on: tab files you download into “${dir.name}” are added by themselves.`;
-    el.append(on);
-  } else {
-    el.append(runs ? 'One click, once, so the songs the UG helper saves are added here by themselves: ' : watch ? 'One click, once, so the file you download opens here by itself: ' : 'Auto-import is off. ');
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'ghost small';
-    b.textContent = 'Turn on auto-import';
-    b.title = 'Pick your Downloads folder once; new tab files there are then added by themselves';
-    b.addEventListener('click', async () => {
-      try { await folderHandle(); } catch { return; }
-      await showAuto();
-    });
-    el.append(b);
-  }
-  const how = button('How it works', 'link-btn', () => setupUG(true));
-  how.title = 'Auto-import and the UG helper, step by step';
-  el.append(' ', how);
-}
 
 async function autoImport() {
   if (!watch || busy) return;
@@ -745,7 +750,7 @@ async function autoImport() {
 function stopWatch() {
   clearInterval(watch?.timer);
   watch = null;
-  showAuto();
+  showStatus();
 }
 
 export async function watchDownloads({ query = '', url = '' } = {}) {
@@ -753,31 +758,15 @@ export async function watchDownloads({ query = '', url = '' } = {}) {
   const since = watch?.since ?? Date.now() - 60e3; // a download that just finished counts
   clearInterval(watch?.timer);
   watch = { since, until: Date.now() + WATCH_MINUTES * 60e3, timer: setInterval(autoImport, WATCH_EVERY), query, url };
-  await showAuto();
+  await showStatus();
 }
 
 export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
-  ctx = { importFiles, toast, openSong };
-  showAuto();
-  showHelper();
+  ctx = { importFiles, openEditor, toast, openSong };
+  showStatus();
   showQueue();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); if (!helperState) showHelper(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); if (!helperState) showStatus(); } });
   window.addEventListener('focus', () => { autoImport(); checkRuns(); });
-  window.addEventListener('focus', () => { if (!$('view-library').hidden) showReady(); }); // back from the collector
-  $('btn-clip').hidden = !navigator.clipboard?.readText;
-  $('btn-clip').addEventListener('click', () => pasteFromClipboard(openEditor));
-  const folderSupported = canWatch;
-  $('btn-downloads').hidden = !folderSupported;
-  $('btn-folder').hidden = !folderSupported;
-  $('btn-song-pdfs').hidden = !folderSupported;
-  $('btn-song-pdfs').addEventListener('click', () => importSongPdfs(importFiles, toast));
-  $('btn-downloads').addEventListener('click', () => checkDownloads(importFiles, toast).then(showAuto));
-  $('btn-folder').addEventListener('click', () => changeFolder(toast));
-  if (canWatch && 'showOpenFilePicker' in window) {
-    $('file-input').closest('label').addEventListener('click', (e) => {
-      if (e.target === $('file-input')) return; // the fallback's own click
-      e.preventDefault();
-      pickFiles(importFiles);
-    });
-  }
+  window.addEventListener('focus', () => { if (document.body.classList.contains('drawer-open')) showReady(); }); // back from the collector
+  $('lib-more-btn').addEventListener('click', (e) => moreMenu(e.currentTarget));
 }

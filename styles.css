@@ -2344,3 +2344,77 @@ body.performing #view-text { max-width: none; }
 body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: .4rem 0; border-bottom: 1px solid var(--line); }
 /* an untitled or unclear track: pick what it is (its sound and name) */
 .mixer-row .track-sound { grid-column: 1 / -1; margin: 0 .3rem .2rem 2.2rem; max-width: 260px; }
+
+/* ---------- the library in the ☰ drawer: Quick Song Importer, filter, folders, A–Z list ---------- */
+.lib-menu-btn { width: auto; min-width: 2.25rem; padding: 0 .5rem; gap: .4rem; border-radius: 999px; display: inline-flex; align-items: center; position: relative; }
+.menu-label { font-weight: 600; font-size: .95rem; }
+.menu-badge { position: absolute; top: -2px; right: -6px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: .68rem; font-weight: 700; padding: 0 .3rem; line-height: 1.35; }
+.drawer { width: min(420px, 92vw); }
+.dr-songs { display: flex; flex-direction: column; gap: .5rem; flex: 1; min-height: 0; }
+.dr-songs[hidden], .drawer-body[hidden] { display: none; }
+.qi { display: flex; align-items: center; gap: .25rem; }
+.qi-bar { position: relative; flex: 1; min-width: 0; }
+.qi-bar .search-icon { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.qi-bar input { width: 100%; height: 42px; padding-left: 2.1rem; border-radius: 999px; background: var(--bg); font-size: 1rem; }
+.qi-bar input:focus { outline: none; border-color: var(--accent); }
+.qi-bar:has(.qi-modes:not([hidden])) input { padding-right: 9.2rem; }
+.qi-bar input::-webkit-search-cancel-button { display: none; }
+.qi-modes { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px; }
+.qi-modes button { min-height: 32px; padding: .15rem .7rem; border-radius: 999px; font-size: .85rem; }
+.qi-btn { width: 40px; height: 40px; flex: none; position: relative; color: var(--muted); }
+.qi-btn:hover { color: var(--text); }
+.qi-btn.dot { color: var(--accent); }
+.qi-btn.dot::after { content: ''; position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.qi-status { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; min-height: 28px; }
+.qi-status:empty { display: none; }
+.qi-chip { background: transparent; border: 1px solid var(--line); font-size: .78rem; padding: .1rem .6rem; min-height: 28px; white-space: nowrap; }
+.qi-chip.qi-on { color: var(--good); border-color: #2f5a40; }
+.qi-chip.qi-off { color: var(--muted); }
+.qi-chip.qi-bad { color: var(--warn); border-color: #6a3a33; }
+.qi-chip.qi-busy { color: var(--accent); }
+.qi-gear { color: var(--muted); }
+.qi-status .find-wait { flex-basis: 100%; margin: 0; font-size: .82rem; }
+.dr-songs .lib-tidy { margin: 0; padding: .4rem .6rem; font-size: .85rem; gap: .35rem; }
+.dr-songs .lib-tidy span { flex: 1 1 10rem; }
+.lib-head { display: flex; align-items: center; gap: .4rem; border-bottom: 1px solid var(--line); padding-bottom: .35rem; }
+.lib-folder-btn { font-size: .9rem; padding: .25rem .5rem; margin-left: -.4rem; color: var(--text); }
+.lib-folder-btn .muted { font-weight: 400; }
+.lib-list { flex: 1; min-height: 0; overflow: auto; margin: 0 -.4rem; padding: 0 .4rem env(safe-area-inset-bottom); align-content: start; grid-auto-rows: max-content; overscroll-behavior: contain; }
+.dr-list li.lib-row { flex-wrap: nowrap; flex-shrink: 0; min-height: 48px; }
+.lib-row a { flex: 1 1 auto; justify-content: center; }
+.lib-row a b { font-size: .95rem; }
+.lib-row a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-stars { color: var(--accent); font-size: .78rem; flex: none; }
+.lib-more { width: 36px; height: 36px; flex: none; color: var(--muted); font-size: 1.1rem; }
+.lib-more:hover { color: var(--text); }
+.dr-list li.lib-letter { position: sticky; flex-shrink: 0; top: 0; z-index: 1; display: block; min-height: 0; background: var(--panel); color: var(--accent); font-size: .72rem; font-weight: 700; letter-spacing: .05em; padding: .5rem .5rem .2rem; border-bottom: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 0; }
+.dr-list li.lib-letter:hover { background: var(--panel); }
+.dr-list li.lib-empty { display: block; padding: 1rem .5rem; }
+.dr-list li.lib-empty:hover { background: none; }
+.lib-empty p { margin: 0 0 .6rem; }
+.drop-over { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: #000b; pointer-events: none; }
+.drop-over[hidden] { display: none; }
+.drop-over span { border: 3px dashed var(--accent); border-radius: 18px; padding: 2.5rem 3.5rem; font-size: 1.3rem; font-weight: 700; color: var(--text); background: var(--panel); }
+.card-menu hr { border: 0; border-top: 1px solid var(--line); margin: .25rem .3rem; }
+.card-menu button span { display: grid; }
+.card-menu button.has-check { grid-template-columns: 1.3rem 1fr; align-items: center; }
+.menu-check { font-style: normal; color: var(--accent); font-weight: 700; }
+.card-menu button:disabled { opacity: .5; cursor: default; }
+.menu-stars { display: flex; justify-content: center; gap: .1rem; padding: .1rem 0; }
+.card-menu .menu-stars button { display: inline-block; min-height: 40px; padding: 0 .35rem; font-size: 1.35rem; color: var(--line); }
+.card-menu .menu-stars button.on { color: var(--accent); }
+.card-menu { max-height: calc(100vh - 16px); overflow: auto; max-width: min(22rem, calc(100vw - 16px)); }
+.welcome { max-width: 640px; margin: 2rem auto; text-align: center; }
+.welcome .row { justify-content: center; }
+.welcome .big { font-size: 1.1rem; padding: .7rem 1.4rem; }
+.sync-dialog { max-width: min(640px, 94vw); padding: 0; }
+.sync-dialog .sync-panel { margin: 0; border: 0; }
+@media (max-width: 640px) {
+  .menu-label { display: none; }
+  .lib-menu-btn { padding: 0; }
+  .drawer { width: 100vw; border-right: 0; padding: .6rem .7rem; }
+  #dr-close { width: 44px; height: 44px; }
+  .qi-bar:has(.qi-modes:not([hidden])) input { padding-right: 8.4rem; }
+  .qi-modes button { padding: .15rem .55rem; }
+  .lib-more { width: 44px; height: 44px; }
+}
