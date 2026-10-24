@@ -135,6 +135,8 @@ function render() {
   $('tx-shift').textContent = `Tr. ${shift > 0 ? '+' : ''}${shift}`;
   const facts = [
     sounds && `Key <b>${keyName(sounds)}</b>`,
+    // played in another key than written: whose key it is, and the written one (kept)
+    shift && `${song.keyBy ? `<b>${escape(song.keyBy)}’s</b> key` : 'Your key'} · ${sounds ? `written in <b>${keyName(moveKey(sounds, -shift))}</b>` : `moved <b>${shift > 0 ? '+' : ''}${shift}</b>`}`,
     head.capo && `Capo <b>${head.capo}</b>${shapes ? ` · ${keyName(shapes)} shapes` : ''}`,
     `<b>${tempo}</b> bpm`,
     head.tuning && !/^E A D G B E$/.test(head.tuning) && `Tuning <b>${escape(head.tuning)}</b>`,

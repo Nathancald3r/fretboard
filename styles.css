@@ -2437,6 +2437,32 @@ body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var
 .ready-name { min-width: 0; overflow-wrap: anywhere; }
 .ready-name small { display: block; color: var(--muted); font-size: .8rem; }
 .ready-all input, .ready-row input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+/* Picking several songs in the library */
+.lib-select-btn { margin-left: auto; }
+.lib-select-btn.on { color: var(--accent); border-color: var(--accent); }
+.lib-check { width: 1.15rem; height: 1.15rem; margin: 0 .2rem 0 .5rem; flex: none; accent-color: var(--accent); pointer-events: none; }
+.lib-list.picking .lib-row { cursor: pointer; }
+.lib-list.picking .lib-row.picked { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.lib-list.picking .lib-more, .lib-list.picking .lib-stars { display: none; }
+.lib-mykey { font-size: .78rem; color: var(--accent); }
+.bulk-bar { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: .45rem; padding: .6rem .2rem calc(.6rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel); }
+.bulk-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.bulk-acts { display: grid; grid-template-columns: repeat(5, 1fr); gap: .35rem; }
+.bulk-acts button { padding: .45rem .2rem; white-space: nowrap; font-size: .82rem; }
+.bulk-acts button:disabled { opacity: .4; }
+.key-dialog { width: min(92vw, 520px); max-width: min(92vw, 520px); }
+.key-dialog h2 { margin: 0 0 .3rem; font-size: 1.15rem; }
+.key-modes { display: flex; flex-direction: column; gap: .5rem; margin: .8rem 0; }
+.key-modes label { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.key-step { display: inline-flex; align-items: center; gap: .3rem; }
+.key-step b { min-width: 2rem; text-align: center; font-variant-numeric: tabular-nums; }
+.key-name { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+.key-name input { flex: 1; min-width: 0; }
+.key-preview { list-style: none; margin: 0 0 .6rem; padding: 0; max-height: 40vh; overflow-y: auto; border-top: 1px solid var(--line); }
+.key-preview li { display: flex; justify-content: space-between; gap: .8rem; padding: .35rem .1rem; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.key-preview li > span:first-child { overflow-wrap: anywhere; }
+.key-preview li > span:last-child { white-space: nowrap; }
+.key-dialog .row.spread > .row { margin: 0; }
 @media (max-width: 640px) {
   .menu-label { display: none; }
   .lib-menu-btn { padding: 0; }

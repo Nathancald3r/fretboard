@@ -22,6 +22,7 @@ import { initDrawer, openDrawer, addToSetlist, setlistTargetName } from './drawe
 import { popMenu } from './menu.js';
 import { initSync } from './syncui.js';
 import { parseFilename } from './tabinfo.js';
+import { initBulk, selecting, isPicked, toggle as togglePick, drawBar, keyNote, readShared } from './bulk.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -136,13 +137,16 @@ async function renderLibrary() {
     const L = initial(s.title);
     const head = letters && L !== letter ? `<li class="lib-letter" aria-hidden="true">${L}</li>` : '';
     letter = L;
-    return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
-      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span></a>
+    const mine = keyNote(s);
+    return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}${isPicked(s.id) ? ' picked' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
+      ${selecting() ? `<input type="checkbox" class="lib-check" tabindex="-1" aria-label="Select ${escape(s.title)}"${isPicked(s.id) ? ' checked' : ''}>` : ''}
+      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}</a>
       ${s.rating ? `<span class="lib-stars" title="Your ranking">★${s.rating}</span>` : ''}
       <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu">⋮</button></li>`;
   }).join('') || `<li class="lib-empty">${q
     ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button></div>`
     : songsOnly.length ? '<p class="muted">No songs here.</p>' : '<p class="muted">No songs yet. Type a song above to get it from Ultimate Guitar, or drop a file here.</p>'}</li>`;
+  drawBar();
 }
 
 // The folder menu: which folder you're in, and making, renaming and deleting folders.
@@ -234,6 +238,7 @@ async function onLibraryClick(e) {
   if (qi) { findSong(qi.dataset.qi); return; }
   const row = e.target.closest('.lib-row');
   if (!row) return;
+  if (selecting()) { e.preventDefault(); togglePick(Number(row.dataset.id)); return; } // picking songs: a tap ticks it
   if (e.target.closest('[data-act=menu]')) { openCardMenu(row, null); return; }
   if (e.target.closest('a')) openDrawer(false); // the song opens (its link)
 }
@@ -802,6 +807,14 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   const got = (id) => { if (id) { ids.push(id); added++; } };
   if (!batch || batch.first) dupRule = null; // one of several songs picked at once: an answer "for the rest" carries on
   dupSkipped = dupReplaced = 0;
+  // songs shared from Fretboard (a .fretboard file): each saved as it came, asking about ones you have
+  for (const f of files.filter((x) => /\.fretboard$/i.test(x.name))) {
+    files = files.filter((x) => x !== f);
+    const shared = readShared(await f.text());
+    if (!shared) { failed.push(f.name); continue; }
+    dupMore = shared.length - 1 + files.length; // for "Do the same for the other …"
+    for (const song of shared) got(await saveImported(song, replace));
+  }
   // ChordPro files, and PDFs that are chord charts (SongSelect and the like: real text, chords over words)
   const charts = [];
   for (const f of files) {
@@ -1077,6 +1090,7 @@ async function main() {
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);
+  initBulk({ shown: () => libSongs, ask, redraw: renderLibrary });
   $('lib-tidy').addEventListener('click', (e) => {
     const act = e.target.closest('[data-tidy]')?.dataset.tidy;
     if (act === 'combine') combineSplit().catch((err) => { console.error(err); toast('Couldn’t combine them.'); });
