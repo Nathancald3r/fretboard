@@ -111,6 +111,38 @@ One song that crashes doesn't stop the others. Step 8 prints the GPU minutes use
 
 Beat This! (the beat finder) gets the tempo right on most songs. Some can be counted either way: When I Go Down (74 bpm in the tab, heard as 150) and 12/8 songs like How He Loves. If the `.gp5` has twice the tab's tempo, set **TEMPO** in step 2 to `half` and run again (or `double` for the other way). The `.gp5` is always written in 4/4.
 
+## Guide: check an official song against its recording
+
+1. **Find the right video.** Run this once. It checks every official song and opens a picture of the results.
+
+   ```powershell
+   cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; & "$env:USERPROFILE\.fretboard\yt2gp5-venv\Scripts\python.exe" tests\yt2gp5\songdb.py verify --official
+   ```
+
+   - A flat line means the video matches all the way through.
+   - A song with ✗ needs a link. Give Claude the right video, or set it yourself with `songdb.py set "NAME" URL`.
+
+2. **Listen to it.** This plays your tab on top of the video. Change the name to the song you want.
+
+   ```powershell
+   cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; & "$env:USERPROFILE\.fretboard\yt2gp5-venv\Scripts\python.exe" tests\yt2gp5\listen.py "Be My Escape (official)"
+   ```
+
+   - The first time takes a few minutes. After that it opens straight away.
+   - Leave the window running while you listen: it saves your checks.
+   - Use headphones: the **recording is always in your left ear, your tab in your right**.
+
+3. **Check it, one track at a time.** Press **?** on the page for every key.
+   - **S** puts the next track alone in your right ear (Shift+S goes back, **A** = all tracks). Tracks that don't play here are skipped.
+   - **↑ ↓** change the tab's level (or the track's, when one is alone). **Shift+↑ ↓** change the recording's.
+   - Move around: **1–9** jump to 10–90% (**0** = start), **← →** 10 s, **Shift+← →** one bar, **C** chorus, **V** verse, **B** bridge, **P** pre-chorus, **I** intro, **O** outro, **N** next section (Shift goes back).
+   - When the track sounds off, press straight away: **W** wrong note, **T** bad timing, **Q** can't hear it / too quiet, **L** too loud, **M** something else (type a word). It goes on that track, about ⅓ s back. Press it again to stretch it over more bars. **Z** undoes.
+   - When the track is right through a whole section, press **K**. The "What's checked" grid turns green, so you can see what's left.
+   - The computer's guesses pop up under the timeline, at their time and on their track. **Enter** = yes, it's wrong; **X** = ignore it; or press **W T Q L** if it's something else. **.** jumps to the next guess.
+
+4. **Tell Claude:** "look at my checks for Be My Escape". Everything is saved in `tests\yt2gp5\truth\<song>.json`. Claude fixes the tab from it.
+   - Your Enter/X answers also tune the automatic checker (`check.py`), so over time it finds the bad notes and timing by itself.
+
 ## Listen to your tab on top of the recording (`listen.py`)
 
 ```powershell
@@ -118,11 +150,9 @@ cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; 
 ```
 
 - It plays every track of the tab with Fretboard's synth, then stretches it to the recording's timing with the pitch kept. It lines up by the chords first, then by the note starts (to about 10 ms).
-- It then opens a local page with:
-  - an on/off switch and a volume for each track
-  - the recording's volume
-  - "recording left, tab right"
-  - a timing nudge
-  - the 10-s stretches (red ones don't match; click one to go there)
-- Add `--url URL` to try another video.
+- It then opens a local page: the recording in the left ear, the tab in the right (all tracks, or one alone), with levels in dB, a timeline with the song's sections and one lane per track, and the keys in the guide above.
+- Add `--url URL` to try another video, and `--again` to build it again.
+- **The truth file** (`truth\<song>.json`, no audio, so it can be committed): your checks (track, kind, bars, times, section, the tab's notes there, your levels), your answers to the guesses, how long you heard each track alone in each section, the sections, and the time map (recording → tab every 50 ms). Older `marks\<song>.json` files are carried over.
+- **Guesses** (`check.py`): bars where the chords differ, a track's notes aren't in the recording, or a track plays early or late.
+- Sections come from the tab's section markers (UG official tabs have them). A tab with none shows one "Start" section, and C/V/B say so.
 - The files stay in `out\listen\` and are never shared. Press Ctrl+C to stop it.

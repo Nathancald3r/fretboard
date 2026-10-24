@@ -89,6 +89,19 @@ The user asked for each `.gp` made from a UG **official** tab to be matched to t
   - The `real.MATCH` limits are tuned on the 10 cached songs: the right recordings pass and other versions fail.
 - How He Loves has official PDFs too, but `ug_to_gp.py` skipped it because its folder also has a .gpx.
 
+## Checking a tab against its recording, track by track (2026-10-24)
+
+The goal: official `.gp` files that pair perfectly with their recordings, so the stems can be cut well and a YouTube link can become a `.gp` to play in Fretboard. The user listens; the computer learns from what they say.
+
+- **Done:** the listen page (`listen.py`), the guesses (`check.py`), the truth files (`truth/<song>.json`). See the README guide.
+- **How a check is placed:** on the track alone in the right ear (else the whole tab), at the bar heard ⅓ s before the key. The same key within 2.5 s stretches it to the next bar. K covers the whole section.
+- **Next:**
+  1. `songdb.py verify-done NAME`: marks a song "verified" when every track that plays is OK in every section and no check is left open.
+  2. `check.py tune`: try the `LIMITS` against all the answers (Enter = right, X = wrong) and keep the ones with the best score.
+  3. `real.py` reads the truth files: scores only bars marked OK, and skips bars with open problems.
+  4. Fix the tabs from the checks (Claude, by hand at first; then suggested fixes, e.g. a note one semitone off where the recording has the other one).
+- **Later:** suggest levels per track (from the user's own level changes); sections for tabs without markers (from Chords.txt labels, then from the music repeating); how sure each bar is, shown in Fretboard.
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).

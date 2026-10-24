@@ -73,33 +73,7 @@ window.renderSong = async (b64, { seconds = 45, start = null, saveTo, whole = fa
   a.renderScore(score, [0]);
   console.log('[yt2gp5] score loaded: ' + score.title);
 
-  // the true notes, from the same MIDI the synth plays (repeats included)
-  const midi = new at.midi.MidiFile();
-  const gen = new at.midi.MidiFileGenerator(score, a.settings, new at.midi.AlphaSynthMidiFileHandler(midi));
-  gen.applyTranspositionPitches = false;
-  gen.generate();
-  const clk = clock(midi);
-  const trackOf = new Map();
-  score.tracks.forEach((t, i) => { trackOf.set(t.playbackInfo.primaryChannel, i); trackOf.set(t.playbackInfo.secondaryChannel, i); });
-  const open = new Map();
-  const notes = [];
-  for (const e of midi.events.slice().sort((x, y) => x.tick - y.tick)) {
-    const on = e instanceof at.midi.NoteOnEvent && e.noteVelocity > 0;
-    const off = e instanceof at.midi.NoteOffEvent || (e instanceof at.midi.NoteOnEvent && e.noteVelocity === 0);
-    if (!on && !off) continue;
-    const id = e.channel * 128 + e.noteKey;
-    if (on) open.set(id, e);
-    else if (open.has(id)) {
-      const s = open.get(id);
-      open.delete(id);
-      notes.push({ track: trackOf.get(s.channel) ?? -1, start: clk.seconds(s.tick), end: clk.seconds(e.tick), pitch: s.noteKey, vel: s.noteVelocity });
-    }
-  }
-  const tracks = score.tracks.map((t, i) => ({ index: i, name: t.name, program: t.playbackInfo.program, category: category(t) }));
-  const bars = gen.tickLookup.masterBars.map((m) => ({
-    time: clk.seconds(m.start), num: m.masterBar.timeSignatureNumerator, den: m.masterBar.timeSignatureDenominator,
-    fifths: m.masterBar.keySignature, minor: m.masterBar.keySignatureType === 1, bpm: clk.bpmAt(m.start),
-  }));
+  const { notes, bars, tracks } = played(a, score, false);
   const songEnd = Math.max(0, ...notes.map((n) => n.end));
 
   if (whole) { start = 0; seconds = Math.ceil(songEnd) + 2; }
@@ -158,6 +132,47 @@ window.renderSong = async (b64, { seconds = 45, start = null, saveTo, whole = fa
     bpm: atStart.bpm, timeSig: [atStart.num, atStart.den], fifths: atStart.fifths, minor: atStart.minor,
   };
 };
+
+// Every note the synth plays and every bar as played (repeats included), in seconds from the song's start,
+// for listen.py: the bars give bar numbers (bar = index + 1), the notes are checked against the recording.
+window.songNotes = async (b64) => {
+  const a = await getApi();
+  const score = at.importer.ScoreLoader.loadScoreFromBytes(b64ToBytes(b64), a.settings);
+  const { notes, bars, tracks } = played(a, score, true);
+  return { tracks, bars, notes: notes.filter((n) => n.track >= 0) };
+};
+
+// The true notes, from the same MIDI the synth plays (repeats included). transpose: the sounding pitch
+// (as the player plays it), else the written one.
+function played(a, score, transpose) {
+  const midi = new at.midi.MidiFile();
+  const gen = new at.midi.MidiFileGenerator(score, a.settings, new at.midi.AlphaSynthMidiFileHandler(midi));
+  gen.applyTranspositionPitches = transpose;
+  gen.generate();
+  const clk = clock(midi);
+  const trackOf = new Map();
+  score.tracks.forEach((t, i) => { trackOf.set(t.playbackInfo.primaryChannel, i); trackOf.set(t.playbackInfo.secondaryChannel, i); });
+  const open = new Map();
+  const notes = [];
+  for (const e of midi.events.slice().sort((x, y) => x.tick - y.tick)) {
+    const on = e instanceof at.midi.NoteOnEvent && e.noteVelocity > 0;
+    const off = e instanceof at.midi.NoteOffEvent || (e instanceof at.midi.NoteOnEvent && e.noteVelocity === 0);
+    if (!on && !off) continue;
+    const id = e.channel * 128 + e.noteKey;
+    if (on) open.set(id, e);
+    else if (open.has(id)) {
+      const s = open.get(id);
+      open.delete(id);
+      notes.push({ track: trackOf.get(s.channel) ?? -1, start: clk.seconds(s.tick), end: clk.seconds(e.tick), pitch: s.noteKey, vel: s.noteVelocity });
+    }
+  }
+  const tracks = score.tracks.map((t, i) => ({ index: i, name: t.name, program: t.playbackInfo.program, category: category(t) }));
+  const bars = gen.tickLookup.masterBars.map((m) => ({
+    time: clk.seconds(m.start), index: m.masterBar.index, section: m.masterBar.section?.text || null, num: m.masterBar.timeSignatureNumerator, den: m.masterBar.timeSignatureDenominator,
+    fifths: m.masterBar.keySignature, minor: m.masterBar.keySignatureType === 1, bpm: clk.bpmAt(m.start),
+  }));
+  return { notes, bars, tracks };
+}
 
 window.checkGp5 = async (b64) => {
   const a = await getApi();
