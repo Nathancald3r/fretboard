@@ -155,5 +155,11 @@ fbPatch('drum bank keys (bank)', '} else if (mEvent.type === MidiEventType.Progr
   '} else if (mEvent.type === MidiEventType.ControlChange && mEvent.controller === ControllerType.BankSelectCoarse && mEvent.channel !== SynthConstants.PercussionChannel) {\n\t\t\t\t\tif (mEvent.value === 1) fbDrumChannels.add(mEvent.channel);\n\t\t\t\t\telse fbDrumChannels.delete(mEvent.channel);\n\t\t\t\t} else if (mEvent.type === MidiEventType.ProgramChange) {\n\t\t\t\t\tconst programChange = mEvent;');
 fbPatch('drum bank keys (note)', 'if (noteOn.channel === SynthConstants.PercussionChannel) this.percussionKeys.add(noteOn.noteKey);',
   'if (fbDrumChannels.has(noteOn.channel)) this.percussionKeys.add(noteOn.noteKey);');
+// MusicXML: Sibelius and others put <instrument id="P1-I1"/> on every note of a normal part.
+// alphaTab took that id as a drum sound, so every pitched note became percussion and played
+// key 0, 1 or 4: silence (I Will Sing of My Redeemer). Use the id only on a drum staff or an
+// unpitched note.
+fbPatch('musicxml pitched instrument', 'if (instrumentId !== null) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);',
+  'if (instrumentId !== null && (!isPitched || note.beat.voice.bar.staff.isPercussion)) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);');
 writeFileSync(script, code);
 console.log('alphaTab copied to vendor/alphatab');

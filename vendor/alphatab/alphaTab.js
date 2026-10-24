@@ -24011,7 +24011,7 @@
 			note.isVisible = noteIsVisible;
 			if (note.percussionArticulation >= 0) return;
 			const trackInfo = this._indexToTrackInfo.get(track.index);
-			if (instrumentId !== null) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);
+			if (instrumentId !== null && (!isPitched || note.beat.voice.bar.staff.isPercussion)) note.percussionArticulation = trackInfo.getOrCreateArticulation(instrumentId, note);
 			else if (note.beat.voice.bar.staff.isPercussion && isPitched) {
 				const knownArticulation = PercussionMapper.getArticulationById(note.displayValue);
 				if (knownArticulation) note.percussionArticulation = knownArticulation.id;
