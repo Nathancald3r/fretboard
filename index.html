@@ -319,6 +319,31 @@
           </div>
         </section>
 
+        <section class="sheet" data-sheet="repeat" hidden>
+          <div class="sheet-head"><h2>Repeat</h2><button class="ghost small" data-close>Close</button></div>
+          <p id="rp-what" class="muted small-text"></p>
+          <div class="row">
+            <span>Times played</span>
+            <button id="rp-less" class="ghost small" aria-label="One time fewer">−</button>
+            <span id="rp-count" class="mono">2</span>
+            <button id="rp-more" class="ghost small" aria-label="One time more">＋</button>
+          </div>
+          <div class="row">
+            <label class="toggle"><input type="radio" name="rp-who" value="all" checked> All tracks</label>
+            <label class="toggle"><input type="radio" name="rp-who" value="one"> Only <span id="rp-track"></span></label>
+          </div>
+          <div id="rp-others-row" class="row" hidden>
+            <span>While it plays the extra times, the other tracks</span>
+            <label class="toggle"><input type="radio" name="rp-others" value="rest" checked> rest and wait</label>
+            <label class="toggle"><input type="radio" name="rp-others" value="play"> keep playing the song</label>
+          </div>
+          <p id="rp-tab" class="muted small-text"></p>
+          <div class="row">
+            <button id="rp-apply" class="primary">Apply</button>
+            <button id="rp-reset" class="ghost">Back to ×2</button>
+          </div>
+        </section>
+
         <section class="sheet" data-sheet="click" hidden>
           <div class="sheet-head"><h2>Click &amp; count-in</h2><button class="ghost small" data-close>Close</button></div>
           <h3>Click</h3>

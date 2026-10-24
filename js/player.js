@@ -24,6 +24,7 @@ import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateCha
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt, repeatVerses } from './lyrics.js';
+import { applyRepeats } from './repeats.js';
 import { initFretView, setNeck, showNotes } from './fretview.js';
 import { initKeyView, keyRange, setKeys, showKeys } from './keyview.js';
 import { initDrumView, setKit, showDrums, drumMidi } from './drumview.js';
@@ -131,6 +132,7 @@ function ensureApi() {
       applyClickVolume();
       playAlongScoreReady();
       if (restoreTick !== null) { api.tickPosition = restoreTick; restoreTick = null; }
+      if (loopsBefore) moveLoops();
       if (pendingPreview !== null) { const i = pendingPreview; pendingPreview = null; setTimeout(() => previewTrack(i), 150); }
       if (playOnLoad) { playOnLoad = false; setTimeout(startPlayback, 150); }
       // Live: the song was opened by the last one ending, so start it after a short gap.
@@ -1176,11 +1178,12 @@ function songKey() {
 }
 
 function readScore(s) {
-  const score = parseScore(s);
-  ownDrumChannels(score.tracks); // a shaker beside the drums gets its own volume and mute
-  repeatVerses(score); // a hymn with verses under its notes: once through per verse
-  applySounds(score, s.sounds);
-  return score;
+  const read = parseScore(s);
+  ownDrumChannels(read.tracks); // a shaker beside the drums gets its own volume and mute
+  repeatVerses(read); // a hymn with verses under its notes: once through per verse
+  repeats = applyRepeats(read, s.repeats, AT, api.settings); // times through a repeat, as the user set them
+  applySounds(repeats.score, s.sounds);
+  return repeats.score;
 }
 
 function parseScore(s) {
@@ -1564,17 +1567,20 @@ function showLoops() {
   const saved = song?.loops || [];
   const sel = selectedBars();
   const dup = sel && saved.some((l) => l.a === sel.a && l.b === sel.b);
-  nav.hidden = !saved.length && !(sel && !dup);
-  nav.innerHTML = (sel && !dup ? '<button class="loop-chip save" data-save>＋ Save loop</button>' : '')
+  const rep = selectedRepeat();
+  nav.hidden = !saved.length && !(sel && !dup) && !rep;
+  nav.innerHTML = (rep ? `<span class="loop-chip save"><button data-repeat title="How many times this repeat plays">🔁 Repeat ×${song.repeats?.[rep.e]?.count ?? rep.count}</button></span>` : '')
+    + (sel && !dup ? '<button class="loop-chip save" data-save>＋ Save loop</button>' : '')
     + saved.map((l, i) => `<span class="loop-chip"><button data-loop="${i}">${l.name.replace(/[&<>"]/g, '')}</button><button class="x" data-del="${i}" aria-label="Delete ${l.name.replace(/[&<>"]/g, '')}">✕</button></span>`).join('');
 }
+
+const loopName = (bars, { a, b }) => (a === b ? `Bar ${bars[a].masterBar.index + 1}` : `Bars ${bars[a].masterBar.index + 1}–${bars[b].masterBar.index + 1}`);
 
 function saveLoop() {
   const sel = selectedBars();
   const bars = playedBars();
   if (!sel || !song) return;
-  const name = sel.a === sel.b ? `Bar ${bars[sel.a].masterBar.index + 1}` : `Bars ${bars[sel.a].masterBar.index + 1}–${bars[sel.b].masterBar.index + 1}`;
-  song.loops = [...(song.loops || []), { name, a: sel.a, b: sel.b }].sort((x, y) => x.a - y.a);
+  song.loops = [...(song.loops || []), { name: loopName(bars, sel), a: sel.a, b: sel.b }].sort((x, y) => x.a - y.a);
   updateSong(song.id, { loops: song.loops });
   showLoops();
 }
@@ -1584,6 +1590,7 @@ function initLoops() {
     const t = e.target.closest('button');
     if (!t || !song) return;
     if (t.hasAttribute('data-save')) { saveLoop(); return; }
+    if (t.hasAttribute('data-repeat')) { openRepeat(selectedRepeat()); return; }
     if (t.dataset.del !== undefined) {
       song.loops.splice(Number(t.dataset.del), 1);
       updateSong(song.id, { loops: song.loops });
@@ -1594,6 +1601,131 @@ function initLoops() {
     const bars = playedBars();
     if (l && bars[l.a] && bars[l.b]) loopRange({ first: bars[l.a], last: bars[l.b] });
   });
+}
+
+/* ---------- times through a repeat ---------- */
+
+// Select bars inside a repeat and a "🔁 Repeat ×2" chip opens the Repeat sheet. Kept with the song as
+// song.repeats: { [the repeat's last bar in the file]: { count, track?, others? } } (see repeats.js).
+let repeats = null; // applyRepeats' result for the score shown
+let repeatEdit = null; // the repeat the sheet is changing: { g, count, who, track, others }
+let loopsBefore = null; // the saved loops' bars by (file bar, time through) while a changed score loads
+
+function selectedRepeat() {
+  const sel = selectedBars();
+  const bars = playedBars();
+  if (!sel || !repeats) return null;
+  for (let i = sel.a; i <= sel.b; i++) {
+    const f = repeats.orig[bars[i].masterBar.index];
+    const g = repeats.groups.find((x) => x.s <= f && f <= x.e);
+    if (g) return g;
+  }
+  return null;
+}
+
+// Every played bar as "file bar.time through it".
+function playedIds() {
+  const seen = new Map();
+  return playedBars().map((b) => {
+    const f = repeats?.orig[b.masterBar.index] ?? b.masterBar.index;
+    seen.set(f, (seen.get(f) || 0) + 1);
+    return `${f}.${seen.get(f)}`;
+  });
+}
+
+// A repeat that plays more or fewer times moves the bars after it: saved loops follow their bars.
+function moveLoops() {
+  const before = loopsBefore;
+  loopsBefore = null;
+  if (!song?.loops?.length) return;
+  const ids = playedIds();
+  const find = (id) => {
+    const i = ids.indexOf(id);
+    if (i >= 0 || !id) return i;
+    const f = id.split('.')[0]; // that time through is gone: the last one left
+    return ids.findLastIndex((x) => x.split('.')[0] === f);
+  };
+  const bars = playedBars();
+  song.loops = song.loops.map((l) => ({ ...l, a: find(before[l.a]), b: find(before[l.b]) })).filter((l) => l.a >= 0 && l.b >= l.a)
+    .map((l) => (/^Bars? \d+(–\d+)?$/.test(l.name) ? { ...l, name: loopName(bars, l) } : l)); // names you gave stay
+  updateSong(song.id, { loops: song.loops });
+  showLoops();
+}
+
+function openRepeat(g) {
+  if (!g || !song) return;
+  const ed = song.repeats?.[g.e];
+  const track = ed?.track ?? trackIndex;
+  repeatEdit = { g, count: ed?.count ?? g.count, who: ed?.track != null ? 'one' : 'all', track, others: ed?.others || 'rest' };
+  document.querySelector(`input[name="rp-who"][value="${repeatEdit.who}"]`).checked = true;
+  document.querySelector(`input[name="rp-others"][value="${repeatEdit.others}"]`).checked = true;
+  $('rp-track').textContent = score?.tracks[track]?.name || `track ${track + 1}`;
+  showRepeat();
+  if (document.querySelector('.sheet[data-sheet="repeat"]').hidden) openSheet('repeat');
+}
+
+// What the choice does, said the way the tab will show it.
+function showRepeat() {
+  const r = repeatEdit;
+  if (!r) return;
+  const { g, count: N, who } = r;
+  const C = g.count;
+  const L = g.e - g.s + 1;
+  const first = (repeats?.orig.indexOf(g.s) ?? g.s) + 1;
+  const bars = L === 1 ? `bar ${first}` : `bars ${first}–${first + L - 1}`;
+  const name = $('rp-track').textContent;
+  const times = (n) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
+  $('rp-what').textContent = `The repeat over ${bars}. The file plays it ${times(C)}.`;
+  $('rp-count').textContent = N;
+  $('rp-less').disabled = g.alt || N <= 1;
+  $('rp-more').disabled = g.alt || N >= 16;
+  document.querySelectorAll('input[name="rp-who"], input[name="rp-others"]').forEach((el) => { el.disabled = g.alt; });
+  $('rp-others-row').hidden = who !== 'one' || N <= C;
+  $('rp-apply').disabled = g.alt;
+  $('rp-reset').hidden = !song.repeats?.[g.e];
+  $('rp-reset').textContent = `Back to ×${C}`;
+  let tab;
+  if (g.alt) tab = 'This repeat has 1st and 2nd endings, so how many times it plays can’t be changed here.';
+  else if (N === C) tab = 'As the file has it.';
+  else if (who === 'all') {
+    tab = N === 1
+      ? `Every track plays ${bars} once. The tab drops the repeat signs.`
+      : `Every track plays ${bars} ${times(N)}. The tab shows the repeat sign with ×${N}.`;
+  } else if (N < C) {
+    tab = `${name} plays ${bars} ${times(N)} and rests on the ${C - N === 1 ? 'last time' : `last ${C - N} times`}; the other tracks play it ${times(C)}. `
+      + `The tab writes the ${C} times out one after another, marked “Pass 1/${C}”, “Pass 2/${C}” …, so each track shows what it plays.`;
+  } else if (r.others === 'rest') {
+    tab = `${name} plays ${bars} ${times(N)}. The other tracks play it ${times(C)}, then rest while ${name} plays the ${N - C === 1 ? 'last time' : `last ${N - C}`}: the song gets ${(N - C) * L} bars longer. `
+      + `The tab writes the ${N} times out, marked “Pass 1/${N}” …, and the other tracks show rests there.`;
+  } else {
+    tab = `${name} plays ${bars} ${times(N)}. The other tracks go on with the song, so ${name} plays the repeat again over the next ${(N - C) * L} bars instead of its own part there. `
+      + `Its tab keeps the ×${C} repeat sign, then shows the extra times marked “Pass ${C + 1}/${N}” ….`;
+  }
+  $('rp-tab').textContent = tab;
+}
+
+function saveRepeat(reset) {
+  const r = repeatEdit;
+  if (!r || !song) return;
+  const all = { ...(song.repeats || {}) };
+  if (reset || r.count === r.g.count) delete all[r.g.e];
+  else all[r.g.e] = r.who === 'all' ? { count: r.count } : { count: r.count, track: r.track, others: r.others };
+  song.repeats = all;
+  updateSong(song.id, { repeats: all });
+  openSheet(null);
+  loopsBefore = playedIds();
+  reloadScore();
+  const short = repeats?.short.find((x) => x.e === r.g.e);
+  if (short) window.dispatchEvent(new CustomEvent('fbtoast', { detail: `Only ${short.fit} times fit: after the repeat the song ends, repeats again or changes time.` }));
+}
+
+function initRepeats() {
+  $('rp-less').addEventListener('click', () => { repeatEdit.count--; showRepeat(); });
+  $('rp-more').addEventListener('click', () => { repeatEdit.count++; showRepeat(); });
+  document.querySelectorAll('input[name="rp-who"]').forEach((el) => el.addEventListener('change', () => { repeatEdit.who = el.value; showRepeat(); }));
+  document.querySelectorAll('input[name="rp-others"]').forEach((el) => el.addEventListener('change', () => { repeatEdit.others = el.value; showRepeat(); }));
+  $('rp-apply').addEventListener('click', () => saveRepeat(false));
+  $('rp-reset').addEventListener('click', () => saveRepeat(true));
 }
 
 /* ---------- instrument view (learning mode) ---------- */
@@ -2385,6 +2517,7 @@ export function initPlayer() {
   $('pl-loop').addEventListener('click', () => setLoop(!$('pl-loop').classList.contains('on')));
   $('pl-clear-sel').addEventListener('click', clearSelection);
   initLoops();
+  initRepeats();
   initScrollHold();
   initEditor({
     AT,
