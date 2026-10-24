@@ -640,18 +640,102 @@ function askNotes(notes) {
   }, { once: true }));
 }
 
+// The written key of a song, when it says one: a chord chart's "Key: Bb" line, a read tab's \ks.
+function songKeyName(song) {
+  if (song.kind === 'text') return /\bKey:\s*([A-G][#b]?m?)(?![\w#])/.exec(String(song.data || '').slice(0, 400))?.[1] || '';
+  if (song.kind === 'tex') return /\\ks\s+([A-G][#b]?m?)\b/.exec(String(song.data || ''))?.[1] || '';
+  return '';
+}
+const capoOf = (song) => (song.kind === 'text' ? Number(/\bCapo:\s*(\d+)/.exec(String(song.data || '').slice(0, 400))?.[1]) || 0 : 0);
+
+// One import's answer to "you already have this song", for the rest of its files ("Do the same for the rest").
+let dupRule = null;
+let dupMore = 0; // files after this one in the same import
+let dupSkipped = 0;
+let dupReplaced = 0; // songs given this import's content (counted apart from the added ones)
+
+// The library's songs that are this one: the same title (a "(with notes)" or "(live)" on the end aside),
+// and the same artist when both name one.
+async function sameSongs(song) {
+  const low = (s) => String(s || '').trim().toLowerCase();
+  return (await listSongs()).filter((s) => plainTitle(s.title) === plainTitle(song.title)
+    && (!low(s.artist) || !low(song.artist) || low(s.artist) === low(song.artist)))
+    .sort((a, b) => (b.lastOpened || b.added || 0) - (a.lastOpened || a.added || 0));
+}
+
+// "Chord chart · Key G · Capo 3"
+function songFacts(song) {
+  const key = songKeyName(song);
+  const capo = capoOf(song);
+  return [CHART_LABEL[chartType(song)] || 'Song', key && `Key ${key}`, capo && `Capo ${capo}`].filter(Boolean);
+}
+
+// A song being imported that the library already has. Resolves 'replace', 'attach' (as the tab's chord sheet),
+// 'both', or 'skip' (also when closed).
+function askDuplicate(song, old, count, more) {
+  const was = songKeyName(old), now = songKeyName(song);
+  const attach = song.kind === 'text' && chartType(song) === 'chords' && old.kind !== 'text' && old.kind !== 'sheet';
+  const mins = Math.round((old.practiceSeconds || 0) / 60);
+  const when = old.added ? new Date(old.added).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const card = (head, s, extra) => `<div class="dup-card"><div class="dup-head">${head}</div>
+    <div class="dup-title">${escape(s.title)}</div>${s.artist ? `<div class="muted small-text">${escape(s.artist)}</div>` : ''}
+    <div class="dup-facts">${songFacts(s).map((f) => `<span class="pill">${escape(f)}</span>`).join('')}</div>
+    ${extra ? `<div class="muted small-text">${extra}</div>` : ''}</div>`;
+  const choice = (v, title, hint, primary) => `<button value="${v}" class="dup-choice${primary ? ' primary' : ''}"><b>${title}</b><span>${hint}</span></button>`;
+  const dlg = document.createElement('dialog');
+  dlg.className = 'parts-dialog dup-dialog';
+  dlg.innerHTML = `<form method="dialog">
+    <h2>You already have “${escape(old.title)}”</h2>
+    ${was && now && was !== now ? `<p class="dup-key">Same song, different key: <b>${escape(was)}</b> in your library, <b>${escape(now)}</b> in this file.</p>` : ''}
+    <div class="dup-cards">
+      ${card('In your library', old, [when && `Added ${escape(when)}`, mins && `${mins} min practiced`, count > 1 && `and ${count - 1} more with this name`].filter(Boolean).join(' · '))}
+      ${card('This file', song, escape(song.fileName || ''))}
+    </div>
+    <div class="dup-choices">
+      ${attach ? choice('attach', 'Add as its chord sheet', 'The tab stays as it is; these chords open from its ⋮ menu.', true) : ''}
+      ${choice('replace', 'Replace it', 'Use this file instead. Practice time, loops and setlists stay with the song.', !attach)}
+      ${choice('both', 'Keep both', 'Add this as a second song with the same name.')}
+      ${choice('skip', 'Skip', 'Don’t import this file.')}
+    </div>
+    ${more ? `<label class="dup-again"><input type="checkbox" data-all> Do the same for ${more > 1 ? `the other ${more} songs` : 'the other song'} in this import</label>` : ''}
+  </form>`;
+  document.body.append(dlg);
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener('close', () => {
+    const v = ['replace', 'attach', 'both', 'skip'].includes(dlg.returnValue) ? dlg.returnValue : 'skip';
+    if (dlg.querySelector('[data-all]')?.checked) dupRule = v;
+    dlg.remove();
+    resolve(v);
+  }, { once: true }));
+}
+
+// The song with old's id and history, and song's content.
+async function replaceSong(old, song) {
+  const next = { ...old, ...song, id: old.id, added: old.added };
+  for (const k of ['sheets', 'parts', 'part', 'chordPro']) if (!(k in song)) delete next[k];
+  await putSong(next);
+  return old.id;
+}
+
+// Saves an imported song. replace: the song of that title and artist gets the new content without asking.
+// Otherwise a song the library already has asks what to do. Returns its id, or 0 when skipped.
 async function saveImported(song, replace) {
+  const same = await sameSongs(song);
   if (replace) {
-    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-    const old = (await listSongs()).filter((s) => same(s.title, song.title) && same(s.artist, song.artist))
-      .sort((a, b) => (b.added || 0) - (a.added || 0))[0];
-    if (old) {
-      const next = { ...old, ...song, id: old.id, added: old.added };
-      if (!song.sheets) delete next.sheets;
-      await putSong(next);
-      return old.id;
-    }
+    const low = (s) => String(s || '').trim().toLowerCase();
+    const old = same.find((s) => low(s.title) === low(song.title) && low(s.artist) === low(song.artist));
+    return old ? replaceSong(old, song) : putSong(song);
   }
+  const more = dupMore;
+  dupMore = Math.max(0, dupMore - 1);
+  if (!same.length) return putSong(song);
+  const old = same[0];
+  let act = dupRule || await askDuplicate(song, old, same.length, more);
+  if (act === 'attach' && !(song.kind === 'text' && old.kind !== 'text' && old.kind !== 'sheet')) act = 'replace'; // "the same for the rest" on a file that isn't a chord chart
+  if (act === 'skip') { dupSkipped++; return 0; }
+  if (act === 'attach' || act === 'replace') dupReplaced++;
+  if (act === 'attach') { await updateSong(old.id, { chordSheet: song.data }); return old.id; }
+  if (act === 'replace') return replaceSong(old, song);
   return putSong(song);
 }
 
@@ -678,6 +762,7 @@ async function importPdfParts(files, auto = null, replace = false) {
   for (const it of pick.items.filter((x) => !x.strips)) sheets.push({ name: it.name, program: it.program, fileName: it.file.name, data: await it.file.arrayBuffer() });
   if (!tabs.length) {
     const id = await saveImported({ kind: 'sheet', title, artist, data: sheets[0].data, fileName: sheets[0].fileName, sheets, added: Date.now() }, replace);
+    if (!id) return null;
     toast(`Added “${title}” as sheet music, ${sheets.length} part${sheets.length > 1 ? 's' : ''}.`, 6000);
     return id;
   }
@@ -686,6 +771,7 @@ async function importPdfParts(files, auto = null, replace = false) {
   const made = ugToAlphaTex(parts[0].strips, { title, artist, name: parts[0].name, program: parts[0].program, extra: parts.slice(1), key: auto?.key || folderKey(files) });
   if (!made) { toast('Couldn’t combine these PDFs into a song.', 6000); return null; }
   const id = await saveImported({ kind: 'tex', title, artist, data: made.tex, fileName: tabs[0].file.name, ...(sheets.length ? { sheets } : {}), added: Date.now() }, replace);
+  if (!id) return null;
   toast(`${replace ? 'Updated' : 'Added'} “${title}”: ${parts.length} tab track${parts.length > 1 ? 's' : ''}, ${made.bars} bars${sheets.length ? `, plus ${sheets.length} as sheet music` : ''}.${made.lyrics ? ' Lyrics included.' : ''}`, 8000);
   return id;
 }
@@ -706,13 +792,16 @@ function importFiles(files, opts) {
   return run;
 }
 
-async function importFilesNow(files, { quietIfEmpty = false, auto = null, replace = false, openOne = false } = {}) {
+async function importFilesNow(files, { quietIfEmpty = false, auto = null, replace = false, openOne = false, batch = null } = {}) {
   // the UG helper's own notes (its run note, latest.txt, collected.txt), not songs
   files = files.filter((f) => !/^fretboard-run.*\.json$/i.test(f.name) && !/^(latest|collected)\.txt$/i.test(f.name));
   let added = 0;
   let combined = 0; // tabs that joined a song already in the library (it said so itself)
   const ids = [];
   const failed = [];
+  const got = (id) => { if (id) { ids.push(id); added++; } };
+  if (!batch || batch.first) dupRule = null; // one of several songs picked at once: an answer "for the rest" carries on
+  dupSkipped = dupReplaced = 0;
   // ChordPro files, and PDFs that are chord charts (SongSelect and the like: real text, chords over words)
   const charts = [];
   for (const f of files) {
@@ -725,6 +814,11 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
       }
     } catch (err) { console.error(err); }
   }
+  { // how many songs this import makes, for "Do the same for the other …"
+    const rest = files.filter((f) => !charts.some((c) => c.file === f));
+    const pdfCount = rest.filter((f) => /\.pdf$/i.test(f.name)).length;
+    dupMore = charts.length + (pdfCount > 1 ? 1 + rest.filter((f) => !/\.pdf$|\bchords\.txt$/i.test(f.name)).length : rest.length) - 1 + (batch?.left || 0);
+  }
   if (charts.length) {
     files = files.filter((f) => !charts.some((c) => c.file === f));
     const { readChordPro, withoutNotes } = await import('./chordpro.js');
@@ -736,8 +830,7 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
         const r = readChordPro(kept);
         const base = file.name.replace(/\.[^.]+$/, '');
         const { title, artist } = r.title ? r : namesFromPdf(base);
-        ids.push(await saveImported({ kind: 'text', title, artist, data: r.text, chordPro: kept, fileName: file.name, added: Date.now() }, replace));
-        added++;
+        got(await saveImported({ kind: 'text', title, artist, data: r.text, chordPro: kept, fileName: file.name, added: Date.now() }, replace));
       }
     }
   }
@@ -763,8 +856,7 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
       const from = data.slice(0, 600).match(/^From: (https:\/\/\S+)$/m)?.[1];
       const joined = !replace && await combineTab({ base, data, fileName: file.name });
       if (joined) { ids.push(joined); combined++; continue; }
-      ids.push(await saveImported({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }, replace));
-      added++;
+      got(await saveImported({ kind: 'text', title, artist, data, fileName: file.name, ...(from ? { sourceUrl: from } : {}), added: Date.now() }, replace));
       continue;
     }
     if (/\.pdf$/i.test(file.name)) {
@@ -774,15 +866,16 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
         const { title, artist } = namesFromPdf(base);
         const r = await pdfToTab(await file.arrayBuffer(), (page, pages, line) => toast(`Reading the PDF… page ${page} of ${pages}${line ? ', ' + line : ''}`, 8000), { title, artist, bass: /bass/i.test(base), drums: drumKind(partFromName(file.name) || base) });
         if (!r.tex && !r.text.trim()) { // no tab in it (piano or vocal staff): keep the PDF to read as pages
-          ids.push(await putSong({ kind: 'sheet', title, artist, data: await file.arrayBuffer(), fileName: file.name, added: Date.now() }));
-          added++;
-          toast('No tab in this PDF, so it’s saved as sheet music you can read page by page.', 6000);
+          const id = await saveImported({ kind: 'sheet', title, artist, data: await file.arrayBuffer(), fileName: file.name, added: Date.now() }, replace);
+          got(id);
+          if (id) toast('No tab in this PDF, so it’s saved as sheet music you can read page by page.', 6000);
           continue;
         }
-        ids.push(await putSong(r.tex
+        const id = await saveImported(r.tex
           ? { kind: 'tex', title, artist, data: r.tex, fileName: file.name, added: Date.now() }
-          : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }));
-        added++;
+          : { kind: 'text', title, artist, data: cleanTabText(r.text), fileName: file.name, added: Date.now() }, replace);
+        got(id);
+        if (!id) continue;
         if (r.tex) toast(`Read ${r.bars} bars from the PDF, with its tempo and section names${r.lyrics ? ' and lyrics (the Lyrics switch in the player turns them on or off)' : ''}. Check the rhythm in Edit.`, 7000);
         else if (r.unknown) toast(`PDF read, but ${r.unknown} mark${r.unknown > 1 ? 's' : ''} couldn’t be read. Check the tab.`, 6000);
       } catch (err) { console.error(err); failed.push(file.name); }
@@ -793,9 +886,9 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
         const { ptbToAlphaTex } = await import('./ptb.js');
         const r = ptbToAlphaTex(await file.arrayBuffer());
         const fromName = parseFilename(file.name);
-        ids.push(await saveImported({ kind: 'tex', title: r.title.trim() || fromName?.song || base, artist: r.artist.trim() || fromName?.artist || '', data: r.tex, fileName: file.name, added: Date.now() }, replace));
-        added++;
-        toast(`Read ${r.bars} bars and ${r.tracks.length} tracks from the Power Tab file: ${r.tracks.join(', ')}.`, 7000);
+        const id = await saveImported({ kind: 'tex', title: r.title.trim() || fromName?.song || base, artist: r.artist.trim() || fromName?.artist || '', data: r.tex, fileName: file.name, added: Date.now() }, replace);
+        got(id);
+        if (id) toast(`Read ${r.bars} bars and ${r.tracks.length} tracks from the Power Tab file: ${r.tracks.join(', ')}.`, 7000);
       } catch (err) { console.error(err); failed.push(file.name); }
       continue;
     }
@@ -803,7 +896,7 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
     const fromName = parseFilename(file.name); // Ultimate Guitar's "Artist-Song-date" names
     const info = readScoreInfo(new Uint8Array(buf));
     if (!info.ok) { failed.push(file.name); continue; }
-    ids.push(await saveImported({
+    got(await saveImported({
       kind: /\.(xml|musicxml|mxl)$/i.test(file.name) ? 'xml' : 'gp',
       title: info.title?.trim() || fromName?.song || base,
       artist: info.artist?.trim() || fromName?.artist || '',
@@ -812,14 +905,17 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
       ...(file.source ? { sourceUrl: file.source.url, versionNote: file.source.title || '' } : {}),
       added: Date.now(),
     }, replace));
-    added++;
   }
   const parts = [];
-  if (added) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
+  added -= dupReplaced;
+  if (added > 0) parts.push(`Added ${added} song${added > 1 ? 's' : ''}.`);
+  if (dupReplaced) parts.push(`Updated ${dupReplaced} you already had.`);
+  if (dupSkipped) parts.push(`Skipped ${dupSkipped} you already have.`);
   if (failed.length) parts.push(`Couldn't read ${failed.join(', ')} (not a Guitar Pro / MusicXML file?).`);
   if (parts.length) toast(parts.join(' '), failed.length ? 6000 : 3000);
-  else if (!quietIfEmpty && pdfs.length < 2 && !combined) toast('Nothing to import.'); // a cancelled PDF import already said so
+  else if (!quietIfEmpty && pdfs.length < 2 && !combined && !dupSkipped) toast('Nothing to import.'); // a cancelled PDF import already said so
   if (openOne && ids.length === 1) open = ids[0]; // a file you picked or dropped: open it
+  if (open && location.hash === `#song/${open}`) { route(); return { added, failed, ids }; } // the open song was replaced: show its new content
   if (open) { location.hash = `#song/${open}`; return { added, failed, ids }; } // straight to the new song
   renderLibrary();
   return { added, failed, ids };

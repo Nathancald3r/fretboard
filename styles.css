@@ -2409,6 +2409,34 @@ body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var
 .welcome .big { font-size: 1.1rem; padding: .7rem 1.4rem; }
 .sync-dialog { max-width: min(640px, 94vw); padding: 0; }
 .sync-dialog .sync-panel { margin: 0; border: 0; }
+/* "You already have this song" on import */
+.dup-dialog { width: min(92vw, 620px); max-width: min(92vw, 620px); }
+.dup-dialog h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
+.dup-key { margin: 0 0 .7rem; padding: .45rem .7rem; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.dup-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-bottom: .9rem; }
+.dup-card { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .75rem; min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.dup-card .small-text { overflow-wrap: anywhere; }
+.dup-head { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dup-title { font-weight: 600; }
+.dup-facts { display: flex; flex-wrap: wrap; gap: .3rem; margin: .2rem 0; }
+.dup-facts .pill { font-size: .78rem; padding: .1rem .5rem; border-radius: 999px; background: var(--line); min-width: 0; }
+.dup-choices { display: flex; flex-direction: column; gap: .45rem; }
+.dup-choice { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; padding: .6rem .8rem; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+.dup-choice:hover, .dup-choice:focus-visible { border-color: var(--accent); }
+.dup-choice span { font-size: .82rem; color: var(--muted); font-weight: 400; }
+.dup-choice.primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: inherit; }
+.dup-again { display: flex; align-items: center; gap: .5rem; margin-top: .8rem; font-size: .9rem; }
+@media (max-width: 520px) { .dup-cards { grid-template-columns: 1fr; } }
+/* The UG helper's saved songs, picked to add together */
+.ready-dialog { width: min(92vw, 560px); max-width: min(92vw, 560px); }
+.ready-dialog h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
+.ready-all { display: flex; align-items: center; gap: .55rem; padding: .4rem .7rem; font-weight: 600; border-bottom: 1px solid var(--line); }
+.ready-list { max-height: min(55vh, 420px); overflow-y: auto; margin-bottom: .6rem; }
+.ready-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .55rem; padding: .5rem .7rem; border-radius: 8px; cursor: pointer; }
+.ready-row:hover { background: var(--panel-2); }
+.ready-name { min-width: 0; overflow-wrap: anywhere; }
+.ready-name small { display: block; color: var(--muted); font-size: .8rem; }
+.ready-all input, .ready-row input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
 @media (max-width: 640px) {
   .menu-label { display: none; }
   .lib-menu-btn { padding: 0; }

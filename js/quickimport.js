@@ -183,9 +183,54 @@ export async function showReady() {
     const kind = /\.pdf$/i.test(r.tracks[0].file) ? `${n} PDF${n > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'text' : 'Guitar Pro';
     const held = r.held ? `, ${r.missing.length} not saved` : '';
     text.textContent = `“${r.song}” is ready (${kind}${held})${runs.length > 1 ? ` · ${runs.length - 1} more` : ''}`;
-    box.append(text, button('Add', 'primary small', () => importRun(r)), button('Not now', 'ghost small', async () => { await markRun(r.id); showReady(); }));
+    box.append(text, button('Add', 'primary small', () => importRun(r)));
+    if (runs.length > 1) box.append(button(`All ${runs.length}…`, 'ghost small', () => pickRuns(runs)));
+    box.append(button('Not now', 'ghost small', async () => { await markRun(r.id); showReady(); }));
   } catch { $('lib-ready').hidden = true; } finally { readyBusy = false; }
 }
+
+// Every song the UG helper saved that isn't in the library yet, ticked: add the ticked ones in one go
+// (each made straight away, as the helper's songs are), or put them off with Not now.
+async function pickRuns(runs) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'parts-dialog ready-dialog';
+  const kindOf = (r) => (/\.pdf$/i.test(r.tracks[0].file) ? `${r.tracks.length} PDF${r.tracks.length > 1 ? 's' : ''}` : /\.txt$/i.test(r.tracks[0].file) ? 'Text' : 'Guitar Pro');
+  const when = (r) => { const d = new Date(r.finished); return isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
+  dlg.innerHTML = `<form method="dialog">
+    <h2>Songs the UG helper saved</h2>
+    <label class="ready-all"><input type="checkbox" data-all checked> Select all</label>
+    <div class="ready-list">${runs.map((r, i) => `<label class="ready-row"><input type="checkbox" data-i="${i}" checked>
+      <span class="ready-name">${esc(r.song)}${r.artist ? `<small>${esc(r.artist)}</small>` : ''}</span>
+      <span class="muted small-text">${esc([kindOf(r), r.held ? `${r.missing.length} not saved` : '', when(r)].filter(Boolean).join(' · '))}</span></label>`).join('')}</div>
+    <div class="row spread"><button value="later" class="ghost" data-later>Not now for the ticked</button><button value="add" class="primary" data-add>Add ${runs.length} songs</button></div>
+  </form>`;
+  document.body.append(dlg);
+  const boxes = [...dlg.querySelectorAll('[data-i]')];
+  const all = dlg.querySelector('[data-all]');
+  const sync = () => {
+    const n = boxes.filter((b) => b.checked).length;
+    all.checked = n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+    dlg.querySelector('[data-add]').textContent = n ? `Add ${n} song${n > 1 ? 's' : ''}` : 'Add';
+    dlg.querySelector('[data-add]').disabled = dlg.querySelector('[data-later]').disabled = !n;
+  };
+  all.addEventListener('change', () => { boxes.forEach((b) => { b.checked = all.checked; }); sync(); });
+  boxes.forEach((b) => b.addEventListener('change', sync));
+  dlg.showModal();
+  await new Promise((resolve) => dlg.addEventListener('close', resolve, { once: true }));
+  const picked = boxes.filter((b) => b.checked).map((b) => runs[Number(b.dataset.i)]);
+  const act = dlg.returnValue;
+  dlg.remove();
+  if (act === 'later') { for (const r of picked) await markRun(r.id); showReady(); return; }
+  if (act !== 'add') return;
+  // one at a time, oldest first; "you already have this song" answered once can go for the rest
+  const list = [...picked].reverse();
+  let done = 0;
+  for (let i = 0; i < list.length; i++) if (await importRun(list[i], true, { first: i === 0, left: list.length - 1 - i })) done++;
+  ctx.toast(done === list.length ? `Added all ${done} songs you picked.` : `Added ${done} of the ${list.length} songs you picked.`, 5000);
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function button(label, cls, onClick) {
   const b = document.createElement('button');
@@ -197,7 +242,8 @@ function button(label, cls, onClick) {
 }
 
 // auto: made into one song straight away (no review), as the UG helper's songs are.
-async function importRun(r, auto = false) {
+// batch: { first, left } when it's one of several picked at once
+async function importRun(r, auto = false, batch = null) {
   const files = [];
   for (const t of r.tracks) {
     try { files.push(await (await r.dir.getFileHandle(t.file)).getFile()); } catch { /* moved or deleted: left out */ }
@@ -205,7 +251,7 @@ async function importRun(r, auto = false) {
   if (!files.length) { ctx.toast(`The files for “${r.song}” aren’t in its folder any more.`, 5000); await markRun(r.id); showReady(); return null; }
   if (auto) await markRun(r.id); // taken now, so it's never added twice
   // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
-  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, ...(auto ? { auto: { title: r.title, artist: r.artist, key: r.key } } : {}) });
+  const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, batch, ...(auto ? { auto: { title: r.title, artist: r.artist, key: r.key } } : {}) });
   if (ids?.length && !auto) await markRun(r.id); // cancelled: it stays offered
   if (ids?.length) await addExtras(r, ids[0]);
   showReady();
