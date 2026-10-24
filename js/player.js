@@ -130,6 +130,7 @@ function ensureApi() {
       applyClickVolume();
       playAlongScoreReady();
       if (restoreTick !== null) { api.tickPosition = restoreTick; restoreTick = null; }
+      if (pendingPreview !== null) { const i = pendingPreview; pendingPreview = null; setTimeout(() => previewTrack(i), 150); }
       if (playOnLoad) { playOnLoad = false; setTimeout(startPlayback, 150); }
       // Live: the song was opened by the last one ending, so start it after a short gap.
       if (pendingAutoPlay) {
@@ -314,6 +315,7 @@ function keepPlayheadInView() {
 // Starts playback from the current position, with the count-in if it's on.
 function startPlayback() {
   if (!api || !readyForPlayback || counting) return;
+  if (preview) { stopPreview(); return; } // Play during a track preview just ends the preview
   scrollToPlayhead(); // show the playhead right away, so the count-in happens where the song will start
   if (!countInOn() || usesClassicCountIn(click)) {
     api.countInVolume = countInOn() && !recordingOn() ? click.countVolume : 0;
@@ -804,6 +806,67 @@ function instrumentOf(track) {
 const ICONS = { Guitar: '🎸', Bass: '🎸', Drums: '🥁', Piano: '🎹', Vocals: '🎤' };
 const iconOf = (track) => ICONS[instrumentOf(track)] || '🎵';
 
+// Sounds you can give a track the file leaves unnamed or unclear ("Untitled" in UG's Power PDFs):
+// [name, General MIDI program]. The choice is kept per song (song.sounds: track index → program).
+const SOUNDS = [
+  ['Acoustic guitar', 25], ['Nylon guitar', 24], ['Clean electric guitar', 27], ['Jazz guitar', 26],
+  ['Overdriven guitar', 29], ['Distortion guitar', 30], ['Bass', 33], ['Bass (pick)', 34],
+  ['Piano', 0], ['Electric piano', 4], ['Organ', 16], ['Strings', 48], ['Synth pad', 89],
+  ['Synth lead', 81], ['Choir', 52], ['Brass', 61], ['Flute', 73],
+];
+const unnamed = (name) => !name?.trim() || /^(untitled\b.*|track \d+)$/i.test(name.trim());
+const unsure = (track, i) => !isDrums(track) && (song?.sounds?.[i] != null || unnamed(track.name) || !instrumentOf(track));
+
+// The sounds picked for this song, set on the read score (before it's drawn and played).
+function applySounds(sc, sounds) {
+  for (const [k, program] of Object.entries(sounds || {})) {
+    const t = sc.tracks[k];
+    const sound = SOUNDS.find(([, p]) => p === program);
+    if (!t || !sound || isDrums(t)) continue;
+    // a file can share one playbackInfo between tracks: this one gets its own
+    t.playbackInfo = Object.assign(Object.create(Object.getPrototypeOf(t.playbackInfo)), t.playbackInfo, { program });
+    if (unnamed(t.name)) t.name = sound[0];
+  }
+}
+
+function setSound(i, program) {
+  if (!song) return;
+  const sounds = { ...(song.sounds || {}) };
+  if (program == null) delete sounds[i]; else sounds[i] = program;
+  song.sounds = sounds;
+  updateSong(song.id, { sounds });
+  reloadScore();
+}
+
+// ▶ on a track: a few seconds of it alone, from its first note, then back to where you were.
+let preview = null;
+let pendingPreview = null; // a track whose sound was just picked: heard once it's read again
+function stopPreview() {
+  if (!preview) return;
+  clearTimeout(preview.timer);
+  api.pause();
+  api.tickPosition = preview.tick;
+  preview = null;
+  applyMix();
+}
+function previewTrack(i) {
+  const again = preview?.i === i;
+  stopPreview();
+  if (again || !api || !score) return;
+  const staff = score.tracks[i]?.staves[0];
+  const first = staff?.bars.findIndex((b) => b.voices.some((v) => v.beats.some((x) => !x.isRest)));
+  const bar = api.tickCache?.masterBars[Math.max(0, first)];
+  if (!bar) return;
+  cancelCountIn();
+  preview = { i, tick: api.tickPosition, timer: 0 };
+  score.tracks.forEach((t, k) => api.changeTrackMute([t], k !== i));
+  api.changeTrackVolume([score.tracks[i]], Math.max(mix[i]?.volume ?? 1, 0.8));
+  api.tickPosition = bar.start;
+  api.play();
+  preview.timer = setTimeout(stopPreview, 7000);
+  showMix();
+}
+
 function trackLabel(track, i) {
   if (track.name?.trim()) return track.name.trim();
   const kind = instrumentOf(track);
@@ -870,10 +933,21 @@ function buildTrackControls() {
     row.innerHTML = `<button class="track-name" data-act="show" title="Show this track in the tab"><span class="ticon"></span><span class="tname"></span><small></small></button>
       <input type="range" min="0" max="150" step="1" data-act="volume" title="Volume" aria-label="Volume">
       <button class="ms" data-act="mute" title="Mute">M</button>
-      <button class="ms solo" data-act="solo" title="Solo">S</button>`;
+      <button class="ms solo" data-act="solo" title="Solo">S</button>
+      <button class="ms" data-act="preview" title="Hear this track alone for a few seconds">▶</button>`;
     row.querySelector('.ticon').textContent = iconOf(track);
     row.querySelector('.tname').textContent = trackLabel(track, i);
     row.querySelector('small').textContent = isFretted(track) ? '' : 'notation';
+    if (unsure(track, i)) {
+      const pick = document.createElement('select');
+      pick.className = 'track-sound';
+      pick.dataset.act = 'sound';
+      pick.title = 'What this track is: its sound and name';
+      pick.add(new Option(song?.sounds?.[i] != null ? 'As in the file' : 'Pick the instrument…', ''));
+      for (const [name, p] of SOUNDS) pick.add(new Option(name, p));
+      pick.value = song?.sounds?.[i] ?? '';
+      row.append(pick);
+    }
     list.append(row);
   });
   // parts written as standard notation (piano, drums...) are kept as their PDF pages
@@ -964,8 +1038,16 @@ function onMixerInput(e) {
     return;
   }
   if (e.type === 'change' && act === 'volume') { saveMix(); e.target.blur(); return; }
+  if (e.type === 'change' && act === 'sound') {
+    stopPreview();
+    setSound(i, e.target.value === '' ? null : Number(e.target.value));
+    pendingPreview = i; // heard as soon as it's read again
+    return;
+  }
   if (e.type !== 'click') return;
-  if (act === 'show') { selectTrack(i); closeSheets(); } // picked: the menu goes away
+  if (act !== 'preview') stopPreview();
+  if (act === 'preview') previewTrack(i);
+  else if (act === 'show') { selectTrack(i); closeSheets(); } // picked: the menu goes away
   else if (act === 'mute') setMute(i);
   else if (act === 'solo') setSolo(i);
 }
@@ -1085,6 +1167,7 @@ function songKey() {
 function readScore(s) {
   const score = parseScore(s);
   ownDrumChannels(score.tracks); // a shaker beside the drums gets its own volume and mute
+  applySounds(score, s.sounds);
   return score;
 }
 
