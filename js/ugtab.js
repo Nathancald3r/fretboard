@@ -177,38 +177,47 @@ function glyphAt(comp) {
   // A close call between digits with a different number of closed loops (a small 6 matched 5 by one
   // pixel: Trust In God, Lead Guitar 3, bar 135) goes to the one whose loops the glyph has.
   // Missing a loop the best match needs counts for more (a heavier 5 matched 6 by seven pixels).
-  const holes = loops(box);
-  if (HOLES[dist[0].ch] !== undefined && HOLES[dist[0].ch] !== holes) {
-    const room = holes < HOLES[dist[0].ch] ? 10 : 6;
+  const found = loops(box), holes = found.length;
+  let ch = dist[0].ch;
+  if (HOLES[ch] !== undefined && HOLES[ch] !== holes) {
+    const room = holes < HOLES[ch] ? 10 : 6;
     const alt = dist.find((t) => t.d <= dist[0].d + room && HOLES[t.ch] === holes);
-    if (alt) return alt.ch;
+    if (alt) ch = alt.ch;
   }
-  return dist[0].ch;
+  // One loop: where it sits tells 0, 6 and 9 apart in any font (a 0's loop is central, a 6's low down,
+  // a 9's high up). Another font's 9 matched 8 and then 0; its 6 matched 0 by a pixel.
+  // An 8's lower loop is its bigger one; a 9 whose tail curls shut has a small second loop under its own.
+  if (holes === 2 && ch === '8' && found[1].size < 0.8 * found[0].size) ch = '9';
+  else if (holes === 1 && '0689'.includes(ch)) {
+    const [h] = found, mid = (h.y0 + h.y1) / 2 - oy;
+    ch = mid < 0.375 * comp.h ? '9' : mid > 0.55 * comp.h ? '6' : '0'; // (centres: 9 0.27-0.32 of the height, 0 0.43-0.46, 6 0.65)
+  }
+  return ch;
 }
 
 // Closed loops in each digit (4 left out: fonts draw it open or closed).
 const HOLES = { 0: 1, 1: 0, 2: 0, 3: 0, 5: 0, 6: 1, 7: 0, 8: 2, 9: 1 };
 
-/** Background areas of a glyph box that don't reach its edge. */
+/** Background areas of a glyph box that don't reach its edge (top to bottom: the rows each covers, its size). */
 function loops(box) {
   const seen = new Uint8Array(box.length);
-  let n = 0;
+  const out = [];
   for (let s = 0; s < box.length; s++) {
     if (box[s] || seen[s]) continue;
-    let edge = false, size = 0;
+    let edge = false, size = 0, y0 = UG_H, y1 = 0;
     const stack = [s];
     seen[s] = 1;
     while (stack.length) {
       const i = stack.pop(), x = i % UG_W, y = (i / UG_W) | 0;
-      size++;
+      size++; y0 = Math.min(y0, y); y1 = Math.max(y1, y);
       if (x === 0 || y === 0 || x === UG_W - 1 || y === UG_H - 1) edge = true;
       for (const j of [x > 0 && i - 1, x < UG_W - 1 && i + 1, y > 0 && i - UG_W, y < UG_H - 1 && i + UG_W]) {
         if (j !== false && !box[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
       }
     }
-    if (!edge && size >= 2) n++;
+    if (!edge && size >= 2) out.push({ y0, y1, size });
   }
-  return n;
+  return out;
 }
 
 export function components(ink, w, st, bars, dropLines = false) {
