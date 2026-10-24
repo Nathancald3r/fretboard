@@ -158,8 +158,16 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Where we left off (2026-10-24)
 
-- Android 1.47 (versionCode 48) is the latest APK (sharing to MusicStand/OnSong). Chord sheet features (`a7d07bf`) are pushed but not in an APK yet.
-- Pushed: the Songs page redesign, sharing, the .ptb reader, the mixer preview and instrument picker, drum fixes, the round-trip import test.
-- Still open for When I Go Down (PDF import, 114 bars), details in `TODO.md`:
-  - piano part line 3 is lost: 37 bars
-  - drums and percussion don't read multi-bar rests
+- **Latest APK:** Android 1.47 (versionCode 48). Pushed since, not in an APK yet: the chord sheet features (`a7d07bf`) and two importer fixes (`1b5fe63`, `862aa28`).
+- **Done and pushed 2026-10-23/24:**
+  - Songs page redesign: the last song opens straight away, ☰ holds the library, bulk edit (delete, setlist, folder, share, key), "You already have this song".
+  - Sharing to MusicStand / OnSong / SongbookPro (ChordPro, PDF with the song attached, setlist .zip).
+  - ChordPro and chord-chart PDF import.
+  - Chord sheets: chord shapes on hover/tap with saved favourite shapes, ChordPro editing, two columns, sticky controls, search box clears after a search.
+  - Power Tab (.ptb) import; mixer ▶ preview and instrument picker; drums in When I Go Down; dynamics from the sheet music.
+  - Round-trip import test: 7 of 7 songs pass, mean 99.6% (2026-10-24).
+- **Open (details in `TODO.md`):**
+  - When I Go Down PDF import: piano line 3 lost (37 bars), drums 71 and percussion 33 bars (multi-bar rests).
+  - Songbook plan: live mode with page turns, a chord chart as a laid-out PDF, Open in app on the helper's Done window, checking shares in the real apps.
+  - UG workflow plan: review step (4) and automatic checks (6).
+  - Trust In God leftovers and the wrong-chords bug on Here I Am To Worship.

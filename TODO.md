@@ -62,7 +62,7 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
    - Ask the user what looked wrong before changing the spelling.
    - Tests are in `tests/theory.test.mjs`.
 2. **Two columns: done 2026-10-24 (`a7d07bf`)**, a toggle in the sticky bar, saved per song (`song.columns`), sections never split (`.tx-sec`); phones stay one column. Not done: a section that won't fit moving whole to the next page. The plan was: the chart can split into two columns (a toggle beside Text size, saved per song). Sections never break across columns; a section that won't fit moves whole to the next column or page. Perform mode keeps the choice.
-3. **Export:**
+3. **Export: ChordPro done 2026-10-24** (`sheetToChordPro`, `js/sharecore.js`, `2b05e93`): Share sends a song or setlist to MusicStand / OnSong / SongbookPro as ChordPro, tabs and scores as a PDF with the song attached, several as a .zip with Setlist.txt (name, date, each song's key). Not checked yet in the real apps. Not done: a chord chart as a laid-out PDF (columns, text size). The plan was:
    - **ChordPro (.cho / .chordpro), the main one.**
      - Header: `{title}`, `{artist}`, `{key}`, `{capo}`, `{tempo}`, `{time}`.
      - Sections: `{start_of_verse: Verse 1}` … `{end_of_verse}`, and the same for chorus and bridge; other sections as `{comment}`.
@@ -71,7 +71,7 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
    - **PDF:** what the page shows (columns, text size), one song per file, page breaks between sections.
    - **.txt:** chords over lyrics, as UG writes them.
    - Check each file by opening it in SongbookPro, OnSong and Music Stand. Their ChordPro readers differ: OnSong wants `{c:}` comments, Music Stand reads `{key}` and `{tempo}`.
-4. **Import:**
+4. **Import: done 2026-10-24 (`56ba75c`)**: ChordPro files and chord-chart PDFs (SongSelect style) come in as chord songs. The plan was:
    - ChordPro files: `.cho`, `.chordpro`, `.chopro`, `.pro`, and `.txt` with `{title}` or inline `[chords]`. Add them to `#file-input`'s `accept` and to `importFiles`.
    - Plain chords-over-lyrics `.txt`: already read as a text tab.
    - PDF chord charts (text PDFs): the chord line above each lyric line, kept by column position.
@@ -234,7 +234,7 @@ Bars read per part with `pdfToTab` (lyrics off):
 
 Other notes:
 - `findStaves` has a new rule: two lines 3 or 5 spaces apart, joined by ≥ 3 bar lines, are filled in as a staff. It isn't proven to help yet; remove it if it doesn't.
-- The `.gp5` of this song imports its drums as piano (channel 11, program 0). Check the GP5 import's percussion detection.
+- The `.gp5`'s drums: fixed 2026-10-23 (`394af4a`), they play. The `.ptb` of this song imports whole (114 bars, 7 tracks, `dba3976`).
 - When done:
   - Run the tests and push.
   - Tell the user to restart the UG helper.
