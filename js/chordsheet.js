@@ -4,7 +4,7 @@
 // first few words. Pure (no DOM): tested in tests/chordsheet.test.mjs.
 import { lyricsTrack, buildLyrics } from './lyrics.js';
 
-const CHORD = /^\(?[A-G][#b♯♭]?(?:maj|min|dim|aug|sus|add|m|M|\+|°|ø|-|\d|\(|\)|#|b)*(?:\/[A-G][#b♯♭]?)?\)?$/;
+const CHORD = /^\(?[A-G][#b♯♭]?(?:maj|min|dim|aug|sus|add|no|m|M|\+|°|ø|-|\d|\(|\)|#|b)*(?:\/[A-G][#b♯♭]?)?\)?$/;
 const FILLER = /^(?:\||\|\||x\d+|\d+x|N\.?C\.?|-+|\(|\)|\.+|%|\/)$/i;
 const tidy = (c) => c.replace(/^\(|\)$/g, '').replace(/♯/g, '#').replace(/♭/g, 'b');
 

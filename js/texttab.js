@@ -9,7 +9,7 @@ import { findRecording } from './ytsearch.js';
 import { playStrum, stopStrum } from './strumplay.js';
 
 const $ = (id) => document.getElementById(id);
-const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d|add\d+|b\d+|#\d+)*(\/[A-G][#b]?)?\)?$/;
+const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d?|add\d+|b\d+|#\d+|\((?:no|add)?\d+\))*(\/[A-G][#b]?)?\)?$/; // G7sus, F2(no3) too
 const TAB_LINE = /^\s*[A-Ga-g]?[#b]?\s*[|:]?[-0-9|hpbrx/\\~^().<>*=sv ]*-{3,}[-0-9|hpbrx/\\~^().<>*=sv ]*$/;
 
 let song = null;

@@ -619,6 +619,27 @@ function askCombine(existing, part) {
   }, { once: true }));
 }
 
+const CHORDPRO = /\.(cho|chordpro|chopro|crd)$/i;
+
+// A chord chart with notes on it: keep them (each with who wrote it) or import it clean. null: cancelled.
+function askNotes(notes) {
+  const by = [...new Set(notes.map((n) => n.by).filter(Boolean))];
+  const dlg = document.createElement('dialog');
+  dlg.className = 'parts-dialog';
+  dlg.innerHTML = `<form method="dialog">
+    <h2>Keep the notes?</h2>
+    <p class="muted">This chart has ${notes.length} note${notes.length > 1 ? 's' : ''}${by.length ? ` from ${escape(by.join(', '))}` : ''} on it:</p>
+    <ul class="small-text">${notes.slice(0, 5).map((n) => `<li>${n.by ? `<b>${escape(n.by)}:</b> ` : ''}${escape(n.text)}</li>`).join('')}${notes.length > 5 ? '<li>…</li>' : ''}</ul>
+    <div class="row spread"><button value="clean" class="ghost">Import clean</button><button value="keep" class="primary">Keep notes</button></div>
+  </form>`;
+  document.body.append(dlg);
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener('close', () => {
+    dlg.remove();
+    resolve(dlg.returnValue === 'keep' ? true : dlg.returnValue === 'clean' ? false : null);
+  }, { once: true }));
+}
+
 async function saveImported(song, replace) {
   if (replace) {
     const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
@@ -692,6 +713,34 @@ async function importFilesNow(files, { quietIfEmpty = false, auto = null, replac
   let combined = 0; // tabs that joined a song already in the library (it said so itself)
   const ids = [];
   const failed = [];
+  // ChordPro files, and PDFs that are chord charts (SongSelect and the like: real text, chords over words)
+  const charts = [];
+  for (const f of files) {
+    try {
+      if (CHORDPRO.test(f.name)) charts.push({ file: f, cho: await f.text() });
+      else if (/\.pdf$/i.test(f.name)) {
+        const [{ loadPdfjs }, { pdfToChordPro }] = await Promise.all([import('./pdftab.js'), import('./chordpro.js')]);
+        const cho = await pdfToChordPro(await loadPdfjs(), await f.arrayBuffer(), { fileName: f.name });
+        if (cho) charts.push({ file: f, cho });
+      }
+    } catch (err) { console.error(err); }
+  }
+  if (charts.length) {
+    files = files.filter((f) => !charts.some((c) => c.file === f));
+    const { readChordPro, withoutNotes } = await import('./chordpro.js');
+    const notes = charts.flatMap((c) => readChordPro(c.cho).notes);
+    const keep = notes.length ? await askNotes(notes) : false;
+    if (keep !== null) {
+      for (const { file, cho } of charts) {
+        const kept = keep ? cho : withoutNotes(cho);
+        const r = readChordPro(kept);
+        const base = file.name.replace(/\.[^.]+$/, '');
+        const { title, artist } = r.title ? r : namesFromPdf(base);
+        ids.push(await saveImported({ kind: 'text', title, artist, data: r.text, chordPro: kept, fileName: file.name, added: Date.now() }, replace));
+        added++;
+      }
+    }
+  }
   const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
   let open = 0;
   if (pdfs.length > 1) { // several PDFs together: one song, an instrument each
@@ -792,7 +841,7 @@ function initImport() {
     zone.hidden = true;
     const all = [...e.dataTransfer.files];
     const songs = all.filter((f) => TAB_FILE.test(f.name) || /\.capx?$/i.test(f.name));
-    if (!songs.length) { toast('Not a song file. Fretboard reads Guitar Pro, Power Tab, MusicXML, PDF and text tabs.', 5000); return; }
+    if (!songs.length) { toast('Not a song file. Fretboard reads Guitar Pro, Power Tab, MusicXML, ChordPro, PDF and text tabs.', 5000); return; }
     importFiles(songs, { openOne: true });
   });
 }
