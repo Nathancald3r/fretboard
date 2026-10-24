@@ -1,0 +1,1189 @@
+{
+ "songs": [
+  {
+   "name": "Bethel Music - Champion (official)",
+   "title": "Champion",
+   "artist": "Bethel Music",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Bethel Music - Champion.gp",
+   "sha1": "69aa4ceb64aaff37",
+   "seconds": 518,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/bethel-music/champion-official-5476845",
+   "youtube": "https://www.youtube.com/watch?v=BOK8F9caDic",
+   "video": {
+    "title": "Champion - Bethel Music & Dante Bowe",
+    "channel": "Bethel Music",
+    "seconds": 527
+   },
+   "confidence": 99.8,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=BOK8F9caDic",
+     "title": "Champion - Bethel Music & Dante Bowe",
+     "channel": "Bethel Music",
+     "seconds": 527,
+     "score": 98.3
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=Lf0TfY1A3Ic",
+     "title": "Champion - Rheva Henry | Moment",
+     "channel": "Bethel Music",
+     "seconds": 510,
+     "score": 96.9
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=1gYBw_6qpkA",
+     "title": "(HH) - Champion   Bethel Music & Dante Bowe",
+     "channel": "Hosanna Heights",
+     "seconds": 527,
+     "score": 83.3
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=cQqC9xTTpj4",
+     "title": "You Are My Champion | Dante Bowe | Bethel Music",
+     "channel": "CityBeat Church",
+     "seconds": 555,
+     "score": 77.9
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=KCTXHjHAUAI",
+     "title": "Champion (feat. Brandon Lake & Maryanne J. George)",
+     "channel": "Maverick City Music - Topic",
+     "seconds": 450,
+     "score": 76.2
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=5X9Usr8Xucw",
+     "title": "Champion - Bethel Music (Lyrics) feat. Dante Bowe",
+     "channel": "iWorship Lyrics",
+     "seconds": 528,
+     "score": 70.1
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=tz-wLRsXYW4",
+     "title": "Champion (Lyrics) - Bethel Music",
+     "channel": "mimusic",
+     "seconds": 506,
+     "score": 67.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=wbG5UuKnuug",
+     "title": "Bethel Music-Champion Video Lyrics",
+     "channel": "David ",
+     "seconds": 506,
+     "score": 67.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=wMpUK0O3WLg",
+     "title": "Champion | Feat. Michael Bethany | Gateway Worship",
+     "channel": "Gateway Worship",
+     "seconds": 556,
+     "score": 62.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=wcDgUIy-lJY",
+     "title": "Champion (feat. Brandon Lake & Maryanne J. George) | Maverick City Music | UPPERROOM | TRIBL",
+     "channel": "TRIBL",
+     "seconds": 435,
+     "score": 47.5
+    }
+   ],
+   "tried": [
+    {
+     "url": "https://www.youtube.com/watch?v=AinNlEIZeUY",
+     "title": "Champion - Bethel Music, Bethany Wohrle",
+     "channel": "Bethel Music and Bethany Wohrle",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.127,
+     "worst": 0.229,
+     "head_s": -0.5,
+     "tail_s": -0.7,
+     "length_ratio": 0.995,
+     "shift": -5,
+     "bad": [
+      "428-438 s: recording 5 s longer here",
+      "438-448 s: recording 5 s longer here",
+      "458-468 s: recording 15 s longer here",
+      "468-478 s: recording 12 s longer here",
+      "488-498 s: recording 10 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=BOK8F9caDic",
+     "title": "Champion - Bethel Music & Dante Bowe",
+     "channel": "Bethel Music",
+     "tier": 2,
+     "ok": true,
+     "dist": 0.101,
+     "worst": 0.162,
+     "head_s": 0.0,
+     "tail_s": 3.6,
+     "length_ratio": 1.006,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=Lf0TfY1A3Ic",
+     "title": "Champion - Rheva Henry | Moment",
+     "channel": "Bethel Music",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.128,
+     "worst": 0.305,
+     "head_s": -1.0,
+     "tail_s": -0.1,
+     "length_ratio": 0.984,
+     "shift": 6,
+     "bad": [
+      "428-438 s: recording 14 s longer here",
+      "438-448 s: recording 14 s longer here",
+      "448-458 s: recording 14 s longer here",
+      "458-468 s: recording 15 s longer here",
+      "508-518 s: chords differ"
+     ]
+    }
+   ],
+   "lineup": 0.101,
+   "match": {
+    "ok": true,
+    "dist": 0.101,
+    "worst": 0.162,
+    "head_s": 0.0,
+    "tail_s": 3.6,
+    "length_ratio": 1.006,
+    "shift": 0,
+    "bad": []
+   }
+  },
+  {
+   "name": "Chris Tomlin - Here I Am To Worship",
+   "title": "Here I Am To Worship",
+   "artist": "Chris Tomlin",
+   "gp": "C:\\Users\\natha\\Downloads\\Chris Tomlin - Here I Am To Worship.gp",
+   "sha1": "18c627a80d0bed64",
+   "seconds": 276,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "youtube": "https://www.youtube.com/watch?v=vx936NVJC5M",
+   "video": {
+    "title": "Chris Tomlin - Here I am to Worship",
+    "channel": "NoDisX",
+    "seconds": 293
+   },
+   "confidence": 78.8,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
+     "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
+     "channel": "Patrick Phiaphakdy",
+     "seconds": 284,
+     "score": 72.1
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=bEXy857GABk",
+     "title": "Here I Am To Worship - Chris Tomlin (lyric video) HD",
+     "channel": "John Speicher",
+     "seconds": 289,
+     "score": 70.3
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=FaUTv1pXRyU",
+     "title": "Here I am to Worship - Chris Tomlin with lyrics",
+     "channel": "Jack Goodman",
+     "seconds": 293,
+     "score": 65.8
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=O1FVi0QgTq8",
+     "title": "Here I Am To Worship",
+     "channel": "Michael W. Smith",
+     "seconds": 297,
+     "score": 62.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=lvPPmpa6nU8",
+     "title": "HERE I AM TO WORSHIP Lyrics - Chris Tomlin",
+     "channel": "gioxlove",
+     "seconds": 256,
+     "score": 57.5
+    }
+   ],
+   "lineup": 0.113
+  },
+  {
+   "name": "Chris Tomlin - Here I Am To Worship (official)",
+   "title": "Here I Am To Worship",
+   "artist": "Chris Tomlin",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Chris Tomlin - Here I Am To Worship.gp",
+   "sha1": "018664ad56cdaa6d",
+   "seconds": 268,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "vocals"
+   ],
+   "status": "suggested",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/chris-tomlin/here-i-am-to-worship-official-2874398",
+   "youtube": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
+   "video": {
+    "title": "Chris Tomlin - Here I am To Worship",
+    "channel": "Theverrmuth",
+    "seconds": 295
+   },
+   "confidence": 75.7,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
+     "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
+     "channel": "Patrick Phiaphakdy",
+     "seconds": 284,
+     "score": 69.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=H8ZZK3W7YqM",
+     "title": "Here I am to Worship with lyrics- Chris Tomlin",
+     "channel": "Praise and Worship Musics",
+     "seconds": 284,
+     "score": 66.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=lvPPmpa6nU8",
+     "title": "HERE I AM TO WORSHIP Lyrics - Chris Tomlin",
+     "channel": "gioxlove",
+     "seconds": 256,
+     "score": 63.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=ZUh8ltwxB_I",
+     "title": "Chris Tomlin - Here I Am To Worship",
+     "channel": "juanito vassallo",
+     "seconds": 395,
+     "score": 55.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=O1FVi0QgTq8",
+     "title": "Here I Am To Worship",
+     "channel": "Michael W. Smith",
+     "seconds": 297,
+     "score": null
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=xQnkYrzVYfI",
+     "title": "Here I Am To Worship",
+     "channel": "Michael W. Smith",
+     "seconds": 294,
+     "score": null
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=vx936NVJC5M",
+     "title": "Chris Tomlin - Here I am to Worship",
+     "channel": "NoDisX",
+     "seconds": 293,
+     "score": null
+    }
+   ],
+   "tried": [
+    {
+     "url": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
+     "title": "Chris Tomlin - Here I am To Worship",
+     "channel": "Theverrmuth",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.094,
+     "worst": 0.202,
+     "head_s": 8.9,
+     "tail_s": 4.6,
+     "length_ratio": 1.073,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
+     "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
+     "channel": "Patrick Phiaphakdy",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.094,
+     "worst": 0.199,
+     "head_s": 8.9,
+     "tail_s": -0.1,
+     "length_ratio": 1.048,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=H8ZZK3W7YqM",
+     "title": "Here I am to Worship with lyrics- Chris Tomlin",
+     "channel": "Praise and Worship Musics",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.094,
+     "worst": 0.203,
+     "head_s": 9.0,
+     "tail_s": -0.1,
+     "length_ratio": 1.045,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=lvPPmpa6nU8",
+     "title": "HERE I AM TO WORSHIP Lyrics - Chris Tomlin",
+     "channel": "gioxlove",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.134,
+     "worst": 0.235,
+     "head_s": 2.3,
+     "tail_s": -0.6,
+     "length_ratio": 0.896,
+     "shift": 3,
+     "bad": [
+      "149-159 s: recording 13 s shorter here",
+      "159-169 s: recording 13 s shorter here",
+      "169-179 s: recording 13 s shorter here",
+      "179-189 s: recording 13 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=ZUh8ltwxB_I",
+     "title": "Chris Tomlin - Here I Am To Worship",
+     "channel": "juanito vassallo",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.118,
+     "worst": 0.193,
+     "head_s": -0.1,
+     "tail_s": 5.8,
+     "length_ratio": 1.467,
+     "shift": 0,
+     "bad": [
+      "149-159 s: recording 8 s longer here",
+      "159-169 s: recording 71 s longer here",
+      "169-179 s: recording 71 s longer here",
+      "179-189 s: recording 63 s longer here",
+      "189-199 s: recording 63 s longer here",
+      "199-209 s: recording 63 s longer here",
+      "209-219 s: recording 63 s longer here",
+      "219-229 s: recording 61 s longer here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=O1FVi0QgTq8",
+     "title": "Here I Am To Worship",
+     "channel": "Michael W. Smith",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.142,
+     "worst": 0.609,
+     "head_s": -1.0,
+     "tail_s": -0.3,
+     "length_ratio": 1.092,
+     "shift": 3,
+     "bad": [
+      "0-10 s: chords differ"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=xQnkYrzVYfI",
+     "title": "Here I Am To Worship",
+     "channel": "Michael W. Smith",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.145,
+     "worst": 0.239,
+     "head_s": -0.1,
+     "tail_s": -0.1,
+     "length_ratio": 1.089,
+     "shift": 3,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=vx936NVJC5M",
+     "title": "Chris Tomlin - Here I am to Worship",
+     "channel": "NoDisX",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.093,
+     "worst": 0.203,
+     "head_s": 8.9,
+     "tail_s": 6.2,
+     "length_ratio": 1.079,
+     "shift": 0,
+     "bad": []
+    }
+   ],
+   "lineup": 0.145
+  },
+  {
+   "name": "Chris Tomlin - How Great Is Our God (official)",
+   "title": "How Great Is Our God",
+   "artist": "Chris Tomlin",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Chris Tomlin - How Great Is Our God.gp",
+   "sha1": "2054d5b6fd82f04f",
+   "seconds": 291,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "piano",
+    "vocals"
+   ],
+   "status": "suggested",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/chris-tomlin/how-great-is-our-god-official-2422307",
+   "youtube": "https://www.youtube.com/watch?v=Gu2chMZKzy8",
+   "video": {
+    "title": "Chris Tomlin - How Great Is Our God (Audio)",
+    "channel": "Chris Tomlin",
+    "seconds": 306
+   },
+   "confidence": 97.8,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 267,
+     "score": 83.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=UkeTNZwooQ0",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 291,
+     "score": 100.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=pmtQhIaGIpE",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 292,
+     "score": 99.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=2S6P8lqxO2I",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 295,
+     "score": 98.6
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=oIXa7FzmXFE",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 267,
+     "score": 83.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=5pF11qnJ8rw",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 413,
+     "score": 70.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=V7Fxe0lH1kA",
+     "title": "How Great Is Our God",
+     "channel": "Maranatha! Music - Topic",
+     "seconds": 256,
+     "score": 70.9
+    }
+   ],
+   "tried": [
+    {
+     "url": "https://www.youtube.com/watch?v=Gu2chMZKzy8",
+     "title": "Chris Tomlin - How Great Is Our God (Audio)",
+     "channel": "Chris Tomlin",
+     "tier": 1,
+     "ok": false,
+     "dist": 0.114,
+     "worst": 0.41,
+     "head_s": -0.6,
+     "tail_s": -0.1,
+     "length_ratio": 1.032,
+     "shift": 0,
+     "bad": [
+      "0-10 s: chords differ",
+      "10-20 s: recording 6 s longer here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.13,
+     "worst": 0.382,
+     "head_s": -0.1,
+     "tail_s": -0.1,
+     "length_ratio": 0.903,
+     "shift": 0,
+     "bad": [
+      "0-10 s: chords differ",
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here",
+      "221-231 s: recording 6 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=UkeTNZwooQ0",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.126,
+     "worst": 0.336,
+     "head_s": -1.0,
+     "tail_s": 1.0,
+     "length_ratio": 0.985,
+     "shift": -4,
+     "bad": [
+      "0-10 s: chords differ",
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here",
+      "221-231 s: recording 5 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=pmtQhIaGIpE",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.126,
+     "worst": 0.338,
+     "head_s": -1.0,
+     "tail_s": 1.0,
+     "length_ratio": 0.985,
+     "shift": -4,
+     "bad": [
+      "0-10 s: chords differ",
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here",
+      "221-231 s: recording 6 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=2S6P8lqxO2I",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.128,
+     "worst": 0.397,
+     "head_s": -0.1,
+     "tail_s": -0.9,
+     "length_ratio": 0.989,
+     "shift": -2,
+     "bad": [
+      "0-10 s: chords differ",
+      "201-211 s: recording 5 s shorter here",
+      "211-221 s: recording 4 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=oIXa7FzmXFE",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.131,
+     "worst": 0.402,
+     "head_s": -1.0,
+     "tail_s": 0.0,
+     "length_ratio": 0.903,
+     "shift": 0,
+     "bad": [
+      "0-10 s: chords differ",
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here",
+      "221-231 s: recording 5 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=5pF11qnJ8rw",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.131,
+     "worst": 0.443,
+     "head_s": -1.0,
+     "tail_s": 0.3,
+     "length_ratio": 1.412,
+     "shift": -1,
+     "bad": [
+      "0-10 s: chords differ",
+      "70-80 s: recording 23 s longer here",
+      "80-90 s: recording 22 s longer here",
+      "90-100 s: recording 21 s longer here",
+      "100-110 s: recording 22 s longer here",
+      "110-120 s: recording 9 s longer here",
+      "120-130 s: recording 8 s longer here",
+      "130-140 s: recording 10 s longer here",
+      "140-151 s: recording 10 s longer here",
+      "161-171 s: recording 28 s longer here",
+      "171-181 s: recording 28 s longer here",
+      "181-191 s: recording 28 s longer here",
+      "191-201 s: recording 23 s longer here",
+      "201-211 s: recording 5 s shorter here",
+      "211-221 s: recording 4 s shorter here",
+      "241-251 s: recording 4 s longer here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=V7Fxe0lH1kA",
+     "title": "How Great Is Our God",
+     "channel": "Maranatha! Music - Topic",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.121,
+     "worst": 0.277,
+     "head_s": -0.9,
+     "tail_s": 0.0,
+     "length_ratio": 0.867,
+     "shift": -1,
+     "bad": [
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "David Crowder Band - How He Loves Us",
+   "title": "How He Loves Us",
+   "artist": "David Crowder Band",
+   "gp": "C:\\Users\\natha\\Downloads\\UG Songs\\How He Loves - David Crowder Band (Key C)\\How He Loves - David Crowder Band - Guitar Pro.gpx",
+   "sha1": "e938cd0f9158bfb8",
+   "seconds": 292,
+   "instruments": [
+    "bass",
+    "guitar",
+    "piano"
+   ],
+   "status": "confirmed",
+   "youtube": "https://www.youtube.com/watch?v=h-A8bDBarFk",
+   "video": {
+    "title": "How He Loves",
+    "channel": "davidcrowderband",
+    "seconds": 315
+   },
+   "confidence": 67.1,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=TCunuL58odQ",
+     "title": "David Crowder*Band - How He Loves (Official Music Video)",
+     "channel": "davidcrowderband",
+     "seconds": 248,
+     "score": 66.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=TRyzr8mb9Xc",
+     "title": "How He Loves",
+     "channel": "davidcrowderband",
+     "seconds": 319,
+     "score": 65.8
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=SUKJEhkk2G8",
+     "title": "David Crowder Band - How He Loves (Lyrics And Chords)",
+     "channel": "davidcrowderband",
+     "seconds": 245,
+     "score": 57.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=RxTOsQ3LDE4",
+     "title": "How He Loves Us- David Crowder Band",
+     "channel": "Jesusrocksmypinksock",
+     "seconds": 249,
+     "score": 55.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=DybnKSvEv_E",
+     "title": "He Is the Love",
+     "channel": "davidcrowderband",
+     "seconds": 292,
+     "score": 55.0
+    }
+   ],
+   "lineup": 0.135
+  },
+  {
+   "name": "Elevation Worship - Trust In God (official)",
+   "title": "Trust In God",
+   "artist": "Elevation Worship",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Elevation Worship - Trust In God.gp",
+   "sha1": "7a2b6f889c0e8b54",
+   "seconds": 443,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/elevation-worship/trust-in-god-official-4915333",
+   "youtube": "https://www.youtube.com/watch?v=aCERjDvO2rA",
+   "video": {
+    "title": "Trust In God",
+    "channel": "Elevation Worship",
+    "seconds": 443
+   },
+   "confidence": 100.0,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=QS04WbSnxok",
+     "title": "Trust In God (feat. Chris Brown & Isaiah Templeton) | Elevation Worship",
+     "channel": "Elevation Worship",
+     "seconds": 566,
+     "score": 72.2
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=D059kRZKEcs",
+     "title": "Trust In God | Elevation Choir",
+     "channel": "Elevation Choir and Elevation Worship",
+     "seconds": 354,
+     "score": 70.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=iJE4yahElBQ",
+     "title": "Trust In God (feat. Chris Brown) | Official Lyric Video | Elevation Worship",
+     "channel": "Elevation Worship",
+     "seconds": 443,
+     "score": 90.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=eCjjWyAh98U",
+     "title": "Trust in God",
+     "channel": "AWARE WORSHIP - Topic",
+     "seconds": 366,
+     "score": 72.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=gua9QILlQfA",
+     "title": "Elevation Worship (feat. Chris Brown) - Trust In God (with lyrics)(2023)",
+     "channel": "Gary McDuffee",
+     "seconds": 443,
+     "score": 72.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=eOY5EmWsVV0",
+     "title": "Elevation Worship - Trust In God ft. Chris Brown (Lyrics)",
+     "channel": "music meets heaven",
+     "seconds": 443,
+     "score": 72.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=AuQPYjbrvQM",
+     "title": "Trust In God (By Elevation Worship) | Lighthouse Church of Houston",
+     "channel": "The Lighthouse Church of Houston ",
+     "seconds": 509,
+     "score": 70.1
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=LcgSzGE7nkc",
+     "title": "Elevation Worship - Trust In God",
+     "channel": "87.3 IXN Christian Center FM",
+     "seconds": 241,
+     "score": 55.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=5_iob6lOUOI",
+     "title": "Aware Worship - Trust In God (Featuring Mark Gutierrez)",
+     "channel": "Aware Worship",
+     "seconds": 383,
+     "score": 50.4
+    }
+   ],
+   "tried": [
+    {
+     "url": "https://www.youtube.com/watch?v=aCERjDvO2rA",
+     "title": "Trust In God",
+     "channel": "Elevation Worship",
+     "tier": 2,
+     "ok": true,
+     "dist": 0.111,
+     "worst": 0.239,
+     "head_s": -0.1,
+     "tail_s": -0.2,
+     "length_ratio": 0.993,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=QS04WbSnxok",
+     "title": "Trust In God (feat. Chris Brown & Isaiah Templeton) | Elevation Worship",
+     "channel": "Elevation Worship",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.13,
+     "worst": 0.245,
+     "head_s": 1.4,
+     "tail_s": 63.1,
+     "length_ratio": 1.265,
+     "shift": 0,
+     "bad": []
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=D059kRZKEcs",
+     "title": "Trust In God | Elevation Choir",
+     "channel": "Elevation Choir and Elevation Worship",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.143,
+     "worst": 0.24,
+     "head_s": 0.7,
+     "tail_s": -0.5,
+     "length_ratio": 0.793,
+     "shift": 5,
+     "bad": [
+      "10-20 s: recording 10 s shorter here",
+      "20-30 s: recording 10 s shorter here",
+      "30-40 s: recording 11 s shorter here",
+      "40-50 s: recording 21 s shorter here",
+      "50-60 s: recording 21 s shorter here",
+      "60-70 s: recording 9 s shorter here",
+      "70-80 s: recording 9 s shorter here",
+      "90-100 s: recording 19 s shorter here",
+      "100-111 s: recording 19 s shorter here",
+      "111-121 s: recording 19 s shorter here",
+      "121-131 s: recording 19 s shorter here",
+      "131-141 s: recording 20 s shorter here",
+      "161-171 s: recording 39 s shorter here",
+      "171-181 s: recording 39 s shorter here",
+      "181-191 s: recording 39 s shorter here",
+      "191-201 s: recording 39 s shorter here",
+      "201-211 s: recording 39 s shorter here",
+      "211-221 s: recording 39 s shorter here",
+      "221-231 s: recording 39 s shorter here"
+     ]
+    }
+   ],
+   "lineup": 0.111,
+   "match": {
+    "ok": true,
+    "dist": 0.111,
+    "worst": 0.239,
+    "head_s": -0.1,
+    "tail_s": -0.2,
+    "length_ratio": 0.993,
+    "shift": 0,
+    "bad": []
+   }
+  },
+  {
+   "name": "Led Zeppelin - Stairway to Heaven",
+   "title": "Stairway to Heaven",
+   "artist": "Led Zeppelin",
+   "gp": "C:\\Users\\natha\\Downloads\\Led Zeppelin-Stairway to Heaven-12-08-2025.gp",
+   "sha1": "08b1e9f9051e0714",
+   "seconds": 481,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "youtube": "https://www.youtube.com/watch?v=QkF3oxziUI4",
+   "video": {
+    "title": "Led Zeppelin - Stairway To Heaven (Official Audio)",
+    "channel": "Led Zeppelin",
+    "seconds": 483
+   },
+   "confidence": 100.0,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=XiQdFKcZQw0",
+     "title": "Stairway to Heaven (Sunset Sound Mix)",
+     "channel": "Led Zeppelin",
+     "seconds": 484,
+     "score": 99.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=X791IzOwt3Q",
+     "title": "Stairway to Heaven (Remaster)",
+     "channel": "Led Zeppelin",
+     "seconds": 486,
+     "score": 99.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=aUXuvIwyoOg",
+     "title": "Led Zeppelin - Stairway To Heaven // Sub. Español",
+     "channel": "Melanchølic Memories",
+     "seconds": 481,
+     "score": 85.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=CydSTMbA6pQ",
+     "title": "Led Zeppelin/Stairway to Heaven",
+     "channel": "Team urbo",
+     "seconds": 484,
+     "score": 84.4
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=ovFSEHH_yJw",
+     "title": "Led Zeppelin - Stairway to Heaven (Music Video) HQ",
+     "channel": "Hesham Rabeey",
+     "seconds": 478,
+     "score": 83.8
+    }
+   ],
+   "lineup": 0.07
+  },
+  {
+   "name": "Relient K - Be My Escape (official)",
+   "title": "Be My Escape",
+   "artist": "Relient K",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Relient K - Be My Escape.gp",
+   "sha1": "4b648d96889b7ba6",
+   "seconds": 221,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/relient-k/be-my-escape-official-3567452",
+   "youtube": "https://www.youtube.com/watch?v=lt-FPtnyxvs",
+   "video": {
+    "title": "Relient K | Be My Escape (Official Audio Stream)",
+    "channel": "Relient K",
+    "seconds": 241
+   },
+   "confidence": 100.0,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=GUqdJJ1hsXw",
+     "title": "Relient K - Be My Escape (Official Music Video)",
+     "channel": "Gotee Records",
+     "seconds": 190,
+     "score": 46.9
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=jIKJIYJ78vg",
+     "title": "Be My Escape [relient K Piano Tribute]",
+     "channel": "Piano Tribute Players - Topic",
+     "seconds": 216,
+     "score": 90.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=lmiy3oJ64lE",
+     "title": "Relient K - Be My Escape (8 bit)",
+     "channel": "Chiptune Planet",
+     "seconds": 234,
+     "score": 79.1
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=MkHuUgJC1ok",
+     "title": "Relient K-Be My Escape w/ lyrics",
+     "channel": "TRazor88",
+     "seconds": 241,
+     "score": 63.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=hfZEEjenoYc",
+     "title": "Be my Escape by Relient K (Lyrics)",
+     "channel": "anonymisly",
+     "seconds": 242,
+     "score": 62.5
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=KTxBL_p1f1c",
+     "title": "Relient K- Be My Escape",
+     "channel": "p14zm40nu",
+     "seconds": 241,
+     "score": 76.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=CdFqr4d8P_s",
+     "title": "Be My Escape - Relient k",
+     "channel": "Daniel Davis",
+     "seconds": 241,
+     "score": 76.0
+    }
+   ],
+   "tried": [
+    {
+     "url": "https://www.youtube.com/watch?v=lt-FPtnyxvs",
+     "title": "Relient K | Be My Escape (Official Audio Stream)",
+     "channel": "Relient K",
+     "tier": 1,
+     "ok": true,
+     "dist": 0.147,
+     "worst": 0.302,
+     "head_s": -0.1,
+     "tail_s": 1.1,
+     "length_ratio": 1.063,
+     "shift": 0,
+     "bad": []
+    }
+   ],
+   "lineup": 0.147,
+   "match": {
+    "ok": true,
+    "dist": 0.147,
+    "worst": 0.302,
+    "head_s": -0.1,
+    "tail_s": 1.1,
+    "length_ratio": 1.063,
+    "shift": 0,
+    "bad": []
+   }
+  },
+  {
+   "name": "Relient K - Forget And Not Slow Down",
+   "title": "Forget And Not Slow Down",
+   "artist": "Relient K",
+   "gp": "C:\\Users\\natha\\Downloads\\Relient K-Forget And Not Slow Down-10-16-2025.gp",
+   "sha1": "4aaaf48630e5696b",
+   "seconds": 202,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar"
+   ],
+   "status": "confirmed",
+   "youtube": "https://www.youtube.com/watch?v=0DAUV41K52o",
+   "video": {
+    "title": "Forget And Not Slow Down",
+    "channel": "Relient K",
+    "seconds": 203
+   },
+   "confidence": 99.5,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=nTlw_ZV2fIU",
+     "title": "Relient K - Forget And Not Slow Down",
+     "channel": "So0iN",
+     "seconds": 206,
+     "score": 83.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=AY2ma7BWkUU",
+     "title": "Relient K--Forget and Not Slow Down (HQ)",
+     "channel": "dillster31v",
+     "seconds": 213,
+     "score": 79.6
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=7l_kx_xbJAs",
+     "title": "Relient K - \"Forget and Not Slow Down\"",
+     "channel": "BandGeek277",
+     "seconds": 221,
+     "score": 75.6
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=AtewY-VDWyU",
+     "title": "Forget And Not Slow Down - Relient K Lyrics",
+     "channel": "NH Students",
+     "seconds": 202,
+     "score": 72.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=uKcCeF7-IGw",
+     "title": "Forget and Not Slow Down",
+     "channel": "Best Friends - Topic",
+     "seconds": 188,
+     "score": 71.1
+    }
+   ],
+   "lineup": 0.051
+  },
+  {
+   "name": "Relient K - When I Go Down",
+   "title": "When I Go Down",
+   "artist": "Relient K",
+   "gp": "C:\\Users\\natha\\Downloads\\Relient K - When I Go Down.gp5",
+   "sha1": "8291f24b1a2adc78",
+   "seconds": 394,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "piano"
+   ],
+   "status": "confirmed",
+   "youtube": "https://www.youtube.com/watch?v=4vMsE3J1XYI",
+   "video": {
+    "title": "Relient K | When I Go Down (Official Audio Stream)",
+    "channel": "Relient K",
+    "seconds": 403
+   },
+   "confidence": 100.0,
+   "others": [
+    {
+     "url": "https://www.youtube.com/watch?v=nWNK0Bd8gFI",
+     "title": "When I Go Down",
+     "channel": "Relient K",
+     "seconds": 403,
+     "score": 97.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=sZjEuuxtsKI",
+     "title": "Relient K - \"When I Go Down\" (Official Audio)",
+     "channel": "Gotee Records",
+     "seconds": 403,
+     "score": 94.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=TDskMF54vnw",
+     "title": "Relient K- When I Go Down",
+     "channel": "p14zm40nu",
+     "seconds": 403,
+     "score": 82.7
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=kyJnGtz58to",
+     "title": "Relient K- When I Go Down",
+     "channel": "laffytiffy126",
+     "seconds": 405,
+     "score": 82.2
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=NuHCVHIwtlA",
+     "title": "When I Go Down- Relient K",
+     "channel": "SGgoddess415",
+     "seconds": 387,
+     "score": 81.4
+    }
+   ],
+   "lineup": 0.079
+  }
+ ]
+}

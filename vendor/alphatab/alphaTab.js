@@ -49044,6 +49044,7 @@
 			const generator = new MidiFileGenerator(score, this.settings, handler);
 			generator.applyTranspositionPitches = false;
 			generator.generate();
+			this.fbExportMidi?.(midiFile);
 			const optionsWithChannels = new AudioExportOptions();
 			optionsWithChannels.soundFonts = options.soundFonts;
 			optionsWithChannels.sampleRate = options.sampleRate;

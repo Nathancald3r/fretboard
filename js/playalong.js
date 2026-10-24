@@ -7,6 +7,7 @@ import { syncState } from './songmeta.js';
 import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidence, groupResults } from './ytsearch.js';
 import { parseSource } from './tabinfo.js';
 import { btDelay, onBtChange, bindBtControls } from './btdelay.js';
+import { clickTrackBuffer } from './click.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
@@ -49,6 +50,7 @@ function fileHandler(rec) {
   el.preservesPitch = true;
   el.src = URL.createObjectURL(new Blob([rec.data], { type: rec.type || 'audio/mpeg' }));
   let raf = 0, timer = 0, dead = false; // a switched-off handler must not move or play anything
+  let held = false; // handed over to the synth: plays on by itself until it fades out
   const tick = () => {
     sendPosition(el.currentTime * 1000);
     cancelAnimationFrame(raf);
@@ -63,6 +65,7 @@ function fileHandler(rec) {
   el.addEventListener('loadedmetadata', () => sendPosition(el.currentTime * 1000));
   return {
     kind: 'file',
+    el,
     get backingTrackDuration() { return Math.max(0, (el.duration || 0) * 1000 - skippedTotal() + lead()); },
     get rawDuration() { return (el.duration || 0) * 1000; },
     get isPlaying() { return !el.paused; },
@@ -74,9 +77,10 @@ function fileHandler(rec) {
     seekReal(ms) { if (!dead) el.currentTime = ms / 1000; },
     nowReal: () => el.currentTime * 1000,
     play() { if (!dead) el.play().catch(() => {}); },
-    pause() { el.pause(); },
+    pause() { if (!held) el.pause(); },
     now: () => toPlayed(el.currentTime * 1000),
-    destroy() { dead = true; el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
+    hold() { dead = true; held = true; },
+    destroy() { dead = true; held = false; el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
   };
 }
 
@@ -126,11 +130,13 @@ async function youTubeHandler(rec) {
   let timer = 0;
   let rate = 1;
   let dead = false; // a switched-off handler must not move or play anything
+  let held = false; // handed over to the synth: plays on by itself until it fades out
   let wantPlay = false; // YouTube starts playing by itself when you seek an idle video; only the play button may start it
   let seekedAt = 0;
   const seekIdle = () => { seekedAt = wantPlay ? 0 : Date.now(); };
   const poll = () => sendPosition(player.getCurrentTime() * 1000);
   const stateChange = (e) => {
+    if (held || dead) return; // YouTube never really removes a listener: a switched-off handler must ignore it
     if (e.data === window.YT.PlayerState.PLAYING && !wantPlay && seekedAt && Date.now() - seekedAt < 2000) { player.pauseVideo(); return; }
     clearInterval(timer);
     if (e.data === window.YT.PlayerState.PLAYING) timer = setInterval(poll, 30);
@@ -161,7 +167,8 @@ async function youTubeHandler(rec) {
     seekReal(ms, ahead = true) { if (!dead) { seekIdle(); player.seekTo(ms / 1000, ahead); setTimeout(poll, 50); } },
     nowReal: () => player.getCurrentTime() * 1000,
     play() { if (!dead) { wantPlay = true; seekedAt = 0; player.playVideo(); } },
-    pause() { wantPlay = false; player.pauseVideo(); },
+    pause() { if (!held) { wantPlay = false; player.pauseVideo(); } },
+    hold() { dead = true; held = true; },
     now: () => toPlayed(player.getCurrentTime() * 1000),
     // Another video in the same player (tearing YouTube's player down and making a new one
     // right away can leave the new one stuck). Resolves once it's ready to play.
@@ -179,6 +186,7 @@ async function youTubeHandler(rec) {
     },
     destroy() {
       dead = true;
+      held = false;
       clearInterval(timer);
       player.removeEventListener('onStateChange', stateChange);
       try { player.pauseVideo(); player.stopVideo(); } catch { /* ignore */ }
@@ -574,6 +582,220 @@ export function playerStateChanged(playing) {
   if (!playing && taps) finishTaps();
 }
 
+/* ---------- hearing the tab with the recording ---------- */
+
+// To check a tab against its recording: the tab's own instruments play along with it. The tab is
+// rendered to audio once with the sync points, so its time is the recording's time, and kept in
+// step with the recording while it plays. 'right' puts the tab in the right ear and an audio-file
+// recording in the left (YouTube's sound can't be moved: it stays in both ears).
+// The click track is built the same way (on its own, so switching it is instant): with the video
+// on, the player's synth is silent and this is the only way to hear it.
+const MINE_MODES = { off: 'Off', both: 'With the recording', right: 'My tracks in the right ear' };
+const mine = { mode: 'off', level: 0.8, ctx: null, out: null, pan: null, at: 0, ctxAt: 0, rate: 1, timer: 0, fileEl: null, fileNode: null };
+const layer = (kind) => ({ kind, buf: null, key: '', busy: null, src: null, gain: null });
+const layers = [layer('tracks'), layer('click')];
+try { mine.mode = MINE_MODES[localStorage.getItem('fretboard-mine')] ? localStorage.getItem('fretboard-mine') : 'off'; mine.level = Number(localStorage.getItem('fretboard-mine-level')) || 0.8; } catch { /* ignore */ }
+
+function mineCtx() {
+  if (!mine.ctx) {
+    mine.ctx = new AudioContext({ latencyHint: 'interactive' });
+    mine.out = mine.ctx.createGain(); // fades in and out, so a start or a jump never pops
+    mine.pan = mine.ctx.createStereoPanner();
+    mine.out.connect(mine.pan).connect(mine.ctx.destination);
+    for (const l of layers) { l.gain = mine.ctx.createGain(); l.gain.connect(mine.out); }
+  }
+  if (mine.ctx.state === 'suspended') mine.ctx.resume().catch(() => {});
+  return mine.ctx;
+}
+
+const wanted = (l) => (l.kind === 'tracks' ? mine.mode !== 'off' : !!hooks.clickWanted?.());
+// What each rendered layer depends on: the song, its sync, and the mixer or the click's settings.
+const layerKey = (l) => JSON.stringify([song?.id, flatSyncPoints(syncPoints()), l.kind === 'tracks' ? hooks.trackLevels?.() : hooks.clickSig?.()]);
+
+// The sync as a line of [tick, video ms] corners (the video's played time, nudge included), one
+// per bar; past either end it carries on at the tab's own tempo.
+function syncLine() {
+  const bars = hooks.playedBars();
+  const off = totalOffset();
+  const pts = syncPoints().filter(([p]) => bars[p]).map(([p, t]) => [bars[p].start, t + off]);
+  const perTick = 60000 / ((hooks.tempo() || 100) * 960);
+  if (!pts.length) pts.push([0, off]);
+  if (pts.length === 1) pts.push([pts[0][0] + 960, pts[0][1] + 960 * perTick]);
+  return pts;
+}
+// Reads the line: from column `from` (0 = tick, 1 = ms) to column `to`.
+function along(pts, x, from, to) {
+  let i = 0;
+  while (i < pts.length - 2 && pts[i + 1][from] <= x) i++;
+  const [a, b] = [pts[i], pts[i + 1]];
+  return a[to] + ((x - a[from]) * (b[to] - a[to])) / ((b[from] - a[from]) || 1);
+}
+
+// The click track in the rendered audio's time: each click at its tick's place in the video.
+async function renderClick(ctx) {
+  const pts = syncLine();
+  const shift = lead();
+  const hits = hooks.clickHits().map(({ tick, level }) => ({ t: (along(pts, tick, 0, 1) + shift) / 1000, level }));
+  const end = hits.length ? hits[hits.length - 1].t + 1 : 1;
+  return clickTrackBuffer(ctx, hits, hooks.clickSound(), end);
+}
+
+const mineState = (text) => { $('pa-mine-state').textContent = text; };
+
+async function renderLayer(l, key) {
+  const api = hooks.api();
+  const ctx = mineCtx();
+  if (l.kind === 'click') return renderClick(ctx);
+  const opts = new AT.synth.AudioExportOptions();
+  opts.soundFonts = [await hooks.soundFontBytes()];
+  opts.useSyncPoints = true;
+  opts.sampleRate = ctx.sampleRate;
+  opts.masterVolume = hooks.synthGain();
+  hooks.trackLevels().forEach((v, i) => opts.trackVolume.set(i, v));
+  const ex = await api.exportAudio(opts);
+  const parts = [];
+  let n = 0;
+  try {
+    for (let c; (c = await ex.render(2000));) {
+      if (l.busy?.key !== key) return null; // the sync or the mix changed: a newer render takes over
+      parts.push(c.samples);
+      n += c.samples.length;
+      mineState(`Getting your tracks ready… ${Math.round((100 * c.currentTime) / Math.max(1, c.endTime))}%`);
+    }
+  } finally { ex.destroy?.(); }
+  const buf = ctx.createBuffer(2, Math.max(1, n / 2), ctx.sampleRate);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  let j = 0;
+  for (const s of parts) for (let i = 0; i < s.length; i += 2, j++) { L[j] = s[i]; R[j] = s[i + 1]; }
+  return buf;
+}
+
+// One render at a time (the click first, it's quick).
+function mineRender() {
+  if (layers.some((l) => l.busy)) return;
+  for (const l of [layers[1], layers[0]]) {
+    if (!wanted(l)) continue;
+    const key = layerKey(l);
+    if (l.key === key) continue;
+    const busy = { key };
+    l.busy = busy;
+    renderLayer(l, key).then((buf) => {
+      if (l.busy !== busy) return;
+      l.busy = null;
+      if (!buf) return;
+      l.buf = buf; l.key = key;
+      mineStop(); // starts again with the new audio on the next tick
+      showMine();
+    }).catch((e) => { console.warn('Tab sound render failed', e); if (l.busy === busy) { l.busy = null; l.key = key; mineState('Couldn’t make the tab’s sound: ' + (e?.message || e)); } });
+    return;
+  }
+}
+
+// A quick fade (15 ms) before stopping, so cutting the sound off never clicks or pops.
+function mineStop() {
+  const playing = layers.filter((l) => l.src);
+  if (!playing.length) return;
+  const t = mine.ctx.currentTime;
+  mine.out.gain.cancelScheduledValues(t);
+  mine.out.gain.setValueAtTime(mine.out.gain.value, t);
+  mine.out.gain.linearRampToValueAtTime(0, t + 0.015);
+  for (const l of playing) {
+    const src = l.src;
+    l.src = null;
+    try { src.stop(t + 0.02); } catch { /* not started */ }
+    setTimeout(() => src.disconnect(), 60);
+  }
+}
+
+// The recording's ears: an audio file goes left while the tab is in the right ear.
+function mineEars() {
+  const right = mine.mode === 'right';
+  if (mine.pan) mine.pan.pan.value = right ? 1 : 0;
+  for (const l of layers) if (l.gain) l.gain.gain.value = l.kind === 'tracks' ? mine.level : (hooks.clickLevel?.() ?? 0.8);
+  const el = media?.kind === 'file' ? media.el : null;
+  if (el && right && mine.fileEl !== el) {
+    const ctx = mineCtx();
+    mine.fileEl = el;
+    mine.fileNode = ctx.createStereoPanner();
+    ctx.createMediaElementSource(el).connect(mine.fileNode).connect(ctx.destination);
+  }
+  if (mine.fileNode && mine.fileEl === el) mine.fileNode.pan.value = right ? -1 : 0;
+}
+
+// The tab's sound reaches your ears this long after it is started (the browser's audio buffer
+// and the output device). The video's clock already allows for its own delay, so the tab is
+// started this much further on and both are heard together, on headphones too.
+const outDelay = () => (mine.ctx ? (mine.ctx.outputLatency || 0) + (mine.ctx.baseLatency || 0) : 0);
+
+// Every 100 ms while the video is on: start, follow and stop the tab's sound with the recording.
+function mineTick() {
+  const live = layers.filter((l) => wanted(l));
+  if (!on || !media || !live.length) { mineStop(); return; }
+  mineEars();
+  mineRender();
+  const ready = live.filter((l) => l.buf);
+  if (!ready.length || !media.isPlaying) { mineStop(); return; }
+  const ctx = mineCtx();
+  // Where the recording is, in the rendered audio's time (the sync points' time).
+  const pos = (media.now() + lead() + btDelay()) / 1000 + outDelay();
+  const rate = media.playbackRate || 1;
+  const running = layers.filter((l) => l.src);
+  if (running.length && running.length === ready.length && ready.every((l) => l.src)) {
+    mine.at += (ctx.currentTime - mine.ctxAt) * running[0].src.playbackRate.value;
+    mine.ctxAt = ctx.currentTime;
+    const ahead = mine.at - pos;
+    // The video's clock reads a few ms off each time: under 20 ms the speed stays exact. More drift
+    // is eased out (at most 0.5 %, which can't be heard); a jump starts again from there.
+    if (Math.abs(ahead) < 0.15 && rate === mine.rate) {
+      const ease = Math.abs(ahead) < 0.02 ? 0 : Math.max(-0.005, Math.min(0.005, ahead / 4));
+      for (const l of running) l.src.playbackRate.value = rate * (1 - ease);
+      return;
+    }
+  }
+  mineStop();
+  // Starts just after the fade-out of what was playing, and fades in over 15 ms.
+  const t = ctx.currentTime + 0.025;
+  const at = pos + 0.025 * rate;
+  if (at < 0) return;
+  for (const l of ready) {
+    if (at >= l.buf.duration) continue;
+    const src = ctx.createBufferSource();
+    src.buffer = l.buf;
+    src.playbackRate.value = rate;
+    src.connect(l.gain);
+    src.start(t, at);
+    l.src = src;
+  }
+  mine.out.gain.setValueAtTime(0, t);
+  mine.out.gain.linearRampToValueAtTime(1, t + 0.015);
+  Object.assign(mine, { at, ctxAt: t, rate });
+}
+
+function setMine(mode = mine.mode, level = mine.level) {
+  mine.mode = MINE_MODES[mode] ? mode : 'off';
+  mine.level = level;
+  try { localStorage.setItem('fretboard-mine', mine.mode); localStorage.setItem('fretboard-mine-level', String(level)); } catch { /* ignore */ }
+  if (on) mineCtx();
+  mineEars();
+  clearInterval(mine.timer);
+  mine.timer = on ? setInterval(mineTick, 100) : 0;
+  mineTick();
+  showMine();
+}
+
+function showMine() {
+  $('pa-mine').value = mine.mode;
+  $('pa-mine-vol').value = mine.level;
+  const b = $('pa-mine-btn');
+  const yt = media?.kind === 'youtube';
+  b.classList.toggle('on', mine.mode !== 'off');
+  b.textContent = { off: '🎸 Mine: off', both: '🎸 Mine: on', right: '🎸 Mine: R ear' }[mine.mode];
+  b.title = `Hear this tab's own instruments with the video, to check it (now: ${MINE_MODES[mine.mode]}). Click to switch.`
+    + (mine.mode === 'right' && yt ? ' YouTube’s sound can’t be moved, so the video stays in both ears.' : '');
+  if (layers[0].busy) return; // the render shows its progress
+  mineState(mine.mode === 'right' && yt ? 'Your tracks are in the right ear. YouTube’s sound can’t be moved, so the video stays in both ears (an audio file goes to the left).' : '');
+}
+
 /* ---------- switching modes ---------- */
 
 export const recordingOn = () => on;
@@ -584,13 +806,33 @@ export function videoStartTick() {
   return hooks.playedBars()[startIdx()]?.start || 0;
 }
 
+// Fades, so switching never pops: the synth by its master volume, the video by its own.
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function fade(get, set, to, ms = 120) {
+  const from = get();
+  for (let i = 1; i <= 6; i++) { set(from + ((to - from) * i) / 6); await pause(ms / 6); }
+}
+
+// Where the video is, as a tick of the tab (its sync points, as the tab cursor uses them).
+const tickAtVideo = (playedMs) => Math.max(0, Math.round(along(syncLine(), playedMs, 1, 0)));
+
+// Switching while it plays carries on from the same spot. Video off: the video plays on until
+// the synth is ready, the synth starts where the video is, and the video fades out. Video on:
+// the synth fades out and the video starts where the tab was.
 async function setOn(want) {
   const api = hooks.api();
   if (!api || !song) return;
   if (want && !song.recording) { $('pa-error').textContent = 'Add an audio file or a YouTube link first.'; return; }
   $('pa-error').textContent = '';
+  const playing = api.playerState === 1;
+  const fromTick = api.tickPosition;
+  const handOff = playing && on && !want && media?.isPlaying ? media : null;
+  if (playing && !on) await fade(() => api.masterVolume, (v) => { api.masterVolume = v; }, 0, 100);
+  held?.destroy(); // a video still handing over (switched off and on again quickly)
+  held = null;
+  if (handOff) { handOff.hold(); held = handOff; }
+  else media?.destroy();
   api.stop();
-  media?.destroy();
   media = null;
   on = false;
   if (want) {
@@ -608,10 +850,34 @@ async function setOn(want) {
   if (on) {
     api.player.output.handler = media;
     applySync();
-    if (song?.videoMaster) setTimeout(() => hooks.seekToBar(startIdx()), 200);
+    if (playing) setTimeout(() => { api.tickPosition = fromTick; api.play(); }, 250);
+    else if (song?.videoMaster) setTimeout(() => hooks.seekToBar(startIdx()), 200);
   }
   hooks.modeChanged(on);
   showState();
+  setMine();
+  if (handOff) takeOver(handOff);
+}
+
+// The built-in sound takes over from the video at the spot the video has reached by then.
+let held = null;
+async function takeOver(video) {
+  const api = hooks.api();
+  for (let i = 0; i < 600 && !hooks.synthReady() && !on; i++) await pause(50); // the synth loads its sounds again: up to ~15 s
+  if (held !== video) return; // switched on again meanwhile
+  held = null;
+  const level = hooks.synthLevel();
+  if (!on && hooks.synthReady() && video.isPlaying && api.playerState !== 1) {
+    api.masterVolume = 0;
+    api.tickPosition = tickAtVideo(video.now() + 60); // the synth starts about 60 ms after this
+    api.play();
+    fade(() => api.masterVolume, (v) => { api.masterVolume = v; }, level, 120);
+  }
+  const vol = video.masterVolume;
+  await fade(() => video.masterVolume, (v) => { video.masterVolume = v; }, 0, 150);
+  video.destroy();
+  video.masterVolume = vol; // YouTube remembers its volume: put it back for next time
+  if (api.masterVolume !== level && !on) api.masterVolume = level;
 }
 
 // Every save here also refreshes the sync badge and checklist.
@@ -920,8 +1186,10 @@ export function toggleRecording() {
 /** Re-apply sync points after the score changes (another track renders new bars). */
 export function playAlongScoreReady() {
   if (on) { applySync(); return; }
-  // Only a video you switched on yourself comes back by itself when the song opens.
-  if (!autoTried && song?.recording && song.videoOn && !song.videoOff) { autoTried = true; setOn(true); }
+  // A synced song always opens with its video; otherwise only a video you switched on yourself
+  // comes back by itself. Switching it off lasts until the song is opened again.
+  const synced = syncState(song || {}).state === 'synced';
+  if (!autoTried && song?.recording && (synced || (song.videoOn && !song.videoOff))) { autoTried = true; setOn(true); }
 }
 
 export function initPlayAlong(h) {
@@ -946,6 +1214,9 @@ export function initPlayAlong(h) {
   $('pa-using-change').addEventListener('click', () => { if (pages.length) renderPage(pageIdx); else findOnYouTube(); });
   $('pa-on').addEventListener('change', (e) => { remember(e.target.checked); setOn(e.target.checked); });
   $('pa-toggle').addEventListener('click', toggleRecording);
+  $('pa-mine').addEventListener('change', (e) => setMine(e.target.value));
+  $('pa-mine-vol').addEventListener('input', (e) => setMine(mine.mode, Number(e.target.value)));
+  $('pa-mine-btn').addEventListener('click', () => setMine({ off: 'both', both: 'right', right: 'off' }[mine.mode]));
   $('pa-tap').addEventListener('click', () => { if (!tapSync()) $('pa-tap-state').textContent = 'Play the recording first, then tap on beat 1 of each bar.'; });
   bindBtControls({ button: $('pa-bt'), input: $('pa-bt-ms'), nudges: document.querySelectorAll('#pa-bt-row [data-bt]') });
   onBtChange(() => { if (song && on) applySync(); });
@@ -1149,7 +1420,27 @@ export function initPlayAlong(h) {
     $('pa-video-hide').textContent = hidden ? '▢' : '–';
     $('pa-video-hide').title = hidden ? 'Show the video again' : 'Hide the picture (the sound keeps playing)';
     $('pa-video-hide').setAttribute('aria-label', $('pa-video-hide').title);
+    dock();
   };
+  // Hidden away on a bigger screen: just its bar, laid over a slot in the play bar beside the tempo,
+  // out of the tab's way. The video itself never moves in the page (a moved iframe reloads and stops).
+  const slot = document.createElement('span');
+  slot.className = 'pa-dock';
+  slot.hidden = true;
+  document.querySelector('.playbar-row .speed')?.after(slot);
+  const dock = () => {
+    const on = box.classList.contains('collapsed') && !box.hidden && !matchMedia('(max-width: 640px)').matches;
+    box.classList.toggle('docked', on);
+    slot.hidden = !on;
+    if (!on) { box.style.left = box.style.top = box.style.width = ''; return; }
+    const r = slot.getBoundingClientRect();
+    if (!r.width) return;
+    Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` });
+  };
+  new ResizeObserver(dock).observe(slot);
+  new MutationObserver(dock).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  addEventListener('resize', dock);
+  addEventListener('scroll', dock, true);
   box.classList.toggle('mini', look('fretboard-video-mini', matchMedia('(max-width: 640px)').matches ? '1' : '0') === '1'); // small by default on a phone
   box.classList.toggle('collapsed', look('fretboard-video-hidden', '0') === '1');
   showLook();

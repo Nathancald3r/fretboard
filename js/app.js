@@ -23,6 +23,7 @@ import { popMenu } from './menu.js';
 import { initSync } from './syncui.js';
 import { parseFilename } from './tabinfo.js';
 import { initBulk, selecting, isPicked, toggle as togglePick, drawBar, keyNote } from './bulk.js';
+import { soundFor } from './sounds.js';
 import { readFretboardFile, readZip, readSetlistText, pdfAttachment } from './sharecore.js';
 
 const $ = (id) => document.getElementById(id);
@@ -209,8 +210,7 @@ async function combineSplit() {
   const g = splitGroups(await listSongs())[0];
   if (!g) return;
   const sheets = g.parts.map(({ song, name }) => {
-    const k = PARTS.findIndex(([, , re]) => re.test(name));
-    return { name, program: k >= 0 ? PARTS[k][1] : 0, fileName: song.fileName || '', data: song.data };
+    return { name, program: partProgram(name), fileName: song.fileName || '', data: song.data };
   });
   const undo = { removed: g.parts.map((p) => p.song), text: `Combined “${g.title}” into one song.` };
   if (g.base) {
@@ -428,6 +428,13 @@ function partFromName(fileName) {
 
 // The PARTS entry a name sounds like ("Synth Lead 2" -> Synth Lead), or -1.
 const partIndex = (name) => PARTS.findIndex(([, , re]) => re.test(name));
+// Its sound: the PARTS one, else whatever instrument the name says (a Banjo part is a banjo, not a piano).
+function partProgram(name) {
+  const k = partIndex(name);
+  if (k >= 0) return PARTS[k][1];
+  const sound = soundFor(name);
+  return sound && !sound.drum ? sound[1] : 0;
+}
 
 function partDialog(html) {
   const dlg = document.createElement('dialog');
@@ -458,8 +465,7 @@ async function readParts(files, title) {
   dlg.querySelector('[data-no]').addEventListener('click', () => { stop = true; ctl.abort(); });
   const items = files.map((file) => {
     const name = partFromName(file.name) || PARTS[Math.max(0, partIndex(file.name))][0];
-    const k = partIndex(name);
-    return { file, name, program: k >= 0 ? PARTS[k][1] : 0 };
+    return { file, name, program: partProgram(name) };
   });
   // The lyrics come from the lead vocal: a backing vocal sings only some of the words (Trust In God's
   // "Backing Vocal" comes first by name, so the lead vocal's words were never read).

@@ -60,7 +60,8 @@ let customSoundFont = null; // { name, data: ArrayBuffer }
 // MuseScore General is mixed much quieter than other soundfonts; lift it to a normal level.
 const DEFAULT_SF_GAIN = 2;
 const synthVolume = (v) => (recordingOn() || customSoundFont ? v : v * DEFAULT_SF_GAIN);
-const customSoundFontReady = getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
+let sfBytes = null; // the built-in soundfont's bytes, fetched (from the cache) when the tab is rendered to audio
+const customSoundFontReady =getValue('soundFont').then((sf) => { customSoundFont = sf || null; }).catch(() => {});
 
 const timer = createPracticeTimer({ isActive: () => api?.playerState === PLAYING });
 
@@ -124,6 +125,8 @@ function ensureApi() {
   });
   // Guitar chords are strummed, and the click is written into the song's MIDI on a channel of its own.
   api.midiLoad.on((midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); addClickTrack(midiFile); });
+  // The tab rendered to hear along with its video (playalong.js): the same sound, no click.
+  api.fbExportMidi = (midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); };
   // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
   // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
   try {
@@ -399,13 +402,19 @@ function addClickTrack(midiFile) {
   clickChannel = -1;
   const sound = CLICK_SOUNDS[click.sound];
   if (!clickOn() || !sound || sound.program < 0 || !api.tickCache) return;
+  clickChannel = writeClick(midiFile, sound);
+}
+
+const clickBars = () => api.tickCache.masterBars.map((b) => ({ start: b.start, end: b.end, num: b.masterBar.timeSignatureNumerator, den: b.masterBar.timeSignatureDenominator }));
+
+function writeClick(midiFile, sound) {
   let maxChannel = 0;
   for (const t of midiFile.tracks) for (const e of t.events) if (typeof e.channel === 'number') maxChannel = Math.max(maxChannel, e.channel);
   // Not maxChannel + 1: alphaTab puts its own metronome there (one past the file's last
   // channel), and its metronome code resets that channel's volume and instrument.
   let ch = maxChannel + 2;
   if (ch === 9) ch = 10; // channel 10 (index 9) is the drum kit
-  const bars = api.tickCache.masterBars.map((b) => ({ start: b.start, end: b.end, num: b.masterBar.timeSignatureNumerator, den: b.masterBar.timeSignatureDenominator }));
+  const bars = clickBars();
   const M = AT.midi;
   const mine = [new M.ProgramChangeEvent(0, 0, ch, sound.program), new M.ControlChangeEvent(0, 0, ch, 7, 127), new M.ControlChangeEvent(0, 0, ch, 10, 64)];
   const velocity = [127, 96, 64];
@@ -422,7 +431,7 @@ function addClickTrack(midiFile) {
   } else {
     mine.forEach((e) => midiFile.addEvent(e));
   }
-  clickChannel = ch;
+  return ch;
 }
 
 // The click button: the click lives in the MIDI only while it's on, so switching it adds
@@ -432,7 +441,8 @@ function toggleClick() {
   applyClickVolume();
   const sound = CLICK_SOUNDS[click.sound];
   const inMidi = clickChannel >= 0;
-  if (sound && sound.program >= 0 && inMidi !== clickOn()) rebuildClick();
+  // With the video, the click is rendered with it (playalong.js), not in the player's MIDI.
+  if (!recordingOn() && sound && sound.program >= 0 && inMidi !== clickOn()) rebuildClick();
 }
 
 function applyClickVolume() {
@@ -445,7 +455,7 @@ function applyClickVolume() {
 // Sound or rhythm changed: the click lives in the MIDI, so regenerate it (keeping the
 // position and whether it was playing).
 async function rebuildClick() {
-  if (!api || !score || !readyForPlayback) return;
+  if (!api || !score || !readyForPlayback || recordingOn()) return; // with the video the click is rendered there
   const playing = api.playerState === PLAYING;
   const tick = api.tickPosition;
   if (playing) { api.pause(); await waitForPause(); }
@@ -826,6 +836,17 @@ function applySounds(sc, sounds) {
   }
 }
 
+// A track left on the default sound (piano) whose name says another instrument ("Banjo") plays
+// that instrument. Songs imported before the importer knew the name are put right this way.
+function nameSounds(sc, sounds) {
+  sc.tracks.forEach((t, k) => {
+    if (sounds?.[k] != null || isDrums(t) || (t.playbackInfo?.program ?? 0) !== 0 || unnamed(t.name) || /piano|key/i.test(t.name)) return;
+    const sound = soundFor(t.name);
+    if (!sound || sound.drum || sound[1] === 0) return;
+    t.playbackInfo = Object.assign(Object.create(Object.getPrototypeOf(t.playbackInfo)), t.playbackInfo, { program: sound[1] });
+  });
+}
+
 function setSound(i, program) {
   if (!song) return;
   const sounds = { ...(song.sounds || {}) };
@@ -935,15 +956,15 @@ function buildTrackControls() {
     row.querySelector('.ticon').textContent = iconOf(track);
     row.querySelector('.tname').textContent = trackLabel(track, i);
     row.querySelector('small').textContent = isFretted(track) ? '' : 'notation';
-    if (unsure(track, i)) {
+    if (!isDrums(track)) {
       // type an instrument (suggestions from the list), or clear it to go back to the file's sound
       const pick = document.createElement('input');
       pick.className = 'track-sound';
       pick.dataset.act = 'sound';
       pick.setAttribute('list', 'fb-sounds');
       pick.placeholder = song?.sounds?.[i] != null ? 'As in the file' : 'Type or pick the instrument…';
-      pick.title = 'What this track is: its sound and name. Clear it for the file’s own sound.';
-      pick.value = soundName(song?.sounds?.[i]);
+      pick.title = 'This track’s sound: type or pick another instrument if it doesn’t sound right. Clear it for the file’s own sound.';
+      pick.value = soundName(song?.sounds?.[i] ?? (unnamed(track.name) ? null : track.playbackInfo?.program));
       row.append(pick);
       if (!$('fb-sounds')) {
         const list = document.createElement('datalist');
@@ -1183,6 +1204,7 @@ function readScore(s) {
   repeatVerses(read); // a hymn with verses under its notes: once through per verse
   repeats = applyRepeats(read, s.repeats, AT, api.settings); // times through a repeat, as the user set them
   applySounds(repeats.score, s.sounds);
+  nameSounds(repeats.score, s.sounds);
   return repeats.score;
 }
 
@@ -2227,8 +2249,7 @@ function playModeChanged(recording) {
   if (!recording) api.masterVolume = synthVolume(playAlongState().songVolume);
   api.playbackSpeed = speedPct / 100;
   $('pl-recording-badge').hidden = !recording;
-  $('pl-metro').disabled = recording;
-  $('pl-metro').title = recording ? 'The click plays with the synth only' : 'Click track (B). Sound, volume and rhythm: ⚙';
+  $('pl-metro').title = recording ? 'Click track with the video (B). It follows the synced bars. Sound, volume and rhythm: ⚙' : 'Click track (B). Sound, volume and rhythm: ⚙';
 }
 
 /* ---------- bottom bar and its sheets ---------- */
@@ -2461,6 +2482,17 @@ export function initPlayer() {
     },
     sectionChoices: () => sections.map((sec) => ({ master: sec.index, name: sec.el.textContent.trim() })),
     songSeconds: () => endTime / 1000,
+    // For hearing the tab with its video: each track's level from the mixer (0 = silent), and the sounds.
+    trackLevels: () => (score?.tracks || []).map((t, i) => (mix[i] && isAudible(i) ? mix[i].volume * (i === trackIndex ? 1 : othersLevel()) : 0)),
+    synthGain: () => (customSoundFont ? 1 : DEFAULT_SF_GAIN),
+    synthLevel: () => synthVolume(playAlongState().songVolume),
+    synthReady: () => readyForPlayback && !!api?.isReadyForPlayback,
+    clickWanted: () => clickOn(),
+    clickLevel: () => click.volume,
+    clickSig: () => JSON.stringify([click.sound, click.sub, click.accent]),
+    clickSound: () => click.sound,
+    clickHits: () => (api?.tickCache ? clickEvents(clickBars(), click) : []),
+    soundFontBytes: async () => new Uint8Array(customSoundFont ? customSoundFont.data : (sfBytes ??= await (await fetch(DEFAULT_SF)).arrayBuffer())),
     modeChanged: playModeChanged,
     showSheet: (name) => { if (document.querySelector(`.sheet[data-sheet="${name}"]`).hidden) openSheet(name); },
     closeSheets,

@@ -41,7 +41,8 @@ export const stars = (n) => '★'.repeat(n || 0) + '☆'.repeat(5 - (n || 0));
  */
 export function syncState(song) {
   const linked = !!song.recording;
-  const start = linked && !!song.videoMaster && !!song.syncPoints?.length;
+  // autoSync: lined up by the computer (tests/yt2gp5), every bar from the very start of the tab
+  const start = linked && (!!song.videoMaster || !!song.autoSync) && !!song.syncPoints?.length;
   const tempo = start && (song.syncPoints.length > 1 || !!song.videoBpm);
   const done = tempo && !!song.syncDone;
   const steps = [linked, start, tempo, done];

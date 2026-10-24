@@ -189,6 +189,31 @@ function playCount(c, sound, t, level, volume, count) {
   }
 }
 
+/**
+ * A whole click track as one stereo AudioBuffer (for playing along with a video, where the synth
+ * is silent). hits: [{ t: seconds, level }]. Each level's sound is rendered once and copied to
+ * every hit, so a long song takes a few milliseconds.
+ */
+export async function clickTrackBuffer(ctx, hits, sound, seconds) {
+  const s = COUNT_SOUNDS[sound] && sound !== 'classic' && sound !== 'voice' ? sound : 'woodblock';
+  const rate = ctx.sampleRate;
+  const one = await Promise.all([0, 1, 2].map(async (level) => {
+    const off = new OfflineAudioContext(1, Math.round(rate * 0.4), rate);
+    playCount(off, s, 0, level, 1);
+    return (await off.startRendering()).getChannelData(0);
+  }));
+  const buf = ctx.createBuffer(2, Math.max(1, Math.round(seconds * rate)), rate);
+  const L = buf.getChannelData(0);
+  for (const { t, level } of hits) {
+    const at = Math.round(t * rate);
+    const src = one[level] || one[1];
+    if (at < 0) continue;
+    for (let i = 0, n = Math.min(src.length, L.length - at); i < n; i++) L[at + i] += src[i];
+  }
+  buf.getChannelData(1).set(L);
+  return buf;
+}
+
 /** A short preview of a count-in or click sound. */
 export function previewSound(sound, volume = 0.8) {
   const c = audio();
