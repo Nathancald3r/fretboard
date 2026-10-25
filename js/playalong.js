@@ -641,8 +641,13 @@ function mineCtx() {
 }
 
 const wanted = (l) => (l.kind === 'tracks' ? mine.mode !== 'off' : !!hooks.clickWanted?.());
+// alphaTab's audio render drops a shift shared by every sync point (it starts bar 1 at 0 s), so a
+// nudge never moved the tracks' sound, only the cursor. The tracks are rendered from the points
+// less the first one's time, and played that much later: a nudge is then heard at once, unrendered.
+const tracksAt = () => (flatSyncPoints(syncPoints())[0]?.millisecondOffset || 0) / 1000;
+const relSync = () => { const pts = flatSyncPoints(syncPoints()); const base = pts[0]?.millisecondOffset || 0; return pts.map((p) => [p.barIndex, p.barOccurence, p.millisecondOffset - base]); };
 // What each rendered layer depends on: the song, its sync, and the mixer or the click's settings.
-const layerKey = (l) => JSON.stringify([song?.id, flatSyncPoints(syncPoints()), l.kind === 'tracks' ? hooks.trackLevels?.() : hooks.clickSig?.()]);
+const layerKey = (l) => JSON.stringify([song?.id, l.kind === 'tracks' ? relSync() : flatSyncPoints(syncPoints()), l.kind === 'tracks' ? hooks.trackLevels?.() : hooks.clickSig?.()]);
 
 // The sync as a line of [tick, video ms] corners (the video's played time, nudge included), one
 // per bar; past either end it carries on at the tab's own tempo.
@@ -773,7 +778,8 @@ function mineTick() {
   const pos = (media.now() + lead() + btDelay()) / 1000 + outDelay();
   const rate = media.playbackRate || 1;
   const running = layers.filter((l) => l.src);
-  if (running.length && running.length === ready.length && ready.every((l) => l.src)) {
+  const shift = tracksAt();
+  if (running.length && running.length === ready.length && ready.every((l) => l.src) && shift === mine.shift) {
     mine.at += (ctx.currentTime - mine.ctxAt) * running[0].src.playbackRate.value;
     mine.ctxAt = ctx.currentTime;
     const ahead = mine.at - pos;
@@ -797,17 +803,19 @@ function mineTick() {
   const at = pos + 0.025 * rate;
   if (at < 0) return;
   for (const l of ready) {
-    if (at >= l.buf.duration) continue;
+    // the tracks' audio starts at the first sync point (the click's is in the video's own time)
+    const from = l.kind === 'tracks' ? at - shift : at;
+    if (from >= l.buf.duration) continue;
     const src = ctx.createBufferSource();
     src.buffer = l.buf;
     src.playbackRate.value = rate;
     src.connect(l.gain);
-    src.start(t, at);
+    if (from < 0) src.start(t - from / rate, 0); else src.start(t, from);
     l.src = src;
   }
   mine.out.gain.setValueAtTime(0, t);
   mine.out.gain.linearRampToValueAtTime(1, t + 0.015);
-  Object.assign(mine, { at, ctxAt: t, rate, synced: media.steady !== false });
+  Object.assign(mine, { at, ctxAt: t, rate, shift, synced: media.steady !== false });
 }
 
 // The video waits until your tracks (and the click) are made, so they all start together and
