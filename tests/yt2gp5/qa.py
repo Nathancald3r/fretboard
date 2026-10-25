@@ -19,7 +19,8 @@ The checks (all from the recording itself, none from Beat This!, which can sit o
   lock     the tab's sound lines up with the recording's at 0 (syncqa.locate: the harmony picks the eighth note) (the best of every shift of the whole song is
            within 15 ms), and clearly (LOCK_MIN over the average shift: the wrong recording barely lines up)
   steady   every 4-bar stretch lines up at 0 or half a beat out (syncqa.steadiness); a drifting stretch means
-           a bar lost or gained, the wrong tempo, or a band that changes speed
+           a bar lost or gained, the wrong tempo, or a band that changes speed. One inside a free intro, the
+           ending, a single spot or a step (syncqa.differences) is a LISTEN; a bar more or less is a FAIL
 
 The self-test breaks each good song's sync eight ways (moved 30 ms and 60 ms, half a beat, 1 % too fast,
 a bar lost in the middle, a stray jump in one bar, the wrong recording, and the tab a bar short with a steady
@@ -126,16 +127,24 @@ def judge(s, points=None, env=None, rec_c=None):
         fails.append(f"lock: the tab barely lines up with this recording ({lock:.2f}, needs {LOCK_MIN})")
     st = syncqa.steadiness(sync, bars, s["tab_env"], env, look)
     span = lambda bs: ", ".join(f"{a}-{b}" for a, b in bs)
-    if not st["steady"]:
-        fails.append(f"steady: bars {span(st['drift_bars'])} drift off the tempo")
+    # a drifting stretch is explained (listen, not fail) where the tab and the recording are known to differ:
+    # a free intro, the ending, one spot, or a step the note starts don't back (syncqa.differences)
+    diffs = syncqa.differences(sync, bars, look) if not st["steady"] else []
+    if any(d["kind"] == "bar" for d in diffs):
+        fails += [f"bar: {d['what']}" for d in diffs if d["kind"] == "bar"]
+    seen = lambda r: any(d["kind"] != "bar" and d["bars"][0] <= r[1] and r[0] <= d["bars"][1] for d in diffs)
+    left = [r for r in st["drift_bars"] if not seen(r)]
+    if left:
+        fails.append(f"steady: bars {span(left)} drift off the tempo")
+    listens += [f"bars {d['bars'][0]}-{d['bars'][1]}: {d['what']}" for d in diffs if d["kind"] != "bar"]
     if st["half_beat_bars"]:
         listens.append(f"bars {span(st['half_beat_bars'])}: the tab's rhythm is half a beat out from the recording")
-    left = info.get("left_out") or []
-    if left:
-        listens.append(f"parts left out (wrong bar count): {', '.join(left)}")
+    out_parts = info.get("left_out") or []
+    if out_parts:
+        listens.append(f"parts left out (wrong bar count): {', '.join(out_parts)}")
     verdict = "FAIL" if fails else "LISTEN" if listens else "PASS"
     return {"verdict": verdict, "fails": fails, "listen": listens, "off_ms": off, "lock": round(lock, 3),
-            "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"]}
+            "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"], "differences": diffs}
 
 
 def breaks(s, other):

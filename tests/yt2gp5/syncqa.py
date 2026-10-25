@@ -338,6 +338,8 @@ def one_tempo(raw_y, bars, tab_env, env, look=None):
 
 SECTION_MAX = 16   # bars: a longer section of the tab is cut into equal parts this long or less
 SECTION_PCT = 6    # a section's tempo stays within this of the one steady tempo (%)
+SECTION_SHIFT = 0.1  # s: a section start moves at most this far from the one steady tempo. Further, the note
+                     # starts line up as well an eighth note out, and the fit slips (Stupid Deep 64% -> 47%)
 
 
 def section_starts(notes, n, most=SECTION_MAX):
@@ -355,12 +357,14 @@ def section_starts(notes, n, most=SECTION_MAX):
 def section_tempo(base, bars, starts, look):
     """One tempo per section, for a band that changes speed (asked for by the user, 2026-10-24). A straight
     line through each section, joined at the section starts, from the one steady tempo. Each join is moved
-    to where the two sections either side line up best (locate: the harmony picks the eighth note, the note
-    starts the place), a few passes, then fine-tuned on the note starts alone (within 20 ms nothing else
-    lines up)."""
+    to where the two sections either side line up best (locate), a few passes, then fine-tuned on the note
+    starts alone. The bands seen so far play to a click (every section within 0.4 % of the average): what
+    is left is a stretch 50-70 ms early or late (How Great Is Our God bars 7-42, Here I Am To Worship 3-14),
+    so a section start moves at most SECTION_SHIFT."""
     tab_env, env = look.tab_env, look.env
     x = np.array([bars[p][0] for p in starts] + [bars[-1][1]])
     y = base(x).astype(float)
+    y0 = y.copy()
     slope = float((y[-1] - y[0]) / (x[-1] - x[0]))
     t = np.arange(len(tab_env)) * HOP / SR
     env_t = np.arange(len(env)) * HOP / SR
@@ -375,10 +379,10 @@ def section_tempo(base, bars, starts, look):
 
     def fits(k, yy):  # each section's tempo within SECTION_PCT of the steady one, never backwards
         r = [(yy[j + 1] - yy[j]) / (x[j + 1] - x[j]) / slope for j in (k - 1, k) if 0 <= j < len(x) - 1]
-        return all(abs(q - 1) <= SECTION_PCT / 100 for q in r)
+        return all(abs(q - 1) <= SECTION_PCT / 100 for q in r) and abs(yy[k] - y0[k]) <= SECTION_SHIFT
     for _ in range(4):
         for k in range(len(x)):
-            g, _ = locate(Sync(x, y), look, part=(x[max(0, k - 1)], x[min(len(x) - 1, k + 1)]), most=max(0.3, 0.6 * beat))
+            g, _ = locate(Sync(x, y), look, part=(x[max(0, k - 1)], x[min(len(x) - 1, k + 1)]), most=SECTION_SHIFT)
             yy = y.copy()
             yy[k] += g
             if fits(k, yy):
@@ -433,6 +437,61 @@ def on_downbeats(y, ok, bars, downs):
         if p and d[p] - out[p - 1] < 0.5 * length(p - 1) or p + 1 < len(y) and y[p + 1] - d[p] < 0.5 * length(p):
             continue
         out[p] = d[p]
+    return out
+
+
+DIFF_BARS = 2   # bars per stretch when looking for where the tab and the recording differ
+
+
+def differences(sync, bars, look):
+    """Where the tab and the recording differ, from how far each DIFF_BARS-bar stretch would have to move to
+    line up (searched over more than a bar either way). Each is one of:
+      bar    from there on everything is a whole bar out, for 3 stretches or more: a bar more or less in the tab
+      step   3 stretches or more all 40 ms to a third of a beat early or late together. Seen so far it is the
+             measure, not the sync: moving those bars made the note starts line up worse (How Great Is Our God
+             bars 7-42, 55 ms: notes within 30 ms 72% -> 66%). Listen there
+      intro  the first stretches a beat or more out: a free intro (the band isn't in time yet), or a count-in
+      ending the last stretches a beat or more out: the band slows down or holds the last chord
+      spot   a stretch or two a beat or more out, with the stretches round it right: the tab's part differs there
+    Half a beat out isn't listed: the note starts line up as well an eighth note either way in a strummed song.
+    Seen 2026-10-24: no song had a bar more or less; How Great Is Our God has a free intro (bars 1-4) and bars
+    7-42 sit 55 ms early, Here I Am To Worship's outro is held (bars 77-85)."""
+    x = [b[0] for b in bars]
+    bar = float(np.median([b[1] - b[0] for b in bars]))
+    beat = float(np.median([(b[1] - b[0]) / max(1, b[2]) for b in bars]))
+    rows = []
+    for p in range(0, len(bars), DIFF_BARS):
+        q = min(len(bars), p + DIFF_BARS)
+        g, gain = locate(sync, look, (x[p], bars[q - 1][1]), most=1.3 * bar,
+                         wide=(x[max(0, p - 4)], bars[min(len(bars), q + 4) - 1][1]))
+        k = round(g / bar)
+        kind = ("bar" if k and abs(g - k * bar) < 0.25 * beat and gain >= CLEAR else
+                "big" if abs(g) >= 0.65 * beat and gain >= CLEAR else
+                "small" if 0.04 <= abs(g) <= beat / 3 and gain >= CLEAR else "ok")
+        rows.append({"bars": [p + 1, q], "off_ms": round(1000 * g), "beats": round(g / beat, 2), "kind": kind, "k": k, "sign": np.sign(g)})
+    runs, i = [], 0
+    while i < len(rows):
+        j = i
+        same = lambda a, b: a["kind"] == b["kind"] and (a["kind"] != "small" or a["sign"] == b["sign"]) and (a["kind"] != "bar" or a["k"] == b["k"])
+        while j + 1 < len(rows) and same(rows[j + 1], rows[i]):
+            j += 1
+        runs.append((rows[i]["kind"], i, j))
+        i = j + 1
+    out = []
+    for kind, i, j in runs:
+        n, span = j - i + 1, [rows[i]["bars"][0], rows[j]["bars"][1]]
+        ms = int(np.median([r["off_ms"] for r in rows[i:j + 1]]))
+        if kind == "bar" and n >= 3:
+            out.append({"kind": "bar", "bars": span, "off_ms": ms, "what": f"{abs(rows[i]['k'])} bar{'s' if abs(rows[i]['k']) > 1 else ''} "
+                        f"{'more' if rows[i]['k'] > 0 else 'less'} in the recording from bar {span[0]}"})
+        elif kind == "small" and n >= 3:
+            out.append({"kind": "step", "bars": span, "off_ms": ms, "what": f"the sound says the recording is {abs(ms)} ms {'later' if ms > 0 else 'earlier'} there"})
+        elif kind in ("big", "bar") and i == 0:
+            out.append({"kind": "intro", "bars": span, "off_ms": ms, "what": "a free intro or count-in: the recording isn't in time with the tab yet"})
+        elif kind in ("big", "bar") and j >= len(rows) - 2:  # the last chord may be too quiet to place
+            out.append({"kind": "ending", "bars": span, "off_ms": ms, "what": "the ending: the band slows down or holds the last chord"})
+        elif kind in ("big", "bar"):
+            out.append({"kind": "spot", "bars": span, "off_ms": ms, "what": "the tab's part differs from the recording here"})
     return out
 
 
@@ -624,7 +683,8 @@ def improve(song, check=False, quiet=False, fit=False, one=False):
         st["whole_song_off_ms"] = round(1000 * g)
     after[3]["bars_not_matching"] = [b["bar"] + 1 for b in odd]
     st = steadiness(sync, bars, tab_env, env, look)
-    after[3].update(steady=st["steady"], half_beat_bars=st["half_beat_bars"], drift_bars=st["drift_bars"])
+    diffs = differences(sync, bars, look)
+    after[3].update(steady=st["steady"], half_beat_bars=st["half_beat_bars"], drift_bars=st["drift_bars"], differences=diffs)
     for name, s in (("before", before[3]), ("now", after[3])):
         say(f"  {name:6} notes within 30 ms {s['notes_within_30ms']}%, typical {s['note_median_ms']} ms, "
             f"bars over 50 ms off {s['bars_off_over_50ms']}, speed jumps over 2% {s['tempo_jumps_over_2pct']}, "
@@ -637,6 +697,8 @@ def improve(song, check=False, quiet=False, fit=False, one=False):
         say(f"NOT SIMPLE: bars {span(st['drift_bars'])} drift off the steady tempo (the band changes speed, a free intro, or a bar more or less in the tab)")
     else:
         say(f"NOT OK: the whole song is {after[3]['whole_song_off_ms']} ms off")
+    for d in diffs:
+        say(f"  bars {d['bars'][0]}-{d['bars'][1]} ({d['kind']}, {d['off_ms']:+d} ms): {d['what']}")
     if st["half_beat_bars"]:
         say(f"  listen to bars {span(st['half_beat_bars'])}: the tab's rhythm is half a beat out from the recording there (the sync is right round them)")
     after[3]["ok"] = bool(good)

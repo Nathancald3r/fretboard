@@ -75,7 +75,15 @@ The user asked: "import the PDF-only UG songs through Fretboard, save each as .g
   - **The line-up now picks the eighth note by harmony** (`locate`). The note starts line up just as well an eighth note either way in a strummed song: Champion's one-tempo line looked "420 ms off" and half its stretches "half a beat out". That was the note starts locking an eighth off; the harmony match has one clear peak, at 0. `one_tempo`, `steadiness`, `whole song off` and `qa.py` all use it. Self-test: Be My Escape 9 of 9. Its old "listen to bars 35–50" is gone, and it now reads OK on one tempo.
   - **Result: it helps 1 of 4.** Trust In God: notes within 30 ms 40% → 53%, drift 16 → 5 bars (bars 85–88 and the last bar left). Champion, How Great Is Our God and Here I Am To Worship keep one tempo: every section came out at 100 ± 0.4% (those bands play to a click), and the section fit made the note starts worse (Stupid Deep 64% → 47%).
   - **So the drift left is not tempo:** a free intro, a bar more or less in the tab, or the wrong recording (3 of the 4 fail the "match" check). Champion also starts 0.2 s before the video does (bar 1 at −0.205 s, clamped to 0, so "speed jumps at bar 2").
-- **Next:** find where those tabs differ from the recording (the drifting stretches), or pick songs whose tab matches the recording; then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
+- **Where the tabs differ (2026-10-24, `syncqa.differences`).** Every 2 bars, how far the recording is from the sync (searched over more than a bar either way). The kinds are a bar more/less, a step, an intro, the ending and a spot. `syncqa` prints them and `qa.py` turns a drift they explain into LISTEN (a bar more or less stays FAIL). Self-test still 9 of 9.
+  - **No song has a bar more or less.** Every one comes back to 0 after a bad stretch.
+  - **Free intro:** How Great Is Our God bars 1–4 (the recording is 1.2 s out), Champion bars 1–2.
+  - **Endings held or slowed:** Here I Am To Worship 77–84, How Great 185–186, Be My Escape 95–103.
+  - **Spots where the tab's part differs** (1–2 bars, then right again): Champion 145–146 and 189–190, How Great 135–146, Trust In God 87–88, Stupid Deep 45–46.
+  - **Steps of 50–90 ms** (How Great 7–42, Here I Am 9–14 and 51–58, Champion 93–200): the sound says the recording is early there, but moving those bars made the note starts line up worse (How Great 72% → 66%). So they are probably the measure, not the sync; listen.
+  - **Still unexplained:** Champion 129–140, 149–152 and 165–168; Trust In God 1–4; Stupid Deep 1–4 and 37–44. All are a third to half a beat out, where the note starts can't tell one eighth note from the next.
+  - **Gate now:** How Great Is Our God fails only on "match" (its intro and the recording's 6 s longer 10–20 s); Trust In God and Here I Am are down to bars 1–4 / 5–8.
+- **Next:** check by ear whether the 50–90 ms steps are real (How Great bars 7–42). Let "match" allow a free intro, so How Great can pass. Then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
 
 ## Matching the official songs to YouTube (2026-10-24)
 
