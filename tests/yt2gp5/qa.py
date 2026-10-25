@@ -23,6 +23,10 @@ The checks (all from the recording itself, none from Beat This!, which can sit o
   steady   every 4-bar stretch lines up at 0 or half a beat out (syncqa.steadiness); a drifting stretch means
            a bar lost or gained, the wrong tempo, or a band that changes speed. One inside a free intro, the
            ending, a single spot or a step (syncqa.differences) is a LISTEN; a bar more or less is a FAIL
+  drums    the drum clock (drumclock.py: the Demucs drums stem folded onto the tab's drum notes, every 4 bars,
+           to a few ms) settles each step: on time there (within drumclock.STEP_MS) drops the LISTEN, clearly
+           off is a FAIL, no clear drums keeps the LISTEN. A step the clock finds by itself is a FAIL. Drums
+           that sit off the sync everywhere are a LISTEN (the clock can't be read there)
 
 The self-test breaks each good song's sync eight ways (moved 30 ms and 60 ms, half a beat, 1 % too fast,
 a bar lost in the middle, a stray jump in one bar, the wrong recording, and the tab a bar short with a steady
@@ -41,6 +45,7 @@ import listen  # noqa: E402
 import real  # noqa: E402
 import run  # noqa: E402
 import syncqa  # noqa: E402
+import drumclock  # noqa: E402
 from syncqa import HOP, SR, Sync  # noqa: E402
 
 OFF_MS = 15       # the whole song may be this far off
@@ -95,7 +100,8 @@ def load(name):
     out = listen.OUT / run.slug(song["name"])
     info = json.loads((out / "info.json").read_text(encoding="utf-8"))
     notes = json.loads((out / "notes.json").read_text(encoding="utf-8"))
-    fb = next(out.glob("*.fretboard"))
+    # the song's own file, not the variants beside it ("(steady)", "(key points)"...)
+    fb = min(out.glob("*.fretboard"), key=lambda p: ("(" in p.stem, p.name))
     entry = json.loads(fb.read_text(encoding="utf-8"))["songs"][0]
     bars = syncqa.tab_bars(info, notes)
     env, tab_env, rec_c, tab_c, length = features(out, song, info)
@@ -160,15 +166,45 @@ def judge(s, points=None, env=None, rec_c=None):
     left = [r for r in st["drift_bars"] if not seen(r)]
     if left:
         fails.append(f"steady: bars {span(left)} drift off the tempo")
-    listens += [f"bars {d['bars'][0]}-{d['bars'][1]}: {d['what']}" for d in diffs if d["kind"] != "bar"]
+    notes = []
+    clock = drums(s, points) if env is s["env"] else None  # the clock reads the real recording only
+    if clock and not clock["sure"]:
+        listens.append(f"drums: they sit {clock['level_ms']:+.0f} ms off the sync everywhere (the whole song off, or a drum part"
+                       " the drummer doesn't play), so the drum clock can't check the steps")
+    for d in diffs:
+        if d["kind"] == "bar":
+            continue
+        where = f"bars {d['bars'][0]}-{d['bars'][1]}"
+        r = drumclock.at(clock, *d["bars"]) if clock and clock["sure"] and d["kind"] == "step" else None
+        if r and abs(r[0]) <= drumclock.STEP_MS:
+            notes.append(f"{where}: {d['what']}, but the drums are on time there ({r[0]:+.0f} ± {r[1]:.0f} ms)")
+        elif r:
+            fails.append(f"drums: {where} sit {r[0]:+.0f} ± {r[1]:.0f} ms off the recording's drums")
+        else:
+            no = " (no clear drums there to check)" if clock and clock["sure"] and d["kind"] == "step" else ""
+            listens.append(f"{where}: {d['what']}{no}")
+    if clock and clock["sure"]:
+        for x in clock["steps"]:
+            if not any(d["kind"] == "step" and d["bars"][0] <= x["bars"][1] and x["bars"][0] <= d["bars"][1] for d in diffs):
+                fails.append(f"drums: bars {x['bars'][0]}-{x['bars'][1]} sit {x['ms']:+.0f} ± {x['pm']:.0f} ms off the recording's drums")
     if st["half_beat_bars"]:
         listens.append(f"bars {span(st['half_beat_bars'])}: the tab's rhythm is half a beat out from the recording")
     out_parts = info.get("left_out") or []
     if out_parts:
         listens.append(f"parts left out (wrong bar count): {', '.join(out_parts)}")
     verdict = "FAIL" if fails else "LISTEN" if listens else "PASS"
-    return {"verdict": verdict, "fails": fails, "listen": listens, "off_ms": off, "lock": round(lock, 3),
+    return {"verdict": verdict, "fails": fails, "listen": listens, "notes": notes, "off_ms": off, "lock": round(lock, 3),
+            "drum_level_ms": clock and clock["level_ms"], "drum_clear": clock and clock["clear"],
             "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"], "differences": diffs}
+
+
+def drums(s, points):
+    """The drum clock for these points, or None when the recording can't be split (no Demucs)."""
+    try:
+        return drumclock.clock(s, points)
+    except ImportError as e:
+        print(f"  (no drum clock: {e})")
+        return None
 
 
 def breaks(s, other):
@@ -241,6 +277,8 @@ def show(name, v):
         print(f"         {f}")
     for f in v["listen"]:
         print(f"         listen to {f}")
+    for f in v.get("notes", []):
+        print(f"         ok: {f}")
 
 
 def main():
