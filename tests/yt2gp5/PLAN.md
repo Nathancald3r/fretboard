@@ -65,7 +65,13 @@ The user asked: "import the PDF-only UG songs through Fretboard, save each as .g
   - **Bar-count guard:** the song's length is the bar count most parts agree on. A part that read more or fewer bars is left out of the .gp and printed as `WRONG BAR COUNT` (`--keep-off` keeps it).
   - Drum reader fixes (pushed in `80869d9`): a one-bar last line is found, and a multi-bar rest's wide "4" is read. Be My Escape drums 77 → 103 of 103, Trust In God 175 → 181, How Great Is Our God 185 → 188.
   - **Still left out** (2026-10-24): 10000 Reasons Piano 77/78 and Tambourine 76/78; Champion Piano 59, Synth Pad 60, Drums 206, Shaker 163 of 207; How Great Is Our God Bass 185/188; Stupid Deep Finger Snap 49/54 (Hand Clap unread); Trust In God Piano 73, Tambourines 159, Shaker 158 of 181. Piano and pad (sheet music) and one-line percussion are the weak readers.
-- **Next:** run the existing steps by hand on the official songs (Champion, Trust In God, How Great Is Our God, Here I Am To Worship) to see how many sync as one steady tempo; then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
+- **Hand run on 4 official songs (2026-10-24): 0 of 4 sync with one steady tempo** (`out/sync4.log`, `qa.json` FAIL for all that have one).
+  - **Champion:** 75% of notes within 30 ms, but the whole song is −420 ms off; drifts in bars 21–24, 93–108, 133–140, 157–192; 22 stretches half a beat out.
+  - **Trust In God:** 43% within 30 ms; drifts in bars 1–4, 33–36, 73–88, 169–181.
+  - **Here I Am To Worship:** no official audio matches the tab (4:28). The fan upload used has 9 s more at the start. 57% within 30 ms; drifts in bars 5–16, 53–56, 77–84.
+  - **How Great Is Our God:** no upload matches (the "0–10 s chords differ" on all; the "(Audio)" one is 6 s longer at 10–20 s). 75% within 30 ms, whole song −1 ms, but bars 5–40 and 185–188 drift (a free intro or a bar more/less in the tab).
+  - **Why:** live-feel worship recordings change speed, and two of the tabs are not cut to the official recording. One steady tempo can't line these up; only Be My Escape (LISTEN) comes close.
+- **Next:** decide between a sync that allows tempo changes (per-section tempo, against the user's one-tempo rule unless asked) or picking songs whose recording keeps one tempo; then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
 
 ## Matching the official songs to YouTube (2026-10-24)
 
