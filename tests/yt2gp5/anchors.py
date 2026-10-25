@@ -31,17 +31,18 @@ import syncqa  # noqa: E402
 from syncqa import SR, Sync  # noqa: E402
 
 RATE = 50        # feature frames a second
+LONG_S = 300     # longer songs use RATE / 2: synctoolbox's grids grow with length squared (Trust In God, 7.4 min, went over 9 GB)
 KEEP_PCT = 3.0   # a section's tempo may differ from the song's by this much and still get a key point
 
 
-def features(y):
+def features(y, rate):
     from synctoolbox.feature.chroma import pitch_to_chroma, quantize_chroma
     from synctoolbox.feature.dlnco import pitch_onset_features_to_DLNCO
     from synctoolbox.feature.pitch import audio_to_pitch_features
     from synctoolbox.feature.pitch_onset import audio_to_pitch_onset_features
-    chroma = quantize_chroma(pitch_to_chroma(audio_to_pitch_features(f_audio=y, Fs=SR, feature_rate=RATE)))
+    chroma = quantize_chroma(pitch_to_chroma(audio_to_pitch_features(f_audio=y, Fs=SR, feature_rate=rate)))
     onsets = audio_to_pitch_onset_features(f_audio=y, Fs=SR)
-    return chroma, pitch_onset_features_to_DLNCO(f_peaks=onsets, feature_rate=RATE, feature_sequence_length=chroma.shape[1])
+    return chroma, pitch_onset_features_to_DLNCO(f_peaks=onsets, feature_rate=rate, feature_sequence_length=chroma.shape[1])
 
 
 def path(s):
@@ -57,13 +58,14 @@ def path(s):
     wav = real.download(s["info"]["url"], real.CACHE / run.slug(s["song"]["name"]))
     rec, _ = librosa.load(str(wav), sr=SR, mono=True)
     tab = syncqa.tab_mix(s["song"], s["info"])
-    (ct, ot), (cr, orr) = features(tab), features(rec)
+    rate = RATE if max(len(tab), len(rec)) / SR <= LONG_S else RATE // 2
+    (ct, ot), (cr, orr) = features(tab, rate), features(rec, rate)
     shift = compute_optimal_chroma_shift(ct, cr)
     cr, orr = shift_chroma_vectors(cr, shift), shift_chroma_vectors(orr, shift)
-    wp = sync_via_mrmsdtw(f_chroma1=ct, f_onset1=ot, f_chroma2=cr, f_onset2=orr, input_feature_rate=RATE,
-                          step_weights=np.array([1.5, 1.5, 2.0]), threshold_rec=10 ** 6)
+    wp = sync_via_mrmsdtw(f_chroma1=ct, f_onset1=ot, f_chroma2=cr, f_onset2=orr, input_feature_rate=rate,
+                          step_weights=np.array([1.5, 1.5, 2.0]), threshold_rec=10 ** 4)  # 10**6 took 18 GB on a long song
     wp = make_path_strictly_monotonic(wp)
-    t, r = wp[0] / RATE, wp[1] / RATE
+    t, r = wp[0] / rate, wp[1] / rate
     np.savez(f, tab=t, rec=r, sha=s["info"]["gp_sha"])
     return t, r
 
