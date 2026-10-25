@@ -349,7 +349,7 @@ def main():
         import syncqa
         print("fitting every bar to the recording's beats..." if "--fit" in a else "finding the tempo and the start...")
         fb.with_suffix(".fretboard.before").unlink(missing_ok=True)  # the line-up just written is the new "before"
-        syncqa.improve(song, fit="--fit" in a)
+        syncqa.improve(song, fit="--fit" in a, one="--one" in a)
         import qa  # the gate: PASS, LISTEN or FAIL (qa.py --selftest proves it catches broken syncs)
         verdict = qa.judge(qa.load(song["name"]))
         (out / "qa.json").write_text(json.dumps(verdict, indent=1), encoding="utf-8")

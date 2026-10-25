@@ -3,6 +3,10 @@
     python tests/yt2gp5/syncqa.py NAME           measure, put the song on one steady tempo, write the report
     python tests/yt2gp5/syncqa.py NAME --fit     fit every bar to the recording instead (only when the user asks)
     python tests/yt2gp5/syncqa.py NAME --check   measure and report only (the .fretboard file stays as it is)
+    python tests/yt2gp5/syncqa.py NAME --one     one tempo even when it drifts (no tempo per section)
+
+When one tempo drifts, one tempo per section of the tab is tried (the user asked, 2026-10-24) and kept when it
+drifts less and the note starts don't get worse.
 
 listen.py --export runs the fix by itself, so a song comes out lined up with no hands on.
 
@@ -225,12 +229,53 @@ def lag_curve(sync, tab_env, env, most=0.6, part=None):
     return lags, np.array(out)
 
 
+class Look:
+    """What the line-up is judged on: the note starts (onset strength) of the tab and the recording, and
+    their harmony (chroma, each frame made length 1; the tab's moved into the recording's key)."""
+
+    def __init__(self, tab_env, env, tab_c, rec_c, shift):
+        unit = lambda c: c / (np.linalg.norm(c, axis=0) + 1e-9)
+        self.tab_env, self.env = tab_env, env
+        self.tab_c, self.rec_c = np.roll(unit(tab_c), shift, axis=0), unit(rec_c)
+        self.tt = np.arange(tab_c.shape[1]) * C_HOP / SR
+
+
+CHROMA_CLEAR = 0.01  # the harmony must line up this much better to pick a line-up further from 0
+
+
+def harmony(sync, look, lags, part=None):
+    """How alike the tab's and the recording's harmony are with the whole tab moved by each lag (s)."""
+    keep = (look.tt >= part[0]) & (look.tt < part[1]) if part else np.ones(len(look.tt), bool)
+    tc, v = look.tab_c[:, keep], sync(look.tt[keep])
+    n = look.rec_c.shape[1]
+    return np.array([float(np.mean(np.sum(tc * look.rec_c[:, np.clip(((v + g) * SR / C_HOP).astype(int), 0, n - 1)], axis=0)))
+                     for g in lags])
+
+
+def locate(sync, look, part=None, most=0.6, wide=None):
+    """How far (s) the tab would have to move to line up best, and how much better that lines up than 0.
+    The note starts give the exact place, but in a strummed song they line up as well an eighth note
+    either way (Champion locked half a beat out, 2026-10-24). The harmony has one peak: of the note starts'
+    peaks, the one whose harmony fits best is taken, the one nearest 0 when the harmony can't tell
+    (wide: a longer span for the harmony)."""
+    lags, c = lag_curve(sync, look.tab_env, look.env, most=most, part=part)
+    z = int(np.argmin(np.abs(lags)))
+    top = float(c.max())
+    peaks = [i for i in range(1, len(c) - 1) if c[i] >= c[i - 1] and c[i] >= c[i + 1] and c[i] >= 0.5 * top > 0]
+    if not peaks:
+        return 0.0, 0.0
+    ch = harmony(sync, look, lags[peaks], wide or part)
+    near = int(np.argmin(np.abs(lags[peaks])))
+    pick = peaks[int(np.argmax(ch))] if ch.max() - ch[near] >= CHROMA_CLEAR else peaks[near]
+    return float(lags[pick]), float(c[pick] - c[z])
+
+
 STEADY_MS = 40  # a stretch within this of 0: it lines up (a song played to a click stays there all through)
 STRETCH = 4     # bars per stretch
 CLEAR = 0.05    # a stretch counts as off only when its best lag lines up this much better than 0
 
 
-def steadiness(sync, bars, tab_env, env):
+def steadiness(sync, bars, tab_env, env, look=None):
     """The simple check: the song in stretches of STRETCH bars, and how far each would have to move to
     line up best (ms). Each stretch is one of:
       ok     within STEADY_MS of 0, or no clearly better lag (a quiet stretch has nothing to line up)
@@ -243,10 +288,15 @@ def steadiness(sync, bars, tab_env, env):
     for p in range(0, len(bars), STRETCH):
         q = min(len(bars), p + STRETCH)
         half = 500 * (bars[q - 1][1] - bars[p][0]) / max(1, sum(b[2] for b in bars[p:q]))  # half a beat, ms (tab time)
-        lags, c = lag_curve(sync, tab_env, env, most=max(0.3, 1.2 * half / 1000), part=(bars[p][0], bars[q - 1][1]))
-        i, z = int(np.argmax(c)), int(np.argmin(np.abs(lags)))
-        off = 1000 * float(lags[i])
-        kind = ("ok" if abs(off) <= STEADY_MS or c[i] - c[z] < CLEAR else
+        most, part = max(0.3, 1.2 * half / 1000), (bars[p][0], bars[q - 1][1])
+        if look:  # the harmony over the 4 bars either side too
+            g, gain = locate(sync, look, part, most, wide=(bars[max(0, p - STRETCH)][0], bars[min(len(bars), q + STRETCH) - 1][1]))
+        else:
+            lags, c = lag_curve(sync, tab_env, env, most=most, part=part)
+            i, z = int(np.argmax(c)), int(np.argmin(np.abs(lags)))
+            g, gain = float(lags[i]), float(c[i] - c[z])
+        off = 1000 * g
+        kind = ("ok" if abs(off) <= STEADY_MS or gain < CLEAR else
                 "half" if abs(abs(off) - half) <= STEADY_MS else "drift")
         out.append({"bars": [p + 1, q], "video": round(float(sync(x[p])), 1), "off_ms": round(off), "kind": kind})
     return {"stretches": out, "steady": not any(s["kind"] == "drift" for s in out),
@@ -254,7 +304,7 @@ def steadiness(sync, bars, tab_env, env):
             "drift_bars": [s["bars"] for s in out if s["kind"] == "drift"]}
 
 
-def one_tempo(raw_y, bars, tab_env, env):
+def one_tempo(raw_y, bars, tab_env, env, look=None):
     """One tempo and a start for the whole song. The line starts from the audio line-up (bars far apart,
     medians, so a bad stretch can't tilt it), then the tempo and the start are tuned so the tab's sound
     lines up best with the recording's over the whole song. Not the beat tracker: it can sit on the
@@ -281,7 +331,69 @@ def one_tempo(raw_y, bars, tab_env, env):
                 if best is None or c > best[0]:
                     best = (c, sl, st)
         _, slope, start = best
+    if look:  # on the eighth note the harmony says (the note starts alone can lock half a beat out)
+        start += locate(Sync(x, start + slope * x), look)[0]
     return Sync(x, start + slope * x)
+
+
+SECTION_MAX = 16   # bars: a longer section of the tab is cut into equal parts this long or less
+SECTION_PCT = 6    # a section's tempo stays within this of the one steady tempo (%)
+
+
+def section_starts(notes, n, most=SECTION_MAX):
+    """The bars where the tab's sections start (its Intro, Verse, Chorus marks), long sections cut up."""
+    marks = [p for p, b in enumerate(notes["bars"][:n]) if b.get("section")] or [0]
+    if marks[0] != 0:
+        marks.insert(0, 0)
+    out = []
+    for a, z in zip(marks, marks[1:] + [n]):
+        k = -(-(z - a) // most)
+        out += [a + round(i * (z - a) / k) for i in range(k)]
+    return out
+
+
+def section_tempo(base, bars, starts, look):
+    """One tempo per section, for a band that changes speed (asked for by the user, 2026-10-24). A straight
+    line through each section, joined at the section starts, from the one steady tempo. Each join is moved
+    to where the two sections either side line up best (locate: the harmony picks the eighth note, the note
+    starts the place), a few passes, then fine-tuned on the note starts alone (within 20 ms nothing else
+    lines up)."""
+    tab_env, env = look.tab_env, look.env
+    x = np.array([bars[p][0] for p in starts] + [bars[-1][1]])
+    y = base(x).astype(float)
+    slope = float((y[-1] - y[0]) / (x[-1] - x[0]))
+    t = np.arange(len(tab_env)) * HOP / SR
+    env_t = np.arange(len(env)) * HOP / SR
+    a = (tab_env - tab_env.mean()) / (tab_env.std() + 1e-9)
+    e = (env - env.mean()) / (env.std() + 1e-9)
+    beat = float(np.median([(b[1] - b[0]) / max(1, b[2]) for b in bars])) * slope
+    span = [(t >= x[max(0, k - 1)]) & (t < x[min(len(x) - 1, k + 1)]) for k in range(len(x))]
+
+    def score(k, yy):
+        m = span[k]
+        return float(np.sum(a[m] * np.interp(np.interp(t[m], x, yy), env_t, e, left=0, right=0)))
+
+    def fits(k, yy):  # each section's tempo within SECTION_PCT of the steady one, never backwards
+        r = [(yy[j + 1] - yy[j]) / (x[j + 1] - x[j]) / slope for j in (k - 1, k) if 0 <= j < len(x) - 1]
+        return all(abs(q - 1) <= SECTION_PCT / 100 for q in r)
+    for _ in range(4):
+        for k in range(len(x)):
+            g, _ = locate(Sync(x, y), look, part=(x[max(0, k - 1)], x[min(len(x) - 1, k + 1)]), most=max(0.3, 0.6 * beat))
+            yy = y.copy()
+            yy[k] += g
+            if fits(k, yy):
+                y = yy
+    for most, step in ((0.05, 0.005), (0.02, 0.002), (0.02, 0.002)):
+        for k in range(len(x)):
+            best, at = score(k, y), y[k]
+            for d in np.arange(-most, most + 1e-9, step):
+                yy = y.copy()
+                yy[k] = at + d
+                if fits(k, yy):
+                    c = score(k, yy)
+                    if c > best:
+                        best, y[k] = c, at + d
+    return Sync(x, y)
 
 
 def fix(sync, bars, per_bar, downs=()):
@@ -451,7 +563,7 @@ a{color:var(--after)}
     path.write_text(page, encoding="utf-8")
 
 
-def improve(song, check=False, quiet=False, fit=False):
+def improve(song, check=False, quiet=False, fit=False, one=False):
     """Measure the song's sync against its recording, fix it (unless check) and write the report."""
     import librosa
     say = (lambda *a: None) if quiet else print
@@ -475,28 +587,43 @@ def improve(song, check=False, quiet=False, fit=False):
     mix = tab_mix(song, info)
     tab_c = chroma(mix)
     tab_env = librosa.onset.onset_strength(y=mix, sr=SR, hop_length=HOP)
+    look = Look(tab_env, env, tab_c, rec_c, info["shift"])
     keep = {t["index"] for t in info["tracks"]}
     notes_tab = [x for x in notes["notes"] if x["track"] in keep]
     m = lambda s: measure(s, bars, beats, env, rec_c, tab_c, notes_tab, info["tracks"], info["shift"])
     pb0, ne0, p0 = m(sync0)
     before = (pb0, ne0, p0, summary(pb0, ne0, p0))
-    sync = sync0
+    sync, sections = sync0, None
     if not check and fit:
         for _ in range(2):
             pb, *_ = m(sync)
             sync = fix(sync, bars, pb, downs)
     elif not check:
-        sync = one_tempo(raw_line(info, bars), bars, tab_env, env)
+        sync = one_tempo(raw_line(info, bars), bars, tab_env, env, look)
         say(f"  one tempo: the tab at {round(100 * float(np.median(np.diff(sync.x)) / np.median(np.diff(sync.y))), 2)}% of its own speed, "
             f"bar 1 at {float(sync.y[0]):.3f} s")
+        st1 = steadiness(sync, bars, tab_env, env, look)
+        if not st1["steady"] and not one:  # the band changes speed: one tempo per section of the tab
+            starts = section_starts(notes, len(bars))
+            sec = section_tempo(sync, bars, starts, look)
+            st2 = steadiness(sec, bars, tab_env, env, look)
+            drift = lambda s: sum(b - a + 1 for a, b in s["drift_bars"])
+            # the drift check uses the same line-up the fit chases, so the note starts must agree too
+            n1, n2 = (summary(*m(s))["notes_within_30ms"] or 0 for s in (sync, sec))
+            say(f"  one tempo drifts in {drift(st1)} bars, notes within 30 ms {n1}%; "
+                f"one tempo per section ({len(starts)} sections): {drift(st2)} bars, {n2}%")
+            if drift(st2) < drift(st1) and n2 >= n1 - 1:
+                sync, sections = sec, starts
+                speed = 100 * np.diff(sec.y) / np.diff(sec.x) / (float(sec.y[-1] - sec.y[0]) / float(sec.x[-1] - sec.x[0]))
+                say("  section tempos (% of the average): " + ", ".join(f"bar {p + 1} {v:.1f}" for p, v in zip(starts, speed)))
     pb1, ne1, p1 = m(sync)
     after = (pb1, ne1, p1, summary(pb1, ne1, p1))
     odd = mismatches(pb1)
     for name, sy, st in (("before", sync0, before[3]), ("now", sync, after[3])):  # the whole song a little early or late?
-        lags, c = lag_curve(sy, tab_env, env)
-        st["whole_song_off_ms"] = round(1000 * float(lags[np.argmax(c)]))
+        g, _ = locate(sy, look)
+        st["whole_song_off_ms"] = round(1000 * g)
     after[3]["bars_not_matching"] = [b["bar"] + 1 for b in odd]
-    st = steadiness(sync, bars, tab_env, env)
+    st = steadiness(sync, bars, tab_env, env, look)
     after[3].update(steady=st["steady"], half_beat_bars=st["half_beat_bars"], drift_bars=st["drift_bars"])
     for name, s in (("before", before[3]), ("now", after[3])):
         say(f"  {name:6} notes within 30 ms {s['notes_within_30ms']}%, typical {s['note_median_ms']} ms, "
@@ -513,6 +640,7 @@ def improve(song, check=False, quiet=False, fit=False):
     if st["half_beat_bars"]:
         say(f"  listen to bars {span(st['half_beat_bars'])}: the tab's rhythm is half a beat out from the recording there (the sync is right round them)")
     after[3]["ok"] = bool(good)
+    after[3]["tempo_sections"] = [p + 1 for p in sections] if sections else None
     if odd:
         say(f"  bars where the tab differs from the recording (its beats don't land on the recording's): {ranges([b['bar'] for b in odd])}")
     if not check:
@@ -541,7 +669,7 @@ def main():
     a = sys.argv[1:]
     if not a or a[0] in ("-h", "--help"):
         sys.exit(__doc__)
-    improve(songdb.find_one(songdb.load(), a[0]), check="--check" in a, fit="--fit" in a)
+    improve(songdb.find_one(songdb.load(), a[0]), check="--check" in a, fit="--fit" in a, one="--one" in a)
 
 
 if __name__ == "__main__":

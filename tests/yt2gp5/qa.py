@@ -5,7 +5,8 @@
     python tests/yt2gp5/qa.py --selftest        proves the gate works: each good song must pass, and each of
                                                 its syncs broken on purpose must fail
 
-PASS    the tab is the recording, all the way through, on one steady tempo, within 15 ms. Ship it.
+PASS    the tab is the recording, all the way through, on one steady tempo (or one per section, for a band
+        that changes speed), within 15 ms. Ship it.
 LISTEN  it passes, but a person should hear some bars (the tab's rhythm half a beat out there, parts left out).
 FAIL    don't ship: the wrong recording, a sync that is off, drifts, jumps, or runs past the recording.
 
@@ -13,8 +14,9 @@ The checks (all from the recording itself, none from Beat This!, which can sit o
   match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok")
   points   the sync has a point for every bar, always moving on, starting at 0 or later and ending inside the
            recording
-  speed    no bar faster or slower than the bar before by over 1 % (one steady tempo has none)
-  lock     the tab's sound lines up with the recording's at 0 (the best of every shift of the whole song is
+  speed    no bar faster or slower than the bar before by over 1 % (one steady tempo has none), except where
+           a section of the tab starts, in a sync with one tempo per section (up to SECTION_JUMP_PCT)
+  lock     the tab's sound lines up with the recording's at 0 (syncqa.locate: the harmony picks the eighth note) (the best of every shift of the whole song is
            within 15 ms), and clearly (LOCK_MIN over the average shift: the wrong recording barely lines up)
   steady   every 4-bar stretch lines up at 0 or half a beat out (syncqa.steadiness); a drifting stretch means
            a bar lost or gained, the wrong tempo, or a band that changes speed
@@ -42,6 +44,7 @@ OFF_MS = 15       # the whole song may be this far off
 LOCK_MIN = 0.08   # how much better the line-up at 0 must be than the average shift (Be My Escape 0.3+)
 JUMP_PCT = 1.0    # a bar this much faster or slower than the bar before is a jump
 END_S = 1.0       # the last bar may start at most this far past the recording's end
+SECTION_JUMP_PCT = 2 * syncqa.SECTION_PCT  # a tempo change where a section starts (one tempo per section)
 
 
 def features(out, song, info):
@@ -50,14 +53,16 @@ def features(out, song, info):
     f = out / "qa_env.npz"
     if f.exists():
         d = np.load(f)
-        if str(d["sha"]) == info["gp_sha"]:
-            return d["env"], d["tab_env"], float(d["length"])
+        if str(d["sha"]) == info["gp_sha"] and "rec_c" in d:
+            return d["env"], d["tab_env"], d["rec_c"], d["tab_c"], float(d["length"])
     wav = real.download(info["url"], real.CACHE / run.slug(song["name"]))
     rec, _ = librosa.load(str(wav), sr=SR, mono=True)
+    mix = syncqa.tab_mix(song, info)
     env = librosa.onset.onset_strength(y=rec, sr=SR, hop_length=HOP)
-    tab_env = librosa.onset.onset_strength(y=syncqa.tab_mix(song, info), sr=SR, hop_length=HOP)
-    np.savez(f, env=env, tab_env=tab_env, length=len(rec) / SR, sha=info["gp_sha"])
-    return env, tab_env, len(rec) / SR
+    tab_env = librosa.onset.onset_strength(y=mix, sr=SR, hop_length=HOP)
+    rec_c, tab_c = syncqa.chroma(rec), syncqa.chroma(mix)
+    np.savez(f, env=env, tab_env=tab_env, rec_c=rec_c, tab_c=tab_c, length=len(rec) / SR, sha=info["gp_sha"])
+    return env, tab_env, rec_c, tab_c, len(rec) / SR
 
 
 def load(name):
@@ -71,16 +76,19 @@ def load(name):
     fb = next(out.glob("*.fretboard"))
     entry = json.loads(fb.read_text(encoding="utf-8"))["songs"][0]
     bars = syncqa.tab_bars(info, notes)
-    env, tab_env, length = features(out, song, info)
+    env, tab_env, rec_c, tab_c, length = features(out, song, info)
+    sections = ((entry.get("autoSync") or {}).get("beats") or {}).get("tempo_sections") or []
     return {"song": song, "out": out, "info": info, "bars": bars, "points": entry["syncPoints"],
-            "env": env, "tab_env": tab_env, "length": length}
+            "env": env, "tab_env": tab_env, "rec_c": rec_c, "tab_c": tab_c, "length": length,
+            "sections": [p - 1 for p in sections]}
 
 
-def judge(s, points=None, env=None):
+def judge(s, points=None, env=None, rec_c=None):
     """The verdict for a song's sync points (its own, unless others are given to test)."""
     bars, info = s["bars"], s["info"]
     points = s["points"] if points is None else points
     env = s["env"] if env is None else env
+    look = syncqa.Look(s["tab_env"], env, s["tab_c"], s["rec_c"] if rec_c is None else rec_c, info["shift"])
     length = len(env) * HOP / SR
     fails, listens = [], []
     if not info.get("ok"):
@@ -101,19 +109,22 @@ def judge(s, points=None, env=None):
     y = np.array([ms / 1000 for _, ms in ps])
     rate = np.diff(y) / np.maximum(1e-6, np.diff(x))
     jump = 100 * np.abs(np.diff(rate)) / rate[:-1]
+    # a sync with one tempo per section changes speed where a section of the tab starts, and only there
+    at_section = np.array([ps[i + 1][0] in s["sections"] for i in range(len(jump))], bool)
+    jump = np.where(at_section & (jump <= SECTION_JUMP_PCT), 0, jump)
     if (jump > JUMP_PCT).any():
         where = [ps[i + 1][0] + 1 for i in np.flatnonzero(jump > JUMP_PCT)]
         fails.append(f"speed: the tempo jumps at bar{'s' if len(where) > 1 else ''} {', '.join(map(str, where[:6]))}{'…' if len(where) > 6 else ''}")
     # lock: the whole song at 0, and clearly
     lags, c = syncqa.lag_curve(sync, s["tab_env"], env)
-    best, z = int(np.argmax(c)), int(np.argmin(np.abs(lags)))
-    off = round(1000 * float(lags[best]))
+    z = int(np.argmin(np.abs(lags)))
+    off = round(1000 * syncqa.locate(sync, look)[0])
     lock = float(c[z] - np.mean(c))
     if abs(off) > OFF_MS:
         fails.append(f"lock: the whole song is {off:+d} ms off (it lines up best moved that far)")
     if lock < LOCK_MIN:
         fails.append(f"lock: the tab barely lines up with this recording ({lock:.2f}, needs {LOCK_MIN})")
-    st = syncqa.steadiness(sync, bars, s["tab_env"], env)
+    st = syncqa.steadiness(sync, bars, s["tab_env"], env, look)
     span = lambda bs: ", ".join(f"{a}-{b}" for a, b in bs)
     if not st["steady"]:
         fails.append(f"steady: bars {span(st['drift_bars'])} drift off the tempo")
@@ -127,7 +138,7 @@ def judge(s, points=None, env=None):
             "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"]}
 
 
-def breaks(s, other_env):
+def breaks(s, other):
     """The song's sync broken on purpose, each a way a sync goes wrong."""
     bars, ps = s["bars"], sorted(s["points"])
     ms = np.array([t for _, t in ps], float)
@@ -143,15 +154,17 @@ def breaks(s, other_env):
         "a bar lost in the middle": as_points(np.where(np.arange(len(ms)) >= mid, ms + bar_ms, ms)),
         "one bar jumps": as_points(np.where(np.arange(len(ms)) == mid, ms + 0.25 * bar_ms, ms)),
     }
-    if other_env is not None:
-        out["the wrong recording"] = ("env", other_env)
+    if other is not None:
+        out["the wrong recording"] = ("env", other["env"], other["rec_c"])
     # The tab a bar short: the recording plays a bar the tab doesn't have (one bar copied in the middle),
     # and the sync is one steady line through where the bars really are, so no jump gives it away.
     a, b = (int(ms[i] / 1000 * SR / HOP) for i in (mid, mid + 1))
     env = np.concatenate([s["env"][:b], s["env"][a:b], s["env"][b:]])
+    ca, cb = (int(round(f * HOP / syncqa.C_HOP)) for f in (a, b))
+    rec_c = np.concatenate([s["rec_c"][:, :cb], s["rec_c"][:, ca:cb], s["rec_c"][:, cb:]], axis=1)
     true = np.where(np.arange(len(ms)) > mid, ms + (b - a) * HOP / SR * 1000, ms)
     line = np.polyval(np.polyfit(np.arange(len(ms)), true, 1), np.arange(len(ms)))
-    out["the tab a bar short"] = ("both", as_points(line), env)
+    out["the tab a bar short"] = ("both", as_points(line), env, rec_c)
     return out
 
 
@@ -163,10 +176,10 @@ def selftest(names):
         passed = good["verdict"] != "FAIL"
         ok &= passed
         rows.append({"song": n, "case": "as made", "want": "pass", "got": good["verdict"], "right": passed, "why": good["fails"] + good["listen"]})
-        other = next((load(m)["env"] for m in ready() if m != n), None)
+        other = next((load(m) for m in ready() if m != n), None)
         for case, pts in breaks(s, other).items():
-            got = (judge(s, env=pts[1]) if isinstance(pts, tuple) and pts[0] == "env" else
-                   judge(s, points=pts[1], env=pts[2]) if isinstance(pts, tuple) else judge(s, points=pts))
+            got = (judge(s, env=pts[1], rec_c=pts[2]) if isinstance(pts, tuple) and pts[0] == "env" else
+                   judge(s, points=pts[1], env=pts[2], rec_c=pts[3]) if isinstance(pts, tuple) else judge(s, points=pts))
             right = got["verdict"] == "FAIL"
             ok &= right
             rows.append({"song": n, "case": case, "want": "FAIL", "got": got["verdict"], "right": right, "why": got["fails"]})
