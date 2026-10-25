@@ -188,6 +188,8 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 3. Redo Trust In God (`syncqa.py "Trust In God"`) the same way and check its whole_song_off.
 4. Later: drop or fix the Beat This! bar list (it should use the tab's sound per bar, like `lag_curve` but per section).
 
+**Steady vs stretched, by ear (2026-10-24, night):** `compare.py NAME` writes both. The user heard Be My Escape: stretched drifts and gets worse, steady is right up to bar 90. After bar 90 the tab's outro is another arrangement than the recording's (tab 14 bars in a 2-bar pattern, recording 20 bars in a 3-bar pattern, same tempo; found by matching each tab bar's chords to each recording bar). No sync fixes that. The user's rule: when the lengths differ, don't squeeze them to end together; the tab may end first (or get rests at the end). Be My Escape stays steady.
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).
