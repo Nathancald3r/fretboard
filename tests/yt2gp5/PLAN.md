@@ -211,6 +211,8 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 
 **synctoolbox key points (2026-10-24, night): no.** `anchors.py` lines the tab's sound up with the recording by synctoolbox (MrMsDTW, chroma + note starts), keeps a key point at each section start and one steady tempo between. Notes within 30 ms, current vs key points: Be My Escape 66 vs 60 %, Trust In God 43 vs 46 %, Stupid Deep 64 vs 53 %, Here I Am To Worship 55 vs 22 %, How Great Is Our God 71 vs 39 %, Champion 75 vs 30 %. Its path wobbles 15-300 ms section to section and sits ~35 ms late; the current one-tempo line-up is within ~5 ms where the tab and recording agree. Songs over 5 min need 25 frames/s (50 took 16-18 GB). Chart: `out/anchors.html`.
 
+**By ear (2026-10-25): Stupid Deep is "almost perfect, 99%"** (the user, video and synth together, steady tempo). qa.py still calls it FAIL (drifts, weak line-up), so for strummed songs with a weak line-up the gate is stricter than the ear: a FAIL there means "listen", not "broken".
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).
