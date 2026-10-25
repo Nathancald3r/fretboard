@@ -213,6 +213,14 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 
 **By ear (2026-10-25): Stupid Deep is "almost perfect, 99%"** (the user, video and synth together, steady tempo). qa.py still calls it FAIL (drifts, weak line-up), so for strummed songs with a weak line-up the gate is stricter than the ear: a FAIL there means "listen", not "broken".
 
+**Guitar notes vs the official tab (2026-10-25): `notecheck.py`.** The tab's real guitar tracks (not synth/piano), moved into the recording by each song's own sync, against basic-pitch on the guitar stem, start within 50 ms, right pitch. 6 songs × 3 Demucs models × 72 note settings; `out/notecheck.md`. Caps: `--cpu 0.6 --gpu 0.85` (the user's limits).
+
+- **Settings matter, the model hardly does.** Mean F1 of the 5 guitar songs: current onset 0.6 / frame 0.35 → 21 %; **onset 0.5 / frame 0.25 → 25 %** (more notes found, same share wrong). htdemucs_ft is +0.5 points for 4× the time; htdemucs_6s's guitar stem is worse on 4 songs (best only on Be My Escape, 41 %). Keep htdemucs.
+- **The notebook now uses onset 0.5, frame 0.25** for guitar. Synth test (run.py, htdemucs): guitar F1 up on 4 of 5 songs (Worship 57→63 %, Stairway 54→61 %, Forget 40→45 %, How He Loves 58→62 %; When I Go Down 64→62 %), the tab as written about the same (±3 points).
+- onset 0.4 finds more (recall 35 %) but adds wrong notes; amplitude and 120 ms minimum filters only lose notes.
+- **Stupid Deep's "guitar" is a banjo whose tab pitches are 38-52** (a banjo's lowest open string is D3 = 50), so `ug_to_gp.py` probably gave it a wrong tuning; it scores 0 % and is left out of the mean.
+- Real recordings stay low (14-35 %): several guitars at once, the "other" stem also holds keys and pads, and the band doesn't play every tab note. Next: a better guitar transcriber than basic-pitch (guitar-specific models), and splitting the "other" stem further.
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).
