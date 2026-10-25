@@ -1,12 +1,15 @@
 """Runs the notebook's cells that work offline: 2 (input check), 4 (Demucs on CPU),
 5 (basic-pitch ONNX), 6a/6b (Guitar Pro) and 7 (zip), on made-up audio and MIDI."""
-import json, sys, shutil, gc, re, zipfile, subprocess
+import json, os, sys, shutil, gc, re, zipfile, subprocess
 from pathlib import Path
 import numpy as np
 
 NB = Path(sys.argv[1])
 OUT = Path(sys.argv[2]); OUT.mkdir(parents=True, exist_ok=True)
 FULL = "--full" in sys.argv
+# --model NAME: the SEPARATION_MODEL for --full (default htdemucs). UVR models are linked in from
+# ~/.fretboard/uvr-models so nothing downloads twice.
+SEP = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else "htdemucs"
 cells = {}
 for c in json.loads(NB.read_text(encoding="utf-8"))["cells"]:
     src = "".join(c["source"])
@@ -131,7 +134,14 @@ for k in range(int(12 / beat)):  # bass on every beat, guitar chord every bar, a
 mix = np.stack([mix, mix], 1) / np.abs(mix).max() * 0.8
 work = OUT / "Made up song"; shutil.rmtree(work, ignore_errors=True); work.mkdir()
 sf.write(str(work / "song.wav"), mix, sr, subtype="PCM_16")
-G.update(MIX_WAV=work / "song.wav", WORK=work, SEPARATION_MODEL="htdemucs", GUITAR_PROGRAM=25,
+if SEP in ("uvr", "bssw"):
+    uvr = OUT / "models" / "uvr"; uvr.mkdir(parents=True, exist_ok=True)
+    for f in (Path.home() / ".fretboard" / "uvr-models").iterdir():
+        if f.is_file() and not (uvr / f.name).exists():
+            os.link(f, uvr / f.name)
+    G["MODELS"] = OUT / "models"
+    import stems; stems.ffmpeg_on_path()  # Colab has ffmpeg; here it may only be imageio's copy
+G.update(MIX_WAV=work / "song.wav", WORK=work, SEPARATION_MODEL=SEP, GUITAR_PROGRAM=25, TEMPO="auto", YOUTUBE_URL="", SONG_NAME="",
          SONG_TITLE="Made up song", BEATS_BEFORE_FIRST_DOWNBEAT=0, BATCH=[], DRIVE_OUT=OUT / "drive")
 (OUT / "drive").mkdir(exist_ok=True)
 for name in ["4", "5", "6b", "7"]:

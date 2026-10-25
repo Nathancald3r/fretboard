@@ -116,9 +116,10 @@ YOUTUBE_URL = ""  # @param {type:"string"}
 SONG_NAME = ""  # @param {type:"string"}
 # uvr: Kim Vocal 2 takes the vocals and MDX23C the instruments (the models UVR5 users pick), then
 #      htdemucs_6s splits the instruments into drums, bass, guitar and piano. The cleanest.
+# bssw: BS-Roformer-SW gives all six stems (vocals, guitar, piano, bass, drums, other) by itself.
 # htdemucs is fastest (four stems). htdemucs_ft is about 4x slower and a little cleaner.
 # htdemucs_6s also splits out guitar and piano, so keys don't end up in the guitar track.
-SEPARATION_MODEL = "uvr"  # @param ["uvr", "htdemucs", "htdemucs_ft", "htdemucs_6s"]
+SEPARATION_MODEL = "uvr"  # @param ["uvr", "bssw", "htdemucs", "htdemucs_ft", "htdemucs_6s"]
 # Which beat is "1": -1 lets the beat finder decide. If bar lines land on the wrong beat, set 0, 1, 2 or 3.
 BEATS_BEFORE_FIRST_DOWNBEAT = -1  # @param {type:"integer"}
 # If the .gp5's tempo is twice (or half) what the official tab says, pick "half" (or "double") and run again.
@@ -210,7 +211,8 @@ def read_wav(path, rate=44100):
     return julius.resample_frac(wav, sr, rate) if sr != rate else wav
 
 def uvr_stem(model_file, wav_path, stem, work):
-    """One stem ("Vocals" or "Instrumental") of a UVR5 model, run by audio-separator.
+    """One stem ("Vocals" or "Instrumental") of a UVR5 model, run by audio-separator; stem=None gives
+    {name: stem} for every stem the model makes (BS-Roformer-SW: six).
     Kim Vocal 2 is an ONNX model, which audio-separator runs with onnxruntime, on the CPU unless onnxruntime's
     GPU build finds the CUDA it was built for (4 min a song, not 15 s). So it is turned into a torch model
     and run on the GPU at its own segment size: the vocals are the same as onnxruntime's (-97 dB)."""
@@ -224,7 +226,7 @@ def uvr_stem(model_file, wav_path, stem, work):
     work.mkdir(parents=True, exist_ok=True)
     try:
         sep = Separator(output_dir=str(work), model_file_dir=str(MODELS / "uvr"), output_format="WAV",
-                        sample_rate=44100, log_level=logging.WARNING, output_single_stem=stem,  # only the stem we use
+                        sample_rate=44100, log_level=logging.WARNING, output_single_stem=stem,  # only the stem we use (None: all)
                         mdx_params={"hop_length": 1024, "segment_size": 256, "overlap": 0.25, "batch_size": 1,
                                     "enable_denoise": False},
                         # MDX23C: 4 overlapping passes, not its default 8. Half the time; the instrumental
@@ -236,7 +238,10 @@ def uvr_stem(model_file, wav_path, stem, work):
     except Exception as e:
         fail("Separation", f"The UVR model {model_file} stopped with an error. Run step 1 again, or pick "
                            "SEPARATION_MODEL = htdemucs_6s in step 2.", e)
-    got = read_wav(next(f for f in out if f"({stem})" in f.name))
+    if stem:
+        got = read_wav(next(f for f in out if f"({stem})" in f.name))
+    else:
+        got = {f.name.split("_(")[-1].split(")")[0].lower(): read_wav(f) for f in out}
     for f in out:
         f.unlink(missing_ok=True)
     del sep
@@ -262,6 +267,11 @@ def separate_stems(wav_path, out_dir, model_name="uvr"):
         stems["bass"] = demucs_split(inst, "htdemucs_ft", only="bass")["bass"]
         stems["other"] = inst - sum(stems.values())
         stems["vocals"] = vocals[:, :n]
+        shutil.rmtree(out_dir / "_uvr", ignore_errors=True)
+    elif model_name == "bssw":
+        stems = uvr_stem("BS-Roformer-SW.ckpt", wav_path, None, out_dir / "_uvr")
+        n = min(v.shape[1] for v in stems.values())
+        stems = {k: v[:, :n] for k, v in stems.items()}
         shutil.rmtree(out_dir / "_uvr", ignore_errors=True)
     else:
         stems = demucs_split(read_wav(wav_path), model_name)

@@ -2,6 +2,7 @@
 
     python tests/yt2gp5/stems.py URL [--name NAME]     a YouTube link (the song's name is taken from its title)
     python tests/yt2gp5/stems.py URL --uvr             UVR5's models first (as in Ultimate Vocal Remover), into <song>/uvr/
+    python tests/yt2gp5/stems.py URL --bssw            BS-Roformer-SW alone (six stems in one model), into <song>/bssw/
     python tests/yt2gp5/stems.py --page                rewrite every song's listening page only
 
 Each song gets index.html beside its stems: all six and the recording play together in step, each with
@@ -16,11 +17,14 @@ Two Demucs models, each where it is best, on the GPU when there is one (free, on
 run here by the audio-separator package, no GUI); the same Demucs pair then splits that instrumental into drums,
 bass, guitar and piano, and other is the instrumental minus those four. Its page links to the Demucs-only one.
 
+--bssw: BS-Roformer-SW gives all six (vocals, guitar, piano, bass, drums, other) by itself, at 4 overlapping passes.
+
 Written to out/stems/<song>/ at 44.1 kHz stereo, with stems.json: each stem's loudness and how much of the
 recording the six give back (the leftover after adding them up, in dB under the recording). The download is
 cached in cache/real/<song>/, so a second run only splits.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -64,6 +68,18 @@ def separate(model_name, x, model_sr):
 UVR_MODELS = Path.home() / ".fretboard" / "uvr-models"
 
 
+def ffmpeg_on_path():
+    """audio-separator calls plain "ffmpeg"; imageio's copy has a longer name."""
+    import os
+    import shutil
+    if not shutil.which("ffmpeg"):
+        exe = UVR_MODELS / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+        if not exe.exists():
+            exe.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(real.ffmpeg(), exe)
+        os.environ["PATH"] = str(exe.parent) + os.pathsep + os.environ["PATH"]
+
+
 def uvr(model_file, wav, stem, work):
     """One stem ("Vocals" or "Instrumental") of a UVR5 model, as (2, n) float32 at 44.1 kHz."""
     import soundfile as sf
@@ -76,14 +92,7 @@ def uvr(model_file, wav, stem, work):
     def torch_load(self):  # Kim (ONNX) on the GPU through torch: same vocals (-97 dB), 4 min -> 1 min here
         self.model_run = onnx2torch.convert(onnx.load(self.model_path)).to(self.torch_device).eval()
     mdx_separator.MDXSeparator.load_model = torch_load
-    import os
-    import shutil
-    if not shutil.which("ffmpeg"):  # it calls plain "ffmpeg"; imageio's copy has a longer name
-        exe = UVR_MODELS / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-        if not exe.exists():
-            exe.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(real.ffmpeg(), exe)
-        os.environ["PATH"] = str(exe.parent) + os.pathsep + os.environ["PATH"]
+    ffmpeg_on_path()
     work.mkdir(parents=True, exist_ok=True)
     # MDX23C at 4 overlapping passes, not 8: half the time, the instrumental differs by -39 dB (inaudible)
     sep = Separator(output_dir=str(work), model_file_dir=str(UVR_MODELS), output_format="WAV", sample_rate=SR,
@@ -98,6 +107,7 @@ def uvr(model_file, wav, stem, work):
     for g in out:
         (g if g.is_absolute() else work / g.name).unlink(missing_ok=True)
     return torch.from_numpy(a.T.copy())
+
 
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -116,7 +126,7 @@ button.on{background:var(--acc);color:var(--bg);border-color:var(--acc)}button:d
 <script>
 const D = __DATA__;
 document.getElementById('t').textContent = D.name;
-if (D.other) document.getElementById('other').innerHTML = `<a href="${D.other[1]}">${D.other[0]}</a>`;
+if (D.other) document.getElementById('other').innerHTML = (Array.isArray(D.other[0]) ? D.other : [D.other]).map(([t, h]) => `<a href="${h}">${t}</a>`).join(' · ');
 const ctx = new AudioContext(), tracks = [];
 let start = 0, at = 0, playing = false, len = 0;
 const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
@@ -176,7 +186,7 @@ def page(folder):
     rep = json.loads((folder / "stems.json").read_text(encoding="utf-8"))
     names = [n for n in ("vocals", "guitar", "piano", "bass", "drums", "other") if (folder / f"{n}.wav").exists()]
     files = [[n.capitalize(), f"{n}.wav", False] for n in names]
-    song = folder.parent if folder.name == "uvr" else folder
+    song = folder.parent if folder.name in ("uvr", "bssw") else folder
     rec = next((real.CACHE / song.name).glob("recording-*.wav"), None)
     if rec:
         import os
@@ -184,10 +194,10 @@ def page(folder):
     data = {"name": rep["name"], "files": files,
             "db": {n.capitalize(): f"{v['db']:+.1f} dB" for n, v in rep["stems"].items()},
             "models": rep.get("models") or "drums, bass, vocals: htdemucs_ft · guitar, piano: htdemucs_6s · other: the rest"}
-    if (folder / "uvr" / "stems.json").exists():
-        data["other"] = ["The UVR5 split (MDX23C + Kim Vocal 2) →", "uvr/"]
-    elif folder.name == "uvr":
-        data["other"] = ["← The Demucs-only split", "../"]
+    splits = [["The Demucs-only split", ""], ["The UVR5 split (MDX23C + Kim Vocal 2)", "uvr/"], ["BS-Roformer-SW", "bssw/"]]
+    here = "" if song == folder else folder.name + "/"
+    up = "../" if here else ""
+    data["other"] = [[t, up + h] for t, h in splits if h != here and (song / h / "stems.json").exists()] or None
     (folder / "index.html").write_text(PAGE.replace("__DATA__", json.dumps(data)), encoding="utf-8")
 
 
@@ -202,14 +212,14 @@ def main():
     if not a or a[0] in ("-h", "--help"):
         sys.exit(__doc__)
     if a[0] == "--page":
-        for f in [*OUT.iterdir(), *OUT.glob("*/uvr")]:
+        for f in [*OUT.iterdir(), *OUT.glob("*/uvr"), *OUT.glob("*/bssw")]:
             if (f / "stems.json").exists():
                 page(f)
                 print(f"{f / 'index.html'}")
         return
     url = a[0]
     name = a[a.index("--name") + 1] if "--name" in a else title(url)
-    folder = OUT / run.slug(name) / ("uvr" if "--uvr" in a else "")
+    folder = OUT / run.slug(name) / ("uvr" if "--uvr" in a else "bssw" if "--bssw" in a else "")
     wav = real.download(url, real.CACHE / run.slug(name))
     import julius
     import soundfile as sf
@@ -220,7 +230,17 @@ def main():
     if sr != SR:
         x = julius.resample_frac(x, sr, SR)
     models = None
-    if "--uvr" in a:
+    if "--bssw" in a:
+        print(f"{name}: BS-Roformer-SW (six stems)...", flush=True)
+        import notecheck
+        import sepcheck  # the stem test's runner: the user's CPU/GPU caps, cached in cache/real/<song>/sepcheck/
+        notecheck.pin_cores(max(1, int((os.cpu_count() or 2) * notecheck.CPU_SHARE)))
+        sepcheck.setup(notecheck.GPU_SHARE)
+        stems = {k: torch.from_numpy(v) for k, v in sepcheck.uvr_all("bssw", wav, real.CACHE / run.slug(name) / "sepcheck").items()}
+        n = min(x.shape[1], *(v.shape[1] for v in stems.values()))
+        x, stems = x[:, :n], {k: v[:, :n] for k, v in stems.items()}
+        models = "all six: BS-Roformer-SW"
+    elif "--uvr" in a:
         print(f"{name}: UVR5 models (Kim_Vocal_2 for vocals, MDX23C-8KFFT-InstVoc_HQ for the instruments)...", flush=True)
         work = real.CACHE / run.slug(name) / "uvr"
         vocals = uvr("Kim_Vocal_2.onnx", wav, "Vocals", work)
@@ -249,13 +269,15 @@ def main():
         report["stems"][n] = {"db": db(v)}
     # the five model stems against the recording: what's left over goes to "other"
     report["other_db"] = db(stems["other"])
-    report["four_ft_leftover_db"] = db((inst if models else x) - sum(ft.values()))
+    if "--bssw" not in a:
+        report["four_ft_leftover_db"] = db((inst if models else x) - sum(ft.values()))
     if models:
         report["leftover_db"] = db(x - sum(stems.values()))  # what the UVR pair itself loses
     (folder / "stems.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     for n, v in report["stems"].items():
         print(f"  {n:7} {v['db']:+6.1f} dB against the recording")
-    print(f"  htdemucs_ft's four add back up to the recording within {report['four_ft_leftover_db']} dB")
+    if "four_ft_leftover_db" in report:
+        print(f"  htdemucs_ft's four add back up to the recording within {report['four_ft_leftover_db']} dB")
     page(folder)
     print(f"written to {folder}; listen: http://localhost:8421/{folder.relative_to(HERE.parent.parent).as_posix()}/")
 
