@@ -11,7 +11,9 @@ LISTEN  it passes, but a person should hear some bars (the tab's rhythm half a b
 FAIL    don't ship: the wrong recording, a sync that is off, drifts, jumps, or runs past the recording.
 
 The checks (all from the recording itself, none from Beat This!, which can sit on the off-beats):
-  match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok")
+  match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok"). A
+           free intro is a LISTEN: only stretches in the first FREE_INTRO_S of the tab fail (other chords, or the
+           band taking longer), by at most FREE_INTRO_LONGER_S, and the rest matches
   points   the sync has a point for every bar, always moving on, starting at 0 or later and ending inside the
            recording
   speed    no bar faster or slower than the bar before by over 1 % (one steady tempo has none), except where
@@ -46,6 +48,25 @@ LOCK_MIN = 0.08   # how much better the line-up at 0 must be than the average sh
 JUMP_PCT = 1.0    # a bar this much faster or slower than the bar before is a jump
 END_S = 1.0       # the last bar may start at most this far past the recording's end
 SECTION_JUMP_PCT = 2 * syncqa.SECTION_PCT  # a tempo change where a section starts (one tempo per section)
+FREE_INTRO_S = 20.0         # a free intro: the match may fail only in this much of the tab's start
+FREE_INTRO_LONGER_S = 10.0  # and the band may take this much longer over it
+
+
+def free_intro(info):
+    """The match failed only on a free intro: every stretch that failed lies in the tab's first FREE_INTRO_S,
+    none is shorter in the recording or more than FREE_INTRO_LONGER_S longer, the key is the same and nothing
+    is left over at the ends. Returns the seconds of the tab it covers, else None."""
+    parts = info.get("parts") or []
+    bad = [p for p in parts if p.get("why")]
+    if not bad or info.get("shift") or abs(info.get("head_s", 99)) > 6 or abs(info.get("tail_s", 99)) > 6:
+        return None
+    t0 = parts[0]["tab"][0]
+    for p in bad:
+        if p["tab"][1] - t0 > FREE_INTRO_S + 1 or "shorter" in p["why"]:
+            return None
+        if "longer" in p["why"] and float(p["why"].split("recording ")[1].split(" s")[0]) > FREE_INTRO_LONGER_S:
+            return None
+    return max(p["tab"][1] for p in bad) - t0
 
 
 def features(out, song, info):
@@ -92,7 +113,10 @@ def judge(s, points=None, env=None, rec_c=None):
     look = syncqa.Look(s["tab_env"], env, s["tab_c"], s["rec_c"] if rec_c is None else rec_c, info["shift"])
     length = len(env) * HOP / SR
     fails, listens = [], []
-    if not info.get("ok"):
+    intro = None if info.get("ok") else free_intro(info)
+    if intro:
+        listens.append(f"match: a free intro, listen to the first {intro:.0f} s (the rest is this tab all the way through)")
+    elif not info.get("ok"):
         fails.append(f"match: the recording isn't this tab all the way through (chord distance {info.get('dist')}, worst {info.get('worst')})")
     ps = sorted(points)
     have = {p for p, _ in ps}

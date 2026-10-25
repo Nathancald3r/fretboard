@@ -83,7 +83,8 @@ The user asked: "import the PDF-only UG songs through Fretboard, save each as .g
   - **Steps of 50–90 ms** (How Great 7–42, Here I Am 9–14 and 51–58, Champion 93–200): the sound says the recording is early there, but moving those bars made the note starts line up worse (How Great 72% → 66%). So they are probably the measure, not the sync; listen.
   - **Still unexplained:** Champion 129–140, 149–152 and 165–168; Trust In God 1–4; Stupid Deep 1–4 and 37–44. All are a third to half a beat out, where the note starts can't tell one eighth note from the next.
   - **Gate now:** How Great Is Our God fails only on "match" (its intro and the recording's 6 s longer 10–20 s); Trust In God and Here I Am are down to bars 1–4 / 5–8.
-- **Next:** check by ear whether the 50–90 ms steps are real (How Great bars 7–42). Let "match" allow a free intro, so How Great can pass. Then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
+- **Free intro allowed (2026-10-24):** `qa.free_intro` makes a failed "match" a LISTEN when every failing stretch is in the tab's first 20 s (other chords, or the band up to 10 s longer), the key is the same and nothing is left over at the ends. How Great Is Our God now gets LISTEN (was FAIL); the self-test on it is 9 of 9. Trust In God, Stupid Deep and Be My Escape still FAIL on drift (steady).
+- **Next:** check by ear whether the 50–90 ms steps are real (How Great bars 7–42). Then build one command from a UG link (helper `--no-ui` → `ug_to_gp` → `songdb scan/find/verify --official` → `listen --export`). An agent review (2026-10-24) agreed on this order.
 
 ## Matching the official songs to YouTube (2026-10-24)
 
