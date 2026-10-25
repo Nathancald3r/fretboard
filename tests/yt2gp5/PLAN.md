@@ -157,6 +157,13 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 - **listen to bars …**: a stretch lines up half a beat off while the stretches round it are right. The tab's rhythm differs there, not the sync.
 - Be My Escape: OK. Listen to 1–8 (the intro: clearly half a beat out, 0.77 vs 0.17), 21–24, 37–48, 93–96. Stupid Deep: NOT SIMPLE (weak line-up everywhere, 0.1–0.3; nothing lines up at 0 in bars 37–48).
 
+**The quality gate (2026-10-24, night): `qa.py`.** One verdict per exported song, so the workflow can run on its own. `listen.py --export` prints it and saves `qa.json` beside the song.
+- **PASS**: ship it. **LISTEN**: passes, but a person should hear the bars it names. **FAIL**: don't ship.
+- The checks: the whole-song match, sync points for every bar inside the recording, no bar-to-bar speed jump over 1 %, the whole song within 15 ms *and* clearly locked (lag-0 line-up 0.08 over the average shift), no drifting 4-bar stretch.
+- **Proven:** `qa.py --selftest` breaks each good song nine ways: moved 30 ms, moved 60 ms, half a beat, 1 % fast, a bar lost, one bar jumping, the wrong recording, and the tab a bar short with a steady sync. Every break must fail and the song as made must pass. Be My Escape: 9 of 9 right.
+- Now: Be My Escape LISTEN (bars 37–40, 93–96, 101–103); Stupid Deep FAIL (drifts); Trust In God and Champion FAIL (old bar-fitted syncs, never redone).
+- Add a good song to the self-test whenever one passes: more songs make the limits more trustworthy.
+
 **Next, after the user confirms:**
 1. Commit and push.
 2. Build the APK if the user wants it on the phone.

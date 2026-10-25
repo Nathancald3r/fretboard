@@ -1,0 +1,221 @@
+"""The quality gate: one verdict per exported song, so the workflow can run on its own.
+
+    python tests/yt2gp5/qa.py NAME              the verdict for one song (PASS, LISTEN or FAIL, and why)
+    python tests/yt2gp5/qa.py --all             every song in out/listen
+    python tests/yt2gp5/qa.py --selftest        proves the gate works: each good song must pass, and each of
+                                                its syncs broken on purpose must fail
+
+PASS    the tab is the recording, all the way through, on one steady tempo, within 15 ms. Ship it.
+LISTEN  it passes, but a person should hear some bars (the tab's rhythm half a beat out there, parts left out).
+FAIL    don't ship: the wrong recording, a sync that is off, drifts, jumps, or runs past the recording.
+
+The checks (all from the recording itself, none from Beat This!, which can sit on the off-beats):
+  match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok")
+  points   the sync has a point for every bar, always moving on, starting at 0 or later and ending inside the
+           recording
+  speed    no bar faster or slower than the bar before by over 1 % (one steady tempo has none)
+  lock     the tab's sound lines up with the recording's at 0 (the best of every shift of the whole song is
+           within 15 ms), and clearly (LOCK_MIN over the average shift: the wrong recording barely lines up)
+  steady   every 4-bar stretch lines up at 0 or half a beat out (syncqa.steadiness); a drifting stretch means
+           a bar lost or gained, the wrong tempo, or a band that changes speed
+
+The self-test breaks each good song's sync eight ways (moved 30 ms and 60 ms, half a beat, 1 % too fast,
+a bar lost in the middle, a stray jump in one bar, the wrong recording, and the tab a bar short with a steady
+sync, so no jump gives it away). The gate works when every good song
+passes and every broken one fails. Writes out/qa.json (every verdict) and out/qa_selftest.json.
+"""
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import listen  # noqa: E402
+import real  # noqa: E402
+import run  # noqa: E402
+import syncqa  # noqa: E402
+from syncqa import HOP, SR, Sync  # noqa: E402
+
+OFF_MS = 15       # the whole song may be this far off
+LOCK_MIN = 0.08   # how much better the line-up at 0 must be than the average shift (Be My Escape 0.3+)
+JUMP_PCT = 1.0    # a bar this much faster or slower than the bar before is a jump
+END_S = 1.0       # the last bar may start at most this far past the recording's end
+
+
+def features(out, song, info):
+    """The recording's and the tab's note-start strength (cached beside the song)."""
+    import librosa
+    f = out / "qa_env.npz"
+    if f.exists():
+        d = np.load(f)
+        if str(d["sha"]) == info["gp_sha"]:
+            return d["env"], d["tab_env"], float(d["length"])
+    wav = real.download(info["url"], real.CACHE / run.slug(song["name"]))
+    rec, _ = librosa.load(str(wav), sr=SR, mono=True)
+    env = librosa.onset.onset_strength(y=rec, sr=SR, hop_length=HOP)
+    tab_env = librosa.onset.onset_strength(y=syncqa.tab_mix(song, info), sr=SR, hop_length=HOP)
+    np.savez(f, env=env, tab_env=tab_env, length=len(rec) / SR, sha=info["gp_sha"])
+    return env, tab_env, len(rec) / SR
+
+
+def load(name):
+    """Everything the gate needs for one song in out/listen."""
+    import songdb
+    db = songdb.load()
+    song = next((x for x in db["songs"] if x["name"] == name), None) or songdb.find_one(db, name)
+    out = listen.OUT / run.slug(song["name"])
+    info = json.loads((out / "info.json").read_text(encoding="utf-8"))
+    notes = json.loads((out / "notes.json").read_text(encoding="utf-8"))
+    fb = next(out.glob("*.fretboard"))
+    entry = json.loads(fb.read_text(encoding="utf-8"))["songs"][0]
+    bars = syncqa.tab_bars(info, notes)
+    env, tab_env, length = features(out, song, info)
+    return {"song": song, "out": out, "info": info, "bars": bars, "points": entry["syncPoints"],
+            "env": env, "tab_env": tab_env, "length": length}
+
+
+def judge(s, points=None, env=None):
+    """The verdict for a song's sync points (its own, unless others are given to test)."""
+    bars, info = s["bars"], s["info"]
+    points = s["points"] if points is None else points
+    env = s["env"] if env is None else env
+    length = len(env) * HOP / SR
+    fails, listens = [], []
+    if not info.get("ok"):
+        fails.append(f"match: the recording isn't this tab all the way through (chord distance {info.get('dist')}, worst {info.get('worst')})")
+    ps = sorted(points)
+    have = {p for p, _ in ps}
+    if len(have) < len(bars):
+        fails.append(f"points: {len(bars) - len(have)} of {len(bars)} bars have no sync point")
+    if any(b[1] <= a[1] for a, b in zip(ps, ps[1:])):
+        fails.append("points: the sync goes backwards")
+    if ps and ps[-1][1] / 1000 > length + END_S:
+        fails.append(f"points: the last bar starts {ps[-1][1] / 1000 - length:.1f} s after the recording ends")
+    if len(ps) < 2:
+        return {"verdict": "FAIL", "fails": fails or ["points: no sync"], "listen": []}
+    sync = Sync.from_points([b[0] for b in bars], ps)
+    # speed: each bar's tempo in the video (bars with a point at both ends)
+    x = np.array([bars[p][0] for p, _ in ps])
+    y = np.array([ms / 1000 for _, ms in ps])
+    rate = np.diff(y) / np.maximum(1e-6, np.diff(x))
+    jump = 100 * np.abs(np.diff(rate)) / rate[:-1]
+    if (jump > JUMP_PCT).any():
+        where = [ps[i + 1][0] + 1 for i in np.flatnonzero(jump > JUMP_PCT)]
+        fails.append(f"speed: the tempo jumps at bar{'s' if len(where) > 1 else ''} {', '.join(map(str, where[:6]))}{'…' if len(where) > 6 else ''}")
+    # lock: the whole song at 0, and clearly
+    lags, c = syncqa.lag_curve(sync, s["tab_env"], env)
+    best, z = int(np.argmax(c)), int(np.argmin(np.abs(lags)))
+    off = round(1000 * float(lags[best]))
+    lock = float(c[z] - np.mean(c))
+    if abs(off) > OFF_MS:
+        fails.append(f"lock: the whole song is {off:+d} ms off (it lines up best moved that far)")
+    if lock < LOCK_MIN:
+        fails.append(f"lock: the tab barely lines up with this recording ({lock:.2f}, needs {LOCK_MIN})")
+    st = syncqa.steadiness(sync, bars, s["tab_env"], env)
+    span = lambda bs: ", ".join(f"{a}-{b}" for a, b in bs)
+    if not st["steady"]:
+        fails.append(f"steady: bars {span(st['drift_bars'])} drift off the tempo")
+    if st["half_beat_bars"]:
+        listens.append(f"bars {span(st['half_beat_bars'])}: the tab's rhythm is half a beat out from the recording")
+    left = info.get("left_out") or []
+    if left:
+        listens.append(f"parts left out (wrong bar count): {', '.join(left)}")
+    verdict = "FAIL" if fails else "LISTEN" if listens else "PASS"
+    return {"verdict": verdict, "fails": fails, "listen": listens, "off_ms": off, "lock": round(lock, 3),
+            "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"]}
+
+
+def breaks(s, other_env):
+    """The song's sync broken on purpose, each a way a sync goes wrong."""
+    bars, ps = s["bars"], sorted(s["points"])
+    ms = np.array([t for _, t in ps], float)
+    beat = 1000 * float(np.median([(b[1] - b[0]) / max(1, b[2]) for b in bars]))
+    mid = len(ps) // 2
+    bar_ms = float(np.median(np.diff(ms)))
+    as_points = lambda v: [[p, int(round(t))] for (p, _), t in zip(ps, v)]
+    out = {
+        "moved 30 ms": as_points(ms + 30),
+        "moved 60 ms": as_points(ms - 60),
+        "half a beat out": as_points(ms + beat / 2),
+        "1 % too fast": as_points(ms[0] + (ms - ms[0]) / 1.01),
+        "a bar lost in the middle": as_points(np.where(np.arange(len(ms)) >= mid, ms + bar_ms, ms)),
+        "one bar jumps": as_points(np.where(np.arange(len(ms)) == mid, ms + 0.25 * bar_ms, ms)),
+    }
+    if other_env is not None:
+        out["the wrong recording"] = ("env", other_env)
+    # The tab a bar short: the recording plays a bar the tab doesn't have (one bar copied in the middle),
+    # and the sync is one steady line through where the bars really are, so no jump gives it away.
+    a, b = (int(ms[i] / 1000 * SR / HOP) for i in (mid, mid + 1))
+    env = np.concatenate([s["env"][:b], s["env"][a:b], s["env"][b:]])
+    true = np.where(np.arange(len(ms)) > mid, ms + (b - a) * HOP / SR * 1000, ms)
+    line = np.polyval(np.polyfit(np.arange(len(ms)), true, 1), np.arange(len(ms)))
+    out["the tab a bar short"] = ("both", as_points(line), env)
+    return out
+
+
+def selftest(names):
+    songs = {n: load(n) for n in names}
+    rows, ok = [], True
+    for n, s in songs.items():
+        good = judge(s)
+        passed = good["verdict"] != "FAIL"
+        ok &= passed
+        rows.append({"song": n, "case": "as made", "want": "pass", "got": good["verdict"], "right": passed, "why": good["fails"] + good["listen"]})
+        other = next((load(m)["env"] for m in ready() if m != n), None)
+        for case, pts in breaks(s, other).items():
+            got = (judge(s, env=pts[1]) if isinstance(pts, tuple) and pts[0] == "env" else
+                   judge(s, points=pts[1], env=pts[2]) if isinstance(pts, tuple) else judge(s, points=pts))
+            right = got["verdict"] == "FAIL"
+            ok &= right
+            rows.append({"song": n, "case": case, "want": "FAIL", "got": got["verdict"], "right": right, "why": got["fails"]})
+    for r in rows:
+        print(f"  {'ok ' if r['right'] else 'BAD'} {r['song'][:28]:28} {r['case']:26} want {r['want']:4}  got {r['got']:6}  {'; '.join(r['why'])[:110]}")
+    print(f"\n{'THE GATE WORKS' if ok else 'THE GATE IS WRONG'}: {sum(r['right'] for r in rows)} of {len(rows)} cases right")
+    (listen.OUT.parent / "qa_selftest.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    return ok
+
+
+def ready():
+    """The songs in out/listen with everything the gate needs."""
+    import songdb
+    db = songdb.load()
+    names = []
+    for s in db["songs"]:
+        out = listen.OUT / run.slug(s["name"])
+        if (out / "info.json").exists() and (out / "notes.json").exists() and next(out.glob("*.fretboard"), None):
+            names.append(s["name"])
+    return names
+
+
+def show(name, v):
+    print(f"{v['verdict']:6} {name}")
+    for f in v["fails"]:
+        print(f"         {f}")
+    for f in v["listen"]:
+        print(f"         listen to {f}")
+
+
+def main():
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help"):
+        sys.exit(__doc__)
+    if a[0] == "--selftest":
+        names = a[1:] or [n for n in ready() if judge(load(n))["verdict"] != "FAIL"]
+        if not names:
+            sys.exit("no song passes yet to test the gate with")
+        sys.exit(0 if selftest(names) else 1)
+    names = ready() if a[0] == "--all" else a
+    verdicts = {}
+    for n in names:
+        verdicts[n] = judge(load(n))
+        show(n, verdicts[n])
+    (listen.OUT.parent / "qa.json").write_text(json.dumps(verdicts, indent=1), encoding="utf-8")
+    sys.exit(0 if all(v["verdict"] != "FAIL" for v in verdicts.values()) else 1)
+
+
+if __name__ == "__main__":
+    main()
