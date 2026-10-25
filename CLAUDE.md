@@ -15,10 +15,15 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Run, test, ship
 
+- **Repeated jobs are scripts: run them, don't redo them by hand** (the user asked, 2026-10-24). When a job comes up a second time, make it a script.
+  - `node scripts/test.mjs` runs every test (`--round` adds the round-trip test).
+  - `node scripts/ship.mjs -m "message" file1 file2 …` checks and fixes flipped line endings, refuses out/, APKs and `_xxx/` folders, commits only the named files with the Co-Authored-By line, and pushes to main. `--check` only checks.
+  - `node scripts/apk.mjs` bumps the version, builds, checks the 30 MB limit, keeps `Fretboard-<version>.apk`, installs on the phone and checks the version. `--no-bump` rebuilds or reinstalls the same version; `--no-install` skips the phone. Then send `APK_PATH` with SendUserFile.
+  - yt2gp5: `listen.py --export`, `qa.py`, `compare.py`, `anchors.py` (see `tests/yt2gp5/PLAN.md`).
 - **Dev server:** `node server.mjs` serves http://localhost:8420, the user's own copy. `PORT=8421` is the preview.
   - Use preview_start with the `fretboard` entry in `.claude/launch.json`.
   - Never start a second server on 8420: the user may be using it.
-- **Tests:** `for f in tests/*.test.mjs; do node "$f" || echo FAIL $f; done` (Git Bash). Run them after any change to `js/ugtab.js`, `js/pdftab.js`, `js/chordsheet.js` or `js/player.js`.
+- **Tests:** `node scripts/test.mjs`. Run them after any change to `js/ugtab.js`, `js/pdftab.js`, `js/chordsheet.js` or `js/player.js`.
 - **Round-trip import test:** `python tests/roundtrip/roundtrip.py` (`-k NAME`, `--keep`, `--verbose`).
   - Draws each song in `tests/roundtrip/songs/` as UG-style tab PDFs (Letter), reads them back with `pdfToTab` and `ugToAlphaTex`, and prints a score per song and check. Exits 1 below the pass mark in `config.json`.
   - Needs Python Playwright with Chromium; no server (it serves itself on a free port). About 6 s.
@@ -27,7 +32,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **Website:** GitHub Pages from `Nathancald3r/fretboard`, branch `main`.
   - A push to `main` updates the website **and** the UG helper, which downloads its files from there.
   - The user has approved pushing helper/importer fixes.
-- **Android:**
+- **Android** (`node scripts/apk.mjs` does all of this):
   - Bump `versionCode` and `versionName` in `android/app/build.gradle`.
   - Build with `cd android; ./gradlew --console=plain assembleRelease -q`. The output is `android/app/build/outputs/apk/release/app-release.apk`. The web files are copied into the APK by the `copyWeb` task.
   - Check the APK is under 30 MB, then send it with SendUserFile.
@@ -38,7 +43,8 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 - `js/ugtab.js` is stored with **CRLF** line endings. `tools/ug_collect.py` and most other files use **LF**.
 - `sed -i` or a Python rewrite can flip the line endings, and the commit then shows the whole file as changed.
-- **Before committing, run `git diff --stat`.** If a small edit shows hundreds of changed lines, restore the original endings first:
+- `node scripts/ship.mjs` does this check and fix for you.
+- **Before committing by hand, run `git diff --stat`.** If a small edit shows hundreds of changed lines, restore the original endings first:
   - to CRLF: `sed -i 's/$/\r/' file`
   - to LF: `sed -i 's/\r$//' file`
 - Prefer the Edit tool over `sed` for code changes.
