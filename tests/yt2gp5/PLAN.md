@@ -217,6 +217,8 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 
 **By ear (2026-10-25): Stupid Deep is "almost perfect, 99%"** (the user, video and synth together, steady tempo). qa.py still calls it FAIL (drifts, weak line-up), so for strummed songs with a weak line-up the gate is stricter than the ear: a FAIL there means "listen", not "broken".
 
+**Synced (2026-10-25): Stupid Deep is right by ear** (the user, on their own copy). The last "a bit ahead" was an app bug, not the sync: alphaTab's audio render drops a shift shared by every sync point, so the user's tracks played the first point's time (30 ms) early and a nudge never moved them. Fixed in `e3c193c` (`js/playalong.js`: the tracks are started at the first point).
+
 **Guitar notes vs the official tab (2026-10-25): `notecheck.py`.** The tab's real guitar tracks (not synth/piano), moved into the recording by each song's own sync, against basic-pitch on the guitar stem, start within 50 ms, right pitch. 6 songs × 3 Demucs models × 72 note settings; `out/notecheck.md`. Caps: `--cpu 0.6 --gpu 0.85` (the user's limits).
 
 - **Settings matter, the model hardly does.** Mean F1 of the 5 guitar songs: current onset 0.6 / frame 0.35 → 21 %; **onset 0.5 / frame 0.25 → 25 %** (more notes found, same share wrong). htdemucs_ft is +0.5 points for 4× the time; htdemucs_6s's guitar stem is worse on 4 songs (best only on Be My Escape, 41 %). Keep htdemucs.
