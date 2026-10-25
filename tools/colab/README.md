@@ -22,6 +22,8 @@ Colab asks once for Google Drive access (step 1); untick `SAVE_TO_DRIVE` to skip
   A whole song takes about 4–5 min on a T4 (estimated from this PC; step 4 tested here, 5.6 min on a T1000).
 - audio-separator is installed `--no-deps` and every pip run is pinned to Colab's own torch (`-c keep.txt`):
   unpinned, pip swaps in a CPU-only torch.
+- The `.gp5` carries the artist and title ("Artist - Title" in the video's title or `SONG_NAME`) and the
+  video's link, so Fretboard's Find picks that same video. Nothing plays until you press play.
 - If bar lines land on the wrong beat, set `BEATS_BEFORE_FIRST_DOWNBEAT` to 1, 2 or 3 and rerun step 6b.
 - Tested locally (Windows, CPU, Python 3.12): steps 2 and 4–7 on made-up audio, the fingering and
   `.gp5` builder on made-up MIDI (read back with `guitarpro.parse` and alphaTab). Not tested here:

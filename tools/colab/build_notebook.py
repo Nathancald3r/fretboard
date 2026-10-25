@@ -697,6 +697,14 @@ def fill_track(track, headers, chords, tuning, guitar):
     return dropped, placed
 
 
+def artist_and_title(text):
+    """("Kings Kaleidoscope", "Always") from "Kings Kaleidoscope - ALWAYS (Official Lyric Video)".
+    The artist is "" when the text has no "Artist - Title" dash."""
+    t = re.sub(r"\s*[\(\[][^\)\]]*(official|lyric|audio|video|visualizer|live|hd|4k)[^\)\]]*[\)\]]", "", text, flags=re.I)
+    parts = re.split(r"\s+[-–—|]\s+", t.strip(), maxsplit=1)
+    return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else ("", t.strip())
+
+
 def new_track(song, number, name, tuning, program, channel):
     track = gpm.Track(song, number=number, name=name,
                       strings=[gpm.GuitarString(number=i + 1, value=v) for i, v in enumerate(tuning)])
@@ -705,8 +713,10 @@ def new_track(song, number, name, tuning, program, channel):
 
 
 def build_gp5(guitar_mid, bass_mid, beat_times, out_path, title="", offset_beats=0, guitar_program=25,
-              detail=None):
+              detail=None, url=""):
     """Builds a two-track .gp5 (guitar EADGBE, bass EADG) in 4/4 and writes it to out_path.
+    "Artist - Title" is split into the file's artist and title. The video's link goes in the notice,
+    so Fretboard plays that same video with the tab (not another song with the same name).
     Returns a short summary dict. A dict passed as `detail` gets, for checking, every written note
     as (seconds, pitch) per track and the time of every beat."""
     guitar_notes, bass_notes = read_midi_notes(guitar_mid), read_midi_notes(bass_mid)
@@ -719,7 +729,9 @@ def build_gp5(guitar_mid, bass_mid, beat_times, out_path, title="", offset_beats
     n_bars = max(1, -(-last // STEPS_PER_BAR))
 
     song = guitarpro.Song()
-    song.title = title
+    song.artist, song.title = artist_and_title(title)
+    if url:
+        song.notice = [f"Video: {url}"]
     song.tempo = int(round(bpm))
     song.measureHeaders = []
     for i in range(n_bars):
@@ -778,7 +790,7 @@ print(f"{len(BEATS)} beats; beat {FIRST_DOWNBEAT} is the first \"1\".")
 
 GP5 = WORK / "song.gp5"
 summary = build_gp5(GUITAR_MID, BASS_MID, BEATS, GP5, SONG_TITLE,
-                    FIRST_DOWNBEAT, GUITAR_PROGRAM)
+                    FIRST_DOWNBEAT, GUITAR_PROGRAM, url=YOUTUBE_URL)
 print("Wrote", GP5, summary)
 print("Read back:", check_gp5(GP5))
 ''')
@@ -831,7 +843,7 @@ def run_song(url, name=""):
     if BEATS_BEFORE_FIRST_DOWNBEAT >= 0:
         first = BEATS_BEFORE_FIRST_DOWNBEAT
     gp5 = work / "song.gp5"
-    summary = build_gp5(guitar_mid, bass_mid, beats, gp5, name or title, first, GUITAR_PROGRAM)
+    summary = build_gp5(guitar_mid, bass_mid, beats, gp5, name or title, first, GUITAR_PROGRAM, url=url)
     check_gp5(gp5)
     z = export_zip(work, stems, [guitar_mid, bass_mid], gp5, DRIVE_OUT)
     summary["minutes"] = round((time.time() - t0) / 60, 1)
