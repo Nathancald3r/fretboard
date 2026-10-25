@@ -288,7 +288,8 @@ def pages():
             if key != "true":
                 for stem, a in got.items():
                     if stem in true:
-                        db[stem.capitalize()] = f"{run.stem_scores(true[stem].mean(0), a.mean(0)[:true[stem].shape[1]])[0]:.1f} dB SDR"
+                        sdr = run.stem_scores(true[stem].mean(0), a.mean(0)[:true[stem].shape[1]])[0]
+                        db[stem.capitalize()] = f"{sdr:.1f} dB SDR" if sdr is not None else "silent in this song"
             files.append(["Mix", rel(folder / "mix.wav"), True])
             data = {"name": f"{folder.name.split('-')[0].replace('_', ' ').strip()} · {title}", "files": files, "db": db,
                     "models": title, "other": ["← All splits of this song", "../"]}
