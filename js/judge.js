@@ -20,6 +20,7 @@ let targets = [];
 
 const judge = createJudge();
 const results = []; // last few finished songs/loops
+let lastLoopScore = null;
 const recent = []; // last verdicts, newest last: { verdict, label }
 let time = null; // Float32Array for the waveform
 let spec = null; // Float32Array for the spectrum
@@ -287,6 +288,7 @@ function finish(kind) {
   judge.flush();
   const s = judge.summary();
   judge.reset();
+  lastLoopScore = kind === 'loop' && s.total >= 3 ? s.score : null;
   if (s.total < 3) return; // hardly anything was played against
   results.unshift({ ...s, kind });
   results.length = Math.min(results.length, 6);
@@ -296,7 +298,9 @@ function finish(kind) {
 
 /* ---------- public (called by the player) ---------- */
 
-export function judgeFinished(looping) { if (running) finish(looping ? 'loop' : 'song'); }
+export function judgeFinished(looping) { lastLoopScore = null; if (running) finish(looping ? 'loop' : 'song'); }
+// The score of the loop that just ended (0-100), or null when note check is off or heard too little.
+export const judgeLoopScore = () => lastLoopScore;
 export function judgeStopped() { if (running) finish('song'); }
 export function judgeSongChanged() {
   judge.reset();

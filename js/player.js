@@ -12,7 +12,8 @@ import { scoreHasChords, guessChords, injectChords, fileChords, sheetKeyShift } 
 import { sheetChords, sungWords, barSpans } from './chordsheet.js';
 import { initSing, singPosition, singFinished, singStopped, singSongChanged, singTrackChanged, singWantsVocalMuted } from './sing.js';
 import { buildMelody } from './singcore.js';
-import { initJudge, judgePosition, judgeFinished, judgeStopped, judgeSongChanged, judgeTrackChanged, judgeWantsTrackMuted } from './judge.js';
+import { initJudge, judgePosition, judgeFinished, judgeStopped, judgeSongChanged, judgeTrackChanged, judgeWantsTrackMuted, judgeLoopScore } from './judge.js';
+import { trainerStep, recordClean, rangeKey, CLEAN, CLEAN_RUN } from './cleanspeed.js';
 import { buildTargets } from './judgecore.js';
 import { installPlayhead } from './playhead.js';
 import {
@@ -170,7 +171,9 @@ function ensureApi() {
     window.dispatchEvent(new Event('fbselection'));
     // A new selection restarts the trainer's loop count.
     trainer.loops = 0;
+    trainer.run = 0;
     updateTrainerStatus();
+    showCleanBest();
   });
   // Clicking the tab while it plays: jump there with a count-in (if it's on).
   api.beatMouseDown.on(() => {
@@ -652,20 +655,22 @@ function showChordAt(tick) {
 }
 
 function onLoopCompleted() {
+  const score = judgeLoopScore(); // null when note check is off
+  const speed = Math.round(api.playbackSpeed * 100);
+  // Best clean tempo for this loop, saved with the song (trainer on or not).
+  const best = recordClean(song?.cleanBest, rangeKey(api.playbackRange), speed, score);
+  if (song && best !== song.cleanBest) { song.cleanBest = best; updateSong(song.id, { cleanBest: best }); showCleanBest(); }
   if (!trainer.on) return;
-  trainer.loops++;
-  if (trainer.loops % trainer.every === 0) {
-    const current = Math.round(api.playbackSpeed * 100);
-    const next = Math.min(trainer.target, current + trainer.step);
-    setSpeed(next);
-    if (next >= trainer.target) {
-      trainer.on = false;
-      $('tr-go').textContent = 'Start trainer';
-      updateTrainerStatus(`Reached ${trainer.target}% — nice work!`);
-      return;
-    }
+  const s = trainerStep({ speed, run: trainer.run, loops: trainer.loops }, score, trainer);
+  Object.assign(trainer, { run: s.run, loops: s.loops, lastScore: score });
+  if (s.speed !== speed) setSpeed(s.speed);
+  if (s.done) {
+    trainer.on = false;
+    $('tr-go').textContent = 'Start trainer';
+    updateTrainerStatus(`Reached ${trainer.target}% — nice work!`);
+    return;
   }
-  updateTrainerStatus();
+  updateTrainerStatus(s.change === 'down' ? `Messy loop (${score}%): back to ${s.speed}%` : '');
 }
 
 function updateTrainerStatus(message) {
@@ -673,8 +678,20 @@ function updateTrainerStatus(message) {
   document.querySelector('[data-sheet-btn=speed]').classList.toggle('live', trainer.on);
   if (message) { el.textContent = message; return; }
   if (!trainer.on) { el.textContent = ''; return; }
+  if (trainer.lastScore != null) {
+    el.textContent = `Trainer: last loop ${trainer.lastScore}%, clean ${trainer.run}/${CLEAN_RUN} (${CLEAN}%+ to speed up)`;
+    return;
+  }
   const toNext = trainer.every - (trainer.loops % trainer.every);
   el.textContent = `Trainer: loop ${trainer.loops}, faster in ${toNext}`;
+}
+
+// "Best clean: 85%" for the selected loop, in the speed sheet.
+function showCleanBest() {
+  const el = $('tr-best');
+  if (!el) return;
+  const v = song?.cleanBest?.[rangeKey(api?.playbackRange)];
+  el.textContent = v ? `Best clean tempo for this ${api.playbackRange ? 'loop' : 'song'}: ${v}%` : '';
 }
 
 /* ---------- tempo ---------- */
@@ -1342,6 +1359,7 @@ function showParsed(parsed) {
   prepareChords(parsed);
   singSongChanged();
   judgeSongChanged();
+  showCleanBest();
   applyChordVisibility();
   applyStaveProfile();
   showChordView();
@@ -2679,7 +2697,7 @@ export function initPlayer() {
   $('tr-go').addEventListener('click', () => {
     if (trainer.on) { stopTrainer(); return; }
     const num = (id) => Number($(id).value);
-    Object.assign(trainer, { on: true, loops: 0, start: num('tr-start'), target: num('tr-target'), step: num('tr-step'), every: Math.max(1, num('tr-every')) });
+    Object.assign(trainer, { on: true, loops: 0, run: 0, lastScore: null, start: num('tr-start'), target: num('tr-target'), step: num('tr-step'), every: Math.max(1, num('tr-every')) });
     if (trainer.target < trainer.start) [trainer.start, trainer.target] = [trainer.target, trainer.start];
     setSpeed(trainer.start);
     setLoop(true);

@@ -11,6 +11,7 @@ const startOfDay = (t) => new Date(new Date(t).toDateString()).getTime();
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export const DRILLS = {
+  strum: { id: 'drill:strum', title: 'Strum timing', blurb: 'Strum with the click; the mic shows how early or late each strum is, in ms.' },
   scales: { id: 'drill:scales', title: 'Scales', blurb: 'Patterns and positions on the neck, played back at your tempo.' },
   keys: { id: 'drill:keys', title: 'Chord changes', blurb: 'Chord finder, circle of fifths, and the changes in any key.' },
   tools: { id: 'drill:tools', title: 'Rhythm training', blurb: 'Metronome with speed-up and gap trainers, plus the tuner.' },

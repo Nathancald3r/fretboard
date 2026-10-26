@@ -10,6 +10,7 @@ import { initTuner, stopTuner } from './tuner.js';
 import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
+import { initStrum, stopStrum } from './strumtime.js';
 import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, splitGroups } from './songmeta.js';
 import { loadFolders, moveSong, rateSong, addFolder, renameFolder, deleteFolder } from './folders.js';
 import { recoverPendingSessions } from './practice.js';
@@ -28,8 +29,8 @@ import { readFretboardFile, readZip, readSetlistText, pdfAttachment } from './sh
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const VIEWS = ['library', 'player', 'text', 'sheet', 'practice', 'scales', 'keys', 'tools', 'vocal', 'log'];
-const PRACTICE_VIEWS = ['practice', 'scales', 'keys', 'tools', 'vocal']; // all highlight the Practice tab
+const VIEWS = ['library', 'player', 'text', 'sheet', 'practice', 'scales', 'keys', 'tools', 'vocal', 'strum', 'log'];
+const PRACTICE_VIEWS = ['practice', 'scales', 'keys', 'tools', 'vocal', 'strum']; // all highlight the Practice tab
 const SONG_VIEWS = ['player', 'text', 'sheet']; // a song open: the Songs tab
 let currentView = null;
 let editingId = null;
@@ -80,6 +81,7 @@ async function route() {
   if (currentView === 'sheet') closeSheet();
   if (currentView === 'tools' && view !== 'tools') { stopTuner(); stopMetronome(); }
   if (currentView === 'vocal' && view !== 'vocal') stopVocal();
+  if (currentView === 'strum' && view !== 'strum') stopStrum();
   trackDrill(view);
   currentView = view;
 
@@ -1180,6 +1182,7 @@ async function main() {
   initKeys();
   initLayers();
   initVocal();
+  initStrum();
   initDrawer();
   initQuickImport({ importFiles, openEditor, toast, renderLibrary, openSong: (id, { playAlong = false } = {}) => {
     location.hash = `song/${id}`;

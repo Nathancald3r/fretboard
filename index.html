@@ -23,6 +23,7 @@
       <a href="#practice" data-nav="practice">Practice</a>
       <a href="#log" data-nav="log">Log</a>
     </nav>
+    <a class="button small ghost practice-top" href="#practice" title="Practice drills">Practice</a>
     <button id="amp-top" class="small ghost amp-top" hidden title="The amp keeps running in other views">Amp on · turn off</button>
   </header>
 
@@ -310,7 +311,8 @@
             <button class="chip" data-speed="125">125%</button>
           </div>
           <h3>Speed trainer</h3>
-          <p class="muted small-text">Select bars to loop (drag across the tab), then start. The tempo rises after every few loops.</p>
+          <p class="muted small-text">Select bars to loop (drag across the tab), then start. The tempo rises after every few loops. With Note check on, it rises only after 3 clean loops (90%+) and drops 5% after a messy one.</p>
+          <p id="tr-best" class="small-text"></p>
           <div class="row trainer">
             <label>Start <input id="tr-start" type="number" min="25" max="200" value="60">%</label>
             <label>Target <input id="tr-target" type="number" min="25" max="200" value="100">%</label>
@@ -881,6 +883,50 @@
       <h2>Exercises</h2>
       <p class="muted small-text">Warm-ups and technique patterns you can play along with, kept apart from your songs.</p>
       <div id="pr-exercises" class="cards"></div>
+    </section>
+  </main>
+
+  <!-- STRUM TIMING -->
+  <main id="view-strum" class="view" hidden>
+    <section class="panel strum">
+      <div class="row spread"><h2>Strum timing</h2><a class="button small ghost" href="#practice">‹ Practice</a></div>
+      <p class="muted">Play the pattern with the click. The mic hears each strum and shows how early or late it was. Green is within 30 ms.</p>
+      <div class="row">
+        <label>Pattern <select id="st-pattern"></select></label>
+      </div>
+      <div class="row">
+        <label>Tempo
+          <span class="row tight"><button class="ghost small" data-st-bpm="-5">−5</button><input id="st-bpm" type="number" min="40" max="220" value="70" inputmode="numeric"><button class="ghost small" data-st-bpm="5">+5</button> BPM</span>
+        </label>
+        <label>Click
+          <select id="st-click">
+            <option value="beats">On the beats</option>
+            <option value="strums">On every strum</option>
+            <option value="countin">Count-in only (hard)</option>
+          </select>
+        </label>
+        <label>Round
+          <select id="st-bars"><option value="4">4 bars</option><option value="8" selected>8 bars</option><option value="16">16 bars</option></select>
+        </label>
+      </div>
+      <label class="toggle"><input id="st-auto" type="checkbox"> Keep going: 5 BPM faster after a clean round, slower after a messy one</label>
+      <div id="st-slots" class="st-slots" aria-label="The strum pattern, one bar"></div>
+      <div id="st-lane" class="st-lane" aria-label="Your strums: left is early, right is late"></div>
+      <div class="st-lane-key muted small-text"><span>early</span><span>on the beat</span><span>late</span></div>
+      <div class="row spread"><button id="st-start" class="primary">Start</button><b id="st-now" class="st-now" aria-live="polite"></b></div>
+      <p id="st-status" class="muted" aria-live="polite"></p>
+      <div id="st-result" class="st-result" hidden></div>
+      <p id="st-best" class="muted small-text"></p>
+    </section>
+    <section class="panel">
+      <h3>Set up the mic delay (once)</h3>
+      <p class="muted small-text">Phones and computers hear the mic a little late. Measure it once so on-time strums read as on time.</p>
+      <div class="row">
+        <button id="st-cal-speaker" class="small">Speaker: listen to the click</button>
+        <button id="st-cal-phones" class="small ghost">Headphones: strum on 8 clicks</button>
+        <label>Delay <input id="st-latency" type="number" min="0" max="500" step="5" inputmode="numeric"> ms</label>
+      </div>
+      <p id="st-cal-status" class="muted small-text"></p>
     </section>
   </main>
 
