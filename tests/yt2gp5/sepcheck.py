@@ -244,32 +244,37 @@ def table(rows, cols):
 
 # ---------------------------------------------------------------- listening pages
 def pages_b():
-    """out/sepcheck/real/index.html: each real song's recording and every split's guitar stem, with part B's F1."""
-    import html
+    """out/sepcheck/real/index.html: which split gives the best guitar. Scores (read live from part B's log
+    and sepcheck.json), synth SDR from part A, and a player per song that switches splits at the same moment."""
     import os
     out = run.OUT / "sepcheck" / "real"
     out.mkdir(parents=True, exist_ok=True)
-    got = json.loads((run.OUT / "sepcheck.json").read_text(encoding="utf-8")).get("b", {}) if (run.OUT / "sepcheck.json").exists() else {}
     rel = lambda f: os.path.relpath(f, out).replace(os.sep, "/")
-    body = []
+    data = json.loads((run.OUT / "sepcheck.json").read_text(encoding="utf-8")) if (run.OUT / "sepcheck.json").exists() else {}
+    chains = [["6s on mdx23c (now)", "Now", "MDX23C, then Demucs 6s", "6s_on_mdx23c"],
+              ["6s on bs1297", "BS-Roformer 1297", "BS-Roformer 1297, then Demucs 6s", "6s_on_bs1297"],
+              ["bssw", "BS-Roformer-SW", "one model, six stems", "bssw"]]
+    six = ["6s on mdx23c (now)", "6s on bs1297", "bssw"]
+    rows = {"Guitar": ("guitar", six), "Bass": ("bass", ["ft bass on mdx23c (now)", "ft bass on bs1297", "bssw"]),
+            "Drums": ("drums", six), "Piano": ("piano", six)}
+    synth = {}  # part A: mean SDR per stem and split over the synth songs
+    for row, (stem, labels) in rows.items():
+        vals = []
+        for lab in labels:
+            got = [s[f"{stem} · {lab}"] for s in data.get("a", {}).values() if f"{stem} · {lab}" in s]
+            vals.append(round(float(np.mean(got)), 2) if got else None)
+        synth[row] = vals
+    songs = []
     for name in notecheck.songs(""):
-        cache = real.CACHE / name / "sepcheck"
-        wavs = sorted(cache.glob("guitar-*.wav")) if cache.exists() else []
-        if not wavs:
+        ref, _, wav, _ = notecheck.truth(run.OUT / "listen" / name)
+        if not ref:
             continue
-        _, _, wav, _ = notecheck.truth(run.OUT / "listen" / name)
-        rows = [f"<p>Recording<br><audio controls preload=none src='{rel(wav)}'></audio></p>"]
-        for f in wavs:
-            tag = f.stem[len("guitar-"):]
-            label = next((k for k in got.get(name, {}) if k.split(" (")[0].replace(" ", "_") == tag), tag)
-            f1 = got.get(name, {}).get(label, {}).get("f1")
-            rows.append(f"<p>Guitar · {html.escape(label)}{f' · F1 {f1:.2f}' if f1 is not None else ''}<br>"
-                        f"<audio controls preload=none src='{rel(f)}'></audio></p>")
-        body.append(f"<h2>{html.escape(name.replace('_', ' '))}</h2>" + "".join(rows))
-    (out / "index.html").write_text("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-                                    "<title>Guitar stems, real songs</title><style>body{font:16px system-ui;max-width:640px;margin:1rem auto;padding:0 1rem}"
-                                    "audio{width:100%}h2{font-size:1.1rem;margin-top:2rem}</style><h1>Guitar stems on real songs</h1>"
-                                    "<p>Higher F1 = more of the tab's guitar notes found.</p>" + "".join(body), encoding="utf-8")
+        songs.append({"key": name, "name": name.replace("_official", "").replace("_-_", " – ").replace("_", " "),
+                      "notes": len(ref), "rec": rel(wav), "dir": rel(real.CACHE / name / "sepcheck")})
+    cfg = {"chains": chains, "synth": synth, "songs": songs, "log": rel(run.OUT / "sepcheck-b.log"),
+           "json": rel(run.OUT / "sepcheck.json")}
+    page = (HERE / "sepcheck_b.html").read_text(encoding="utf-8")
+    (out / "index.html").write_text(page.replace("__DATA__", json.dumps(cfg)), encoding="utf-8")
     print(out / "index.html")
 
 

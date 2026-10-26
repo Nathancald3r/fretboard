@@ -1,0 +1,176 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Best guitar split</title>
+<!-- Template for sepcheck.py --page-b: __DATA__ is replaced with the songs and file paths. -->
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--text:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--win:#1f8a4c;--win-bg:#e3f4ea;--bar:#c9c6bf;--accent:#2457d6}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1f1f23;--text:#eceaf0;--muted:#9a99a3;--line:#2e2e34;--win:#4cc97f;--win-bg:#183526;--bar:#4a4950;--accent:#7aa2ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:16px;margin:0}
+.muted{color:var(--muted)}.small{font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.hero{border-color:var(--win);background:var(--win-bg)}
+.hero b.big{font-size:22px;color:var(--win)}
+.board{display:grid;gap:10px;margin-top:10px}
+.brow{display:grid;grid-template-columns:170px 1fr 60px;gap:10px;align-items:center}
+.track{height:14px;background:var(--line);border-radius:7px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--bar);border-radius:7px;transition:width .4s}
+.brow.win .track i{background:var(--win)}.brow.win .lab b{color:var(--win)}
+.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}
+th{font-weight:600;font-size:13px}
+td.best{color:var(--win);font-weight:700}
+.song .head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tag{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+.tag.win{background:var(--win-bg);color:var(--win);font-weight:600}
+.seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin:10px 0 8px}
+.seg button{min-height:48px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:10px;padding:6px 10px;font:inherit;cursor:pointer;text-align:left}
+.seg button small{display:block;color:var(--muted);font-size:12px}
+.seg button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+.seg button.best small{color:var(--win);font-weight:700}
+.seg button:disabled{opacity:.45;cursor:default}
+.ctl{display:flex;gap:10px;align-items:center}
+.ctl button{min-width:76px;min-height:42px;border-radius:10px;border:0;background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.ctl input{flex:1;min-width:0}
+.ctl span{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted);min-width:86px;text-align:right}
+@media (max-width:560px){.brow{grid-template-columns:118px 1fr 50px}.ctl span{min-width:0}}
+</style></head><body><main>
+<h1>Which split gives the best guitar?</h1>
+<p class="muted small">Each split pulls the guitar out of a real recording. Basic Pitch reads its notes, and F1 says how many of the official tab's guitar notes it got right, from 0 to 1. Higher is better.</p>
+<div id="hero" class="card hero"></div>
+<div class="card"><h2>Guitar notes found on real songs (mean F1)</h2><div id="board" class="board"></div><p id="progress" class="muted small" style="margin-bottom:0"></p></div>
+<div class="card"><h2>Every stem on made-up songs (mean SDR, dB)</h2><p class="muted small" style="margin:2px 0 0">Synth songs where the true stems are known. Higher is cleaner. Green is best in each row.</p><table id="synth"></table></div>
+<div id="songs"></div>
+<p class="muted small">Listen: pick a split while a song plays and it carries on from the same moment. Keys 1–4 switch, Space plays or pauses. Scores refresh every minute while the test runs.</p>
+</main>
+<script>
+const C = __DATA__;
+const $ = (s, el = document) => el.querySelector(s);
+let scores = {}; // song → split label → { f1, recall, precision }
+let running = true;
+
+async function readScores() {
+  scores = {};
+  try { const j = await (await fetch(C.json, { cache: 'no-store' })).json(); Object.assign(scores, j.b || {}); } catch {}
+  try {
+    const txt = (await (await fetch(C.log, { cache: 'no-store' })).text()).replace(/\r/g, '\n');
+    let song = null;
+    for (const line of txt.split('\n')) {
+      const s = line.match(/^(\S+): \d+ tab guitar notes/);
+      if (s) { song = s[1]; continue; }
+      const m = line.match(/^\s{2}(.+?)\s+F1 ([\d.]+) \(recall ([\d.]+), precision ([\d.]+)\)/);
+      if (m && song) (scores[song] ||= {})[m[1].trim()] = { f1: +m[2], recall: +m[3], precision: +m[4] };
+    }
+    running = !/EXIT \d/.test(txt);
+  } catch {}
+}
+
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+const full = (r) => !!r && C.chains.every((c) => r[c[0]]);
+
+function render() {
+  const done = C.songs.filter((s) => full(scores[s.key]));
+  const means = C.chains.map((c) => (done.length ? mean(done.map((s) => scores[s.key][c[0]].f1)) : null));
+  const known = means.filter((m) => m !== null);
+  const top = known.length ? means.indexOf(Math.max(...known)) : -1;
+  const max = Math.max(0.01, ...known);
+  $('#board').innerHTML = C.chains.map((c, i) => `<div class="brow${i === top ? ' win' : ''}"><span class="lab"><b>${c[1]}</b><br><span class="muted small">${c[2]}</span></span>
+    <span class="track"><i style="width:${means[i] === null ? 0 : ((100 * means[i]) / max).toFixed(1)}%"></i></span><span class="num">${means[i] === null ? '–' : means[i].toFixed(3)}</span></div>`).join('');
+  const wins = C.chains.map((c) => done.filter((s) => C.chains.every((d) => scores[s.key][d[0]].f1 <= scores[s.key][c[0]].f1)).length);
+  $('#progress').textContent = `${done.length} of ${C.songs.length} songs scored · ${running ? 'test still running' : 'test finished'}.`;
+  if (top >= 0) {
+    const now = means[0];
+    const more = top === 0 ? 'Nothing beats the current split yet.' : `Gets ${Math.round((100 * (means[top] - now)) / now)}% more tab notes right than now (F1 ${now.toFixed(3)} → ${means[top].toFixed(3)}).`;
+    $('#hero').innerHTML = `<span class="muted small">${running ? 'Leader so far' : 'Winner'} for guitar</span><br><b class="big">${C.chains[top][1]}</b>
+      <p style="margin:6px 0 0">Best guitar on ${wins[top]} of ${done.length} songs. ${more}</p>`;
+  } else $('#hero').innerHTML = '<b>No song scored yet.</b> <span class="muted">Scores show here as the test finishes each song.</span>';
+
+  $('#synth').innerHTML = `<tr><th></th>${C.chains.map((c) => `<th>${c[1]}</th>`).join('')}</tr>` + Object.entries(C.synth).map(([row, v]) => {
+    const b = Math.max(...v.filter((x) => x !== null));
+    return `<tr><td>${row}</td>${v.map((x) => `<td class="${x === b ? 'best' : ''}">${x === null ? '–' : x.toFixed(2)}</td>`).join('')}</tr>`;
+  }).join('');
+
+  for (const s of C.songs) {
+    const card = document.getElementById('s-' + s.key);
+    const r = scores[s.key] || {};
+    const best = full(r) ? C.chains.reduce((b, c) => (r[c[0]].f1 > r[b[0]].f1 ? c : b)) : null;
+    card.querySelectorAll('button[data-k]').forEach((btn) => {
+      const k = +btn.dataset.k;
+      if (!k) return;
+      const c = C.chains[k - 1];
+      const x = r[c[0]];
+      btn.querySelector('small').textContent = x ? `F1 ${x.f1.toFixed(3)}${best === c ? ' · best' : ''}` : 'not scored yet';
+      btn.classList.toggle('best', best === c);
+    });
+    const tag = $('.tag', card);
+    tag.className = 'tag' + (best ? ' win' : '');
+    tag.textContent = best ? `Best: ${best[1]}` : Object.keys(r).length ? 'scoring…' : 'waiting';
+  }
+}
+
+let active = null; // the song card played last: keys act on it
+function buildSongs() {
+  $('#songs').innerHTML = C.songs.map((s) => `<div class="card song" id="s-${s.key}">
+    <div class="head"><h2>${s.name}</h2><span class="tag">waiting</span></div>
+    <div class="muted small">${s.notes} guitar notes in the tab</div>
+    <div class="seg">
+      <button data-k="0" class="on">Recording<small>full mix</small></button>
+      ${C.chains.map((c, i) => `<button data-k="${i + 1}" disabled>${c[1]}<small>not split yet</small></button>`).join('')}
+    </div>
+    <div class="ctl"><button class="play">Play</button><input type="range" min="0" max="1000" value="0" class="seek" aria-label="Position"><span class="time">0:00</span></div>
+  </div>`).join('');
+  for (const s of C.songs) {
+    const card = document.getElementById('s-' + s.key);
+    const srcs = [s.rec, ...C.chains.map((c) => `${s.dir}/guitar-${c[3]}.wav`)];
+    const audio = new Audio();
+    audio.preload = 'none';
+    let k = 0;
+    const btns = [...card.querySelectorAll('button[data-k]')];
+    const play = $('.play', card), seek = $('.seek', card), time = $('.time', card);
+    srcs.slice(1).forEach((u, i) => fetch(u, { method: 'HEAD' }).then((r) => { if (r.ok) btns[i + 1].disabled = false; }).catch(() => {}));
+    const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    const ensure = () => { if (!audio.getAttribute('src')) audio.src = srcs[k]; };
+    card.pick = (n) => {
+      if (btns[n].disabled) return;
+      const at = audio.currentTime, playing = !audio.paused;
+      k = n;
+      btns.forEach((b, i) => b.classList.toggle('on', i === n));
+      if (!audio.getAttribute('src')) return;
+      audio.src = srcs[n];
+      audio.addEventListener('loadedmetadata', () => { audio.currentTime = Math.min(at, audio.duration || at); if (playing) audio.play(); }, { once: true });
+      audio.load();
+    };
+    card.pause = () => audio.pause();
+    card.toggle = () => {
+      ensure();
+      active = card;
+      if (audio.paused) { document.querySelectorAll('.song').forEach((o) => o !== card && o.pause?.()); audio.play(); } else audio.pause();
+    };
+    btns.forEach((b, i) => b.addEventListener('click', () => { active = card; card.pick(i); }));
+    play.addEventListener('click', card.toggle);
+    audio.addEventListener('play', () => { play.textContent = 'Pause'; });
+    audio.addEventListener('pause', () => { play.textContent = 'Play'; });
+    audio.addEventListener('timeupdate', () => {
+      const d = isFinite(audio.duration) ? audio.duration : 0;
+      if (d) seek.value = Math.round((1000 * audio.currentTime) / d);
+      time.textContent = d ? `${fmt(audio.currentTime)} / ${fmt(d)}` : fmt(audio.currentTime);
+    });
+    seek.addEventListener('input', () => {
+      ensure();
+      const go = () => { if (isFinite(audio.duration)) audio.currentTime = (seek.value / 1000) * audio.duration; };
+      if (isFinite(audio.duration) && audio.duration) go(); else { audio.addEventListener('loadedmetadata', go, { once: true }); audio.load(); }
+    });
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!active || e.target.matches('input, select, textarea')) return;
+  if (e.key >= '1' && e.key <= '4') active.pick(+e.key - 1);
+  if (e.key === ' ') { e.preventDefault(); active.toggle(); }
+});
+
+buildSongs();
+(async function loop() { await readScores(); render(); if (running) setTimeout(loop, 60000); })();
+</script></body></html>
