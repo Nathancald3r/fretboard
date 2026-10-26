@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Factory</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2; --card: #ffffff; --line: #e3e1da; --grid: #eeece6; --bar: #c9c6bb;
+  --ink: #1f1e1b; --ink2: #5d5b53; --ink3: #8a877c;
+  --accent: #2a78d6; --good: #008300; --warn: #b26b00; --bad: #d03b3b;
+  --wave: #9a978c; --head: #e34948;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #141413; --card: #1d1d1b; --line: #33322e; --grid: #262523; --bar: #4a4842;
+    --ink: #f0efec; --ink2: #c3c2b7; --ink3: #8f8d84;
+    --accent: #3987e5; --good: #3fa63f; --warn: #d99a2b; --bad: #e66767;
+    --wave: #77756c; --head: #e66767;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+header { padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; border-bottom: 1px solid var(--line); background: var(--card); }
+h1 { font-size: 17px; margin: 0; font-weight: 600; }
+.prog { flex: 1 1 420px; min-width: 260px; }
+.prog .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink2); }
+.track { height: 8px; background: var(--grid); border-radius: 4px; margin: 5px 0 3px; overflow: hidden; }
+.fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.running { color: var(--accent); } .finished { color: var(--good); } .stopped { color: var(--warn); }
+.fails { color: var(--bad); font-size: 12px; }
+main { display: grid; grid-template-columns: 290px 1fr; min-height: calc(100vh - 70px); }
+aside { border-right: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; max-height: calc(100vh - 70px); position: sticky; top: 0; }
+.filters { padding: 10px; display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+input[type=search], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; }
+input[type=search] { flex: 1; }
+#list { overflow-y: auto; flex: 1; }
+.ex { padding: 8px 12px; border-bottom: 1px solid var(--grid); cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; }
+.ex:hover { background: var(--grid); }
+.ex.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ex b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex small { color: var(--ink3); grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flag { font-size: 12px; color: var(--warn); }
+.flag.ok { color: var(--good); }
+section { padding: 16px; min-width: 0; }
+.empty { color: var(--ink3); padding: 40px; text-align: center; }
+.title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 10px; }
+.title h2 { margin: 0; font-size: 18px; }
+.title span { color: var(--ink2); font-size: 13px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tab { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; }
+.tab small { display: block; color: var(--ink3); font-size: 11.5px; }
+.tab.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tab .lvl { display: block; height: 4px; border-radius: 2px; background: var(--grid); margin-top: 4px; }
+.tab .lvl i { display: block; height: 100%; border-radius: 2px; background: var(--ink3); }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
+button.play { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 7px 16px; background: var(--accent); color: #fff; cursor: pointer; min-width: 84px; }
+.controls label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); font-size: 13px; }
+.time { font-variant-numeric: tabular-nums; color: var(--ink2); min-width: 110px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; position: relative; }
+canvas { display: block; width: 100%; }
+#roll { height: 420px; cursor: crosshair; }
+#over { height: 46px; cursor: pointer; margin-top: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 2px 0; font-size: 13px; color: var(--ink2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; }
+.legend .dim { opacity: .45; }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); padding: 5px 8px; border-radius: 6px; font-size: 12px; display: none; z-index: 9; white-space: nowrap; }
+.notes { margin-top: 12px; color: var(--ink2); font-size: 13px; }
+.notes p { margin: 4px 0; }
+.check { margin-top: 10px; font-size: 13px; border-collapse: collapse; }
+.check td, .check th { padding: 3px 10px 3px 0; text-align: left; font-variant-numeric: tabular-nums; }
+.check th { color: var(--ink3); font-weight: 500; }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; }
+  aside { max-height: 260px; position: static; border-right: 0; border-bottom: 1px solid var(--line); }
+  #roll { height: 320px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Data Factory</h1>
+  <div class="prog" id="prog"><div class="row"><span>Loading…</span></div></div>
+</header>
+<main>
+  <aside>
+    <div class="filters">
+      <input type="search" id="q" placeholder="Find (e.g. 0007, Drop3, Piano)">
+      <select id="src"><option value="">All</option><option value="aam">AAM songs</option><option value="guitar-techs">Guitar clips</option></select>
+    </div>
+    <div id="list"></div>
+  </aside>
+  <section id="view"><div class="empty">Pick an example on the left.</div></section>
+</main>
+<div id="tip"></div>
+<script>
+const $ = s => document.querySelector(s);
+const NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const noteName = p => NAMES[p % 12] + (Math.floor(p / 12) - 1);
+const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60); return m + ":" + (s - m * 60).toFixed(1).padStart(4, "0"); };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const STEM_ORDER = ["mix","vocals","drums","bass","piano","other","directinput","micamp"];
+const STEM_HELP = {
+  mix: "the full song as recorded",
+  vocals: "AAM has no singing: anything here leaked in from other instruments",
+  drums: "Spleeter's drum stem", bass: "Spleeter's bass stem", piano: "Spleeter's piano stem",
+  other: "Spleeter's 'everything else' stem (guitars, horns, synths…)",
+  directinput: "guitar cable straight in (clean)", micamp: "microphone in front of the amp",
+};
+
+// ---------- progress ----------
+function ago(sec) { return sec < 90 ? Math.round(sec) + " s" : sec < 5400 ? Math.round(sec / 60) + " min" : (sec / 3600).toFixed(1) + " h"; }
+async function loadProgress() {
+  let d; try { d = await (await fetch("/api/progress")).json(); } catch { return; }
+  const r = d.run, made = d.made || {}, aam = made.aam || 0, gt = made["guitar-techs"] || 0;
+  let html;
+  if (r) {
+    const pct = r.total ? 100 * r.done / r.total : 100;
+    const per = r.made ? r.made_s / r.made : 100;
+    const left = (r.total - r.done) * per;
+    const state = r.state === "running" ? `<span class="pill running">Running</span>`
+      : r.state === "finished" ? `<span class="pill finished">Finished</span>` : `<span class="pill stopped">Stopped</span>`;
+    const tail = r.state === "running" ? `${r.current || "…"} · about ${ago(left)} left (${Math.round(per)} s each)`
+      : r.state === "finished" ? `took ${ago(r.finished - r.started)} · ${r.made} new` : `last update ${ago(r.now - r.updated)} ago: run it again to carry on`;
+    html = `<div class="row"><span>${state} &nbsp;${r.done} of ${r.total} examples (${pct.toFixed(0)}%)</span><span>${tail}</span></div>
+      <div class="track"><div class="fill" style="width:${pct}%"></div></div>`;
+    if (r.failed && r.failed.length) html += `<div class="fails">${r.failed.length} failed (retried next run): ${r.failed.slice(-3).map(esc).join(" · ")}</div>`;
+  } else html = `<div class="row"><span>No run recorded yet (progress shows from the next run)</span></div><div class="track"><div class="fill" style="width:0"></div></div>`;
+  html += `<div class="row"><span>On disk: ${aam} of ${d.aam_total || "?"} AAM songs · ${gt} guitar clips${d.hours ? ` · ${d.hours.toFixed(1)} h of audio` : ""}</span></div>`;
+  $("#prog").innerHTML = html;
+  if (r && r.state === "running" && r.done !== lastDone) { lastDone = r.done; loadList(); }
+}
+let lastDone = -1;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- list ----------
+let EXAMPLES = [], CHECKS = {}, cur = null;
+async function loadList() {
+  const d = await (await fetch("/api/list")).json();
+  EXAMPLES = d.examples; CHECKS = d.checks || {};
+  drawList();
+}
+function checkFlag(e) {
+  const c = CHECKS[e.id];
+  if (!c) return "";
+  const bad = c.filter(r => Math.abs(r.best_shift_ms) > 25 && r.hit_rate_50ms < 0.9);
+  return bad.length ? `<span class="flag">⚠ ${bad.length} off</span>` : `<span class="flag ok">✓ lined up</span>`;
+}
+function drawList() {
+  const q = $("#q").value.trim().toLowerCase(), src = $("#src").value;
+  const rows = EXAMPLES.filter(e => (!src || e.source === src) &&
+    (!q || (e.name + " " + e.instruments.join(" ")).toLowerCase().includes(q)));
+  $("#list").innerHTML = rows.map(e => {
+    const notes = Math.max(...Object.values(e.stems).map(s => s.notes));
+    const key = e.source + "/" + e.name;
+    return `<div class="ex${cur && cur.key === key ? " on" : ""}" data-k="${esc(key)}">
+      <b>${e.source === "aam" ? "AAM song " + esc(e.name) : esc(e.name.replace(/_/g, " "))}</b>${checkFlag(e)}
+      <small>${fmt(e.duration)} · ${notes} notes · ${esc(e.instruments.join(", "))}</small></div>`;
+  }).join("") || `<div class="empty">Nothing matches.</div>`;
+}
+$("#list").onclick = ev => { const el = ev.target.closest(".ex"); if (el) openExample(el.dataset.k); };
+$("#q").oninput = drawList; $("#src").onchange = drawList;
+
+// ---------- audio ----------
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const stemGain = ctx.createGain(), labelGain = ctx.createGain();
+stemGain.connect(ctx.destination); labelGain.connect(ctx.destination);
+let buffers = {}, src = null, playing = false, startCtx = 0, startPos = 0, pos = 0, schedUntil = 0, voices = [];
+const now = () => playing ? startPos + (ctx.currentTime - startCtx) : pos;
+
+function stop() {
+  if (src) { try { src.stop(); } catch {} src.disconnect(); src = null; }
+  voices.forEach(v => { try { v.stop(); } catch {} }); voices = [];
+  if (playing) pos = now();
+  playing = false; $("#play") && ($("#play").textContent = "▶ Play");
+}
+function play() {
+  const b = cur && buffers[cur.stem]; if (!b) return;
+  ctx.resume(); stop();
+  if (pos >= b.duration) pos = 0;
+  src = ctx.createBufferSource(); src.buffer = b; src.connect(stemGain);
+  startCtx = ctx.currentTime + 0.05; startPos = pos; schedUntil = pos;
+  src.start(startCtx, pos);
+  src.onended = () => { if (src && now() >= b.duration - 0.05) { stop(); pos = b.duration; } };
+  playing = true; $("#play").textContent = "❚❚ Pause";
+}
+function seek(t) { const was = playing; stop(); pos = Math.max(0, Math.min(t, cur.dur)); if (was) play(); }
+
+// Short tones at each label's onset, so labels and audio can be heard together.
+let noiseBuf = null;
+function blip(n, at) {
+  const [on, off, p] = n, drum = cur.drumSet.has(n[4]);
+  const g = ctx.createGain(); g.connect(labelGain);
+  if (drum) {
+    if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.08, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 3; }
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.connect(g); g.gain.value = 0.5; s.start(at); voices.push(s);
+  } else {
+    const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = 440 * 2 ** ((p - 69) / 12); o.connect(g);
+    const len = Math.min(Math.max(off - on, 0.06), 0.35);
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.25, at + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len); o.start(at); o.stop(at + len + 0.02); voices.push(o);
+  }
+}
+function schedule() {
+  if (!playing || !cur) return;
+  const t = now(), until = t + 0.25;
+  if (+$("#lv").value > 0) {
+    const ns = shownNotes();
+    let i = lowerBound(ns, schedUntil);
+    for (; i < ns.length && ns[i][0] < until; i++) if (ns[i][0] >= schedUntil && !cur.hidden.has(ns[i][4])) blip(ns[i], startCtx + (ns[i][0] - startPos));
+  }
+  schedUntil = until;
+  voices = voices.filter(v => v.context.currentTime < startCtx + (until - startPos) + 1);
+}
+setInterval(schedule, 60);
+function lowerBound(ns, t) { let a = 0, b = ns.length; while (a < b) { const m = (a + b) >> 1; ns[m][0] < t ? a = m + 1 : b = m; } return a; }
+
+// ---------- example view ----------
+async function openExample(key) {
+  stop(); pos = 0;
+  const [source, name] = key.split("/");
+  const lab = await (await fetch(`/labels/${source}/${name}/labels.json`)).json();
+  const stems = Object.keys(lab.stems).sort((a, b) => STEM_ORDER.indexOf(a) - STEM_ORDER.indexOf(b));
+  const insts = Object.keys(lab.instruments);
+  const color = {}; insts.forEach((k, i) => color[k] = SERIES[i % 8]);
+  const drumSet = new Set(insts.filter(k => lab.instruments[k].group === "drums"));
+  const firstStem = source === "aam" ? (stems.find(s => s === "other") || stems[0]) : stems[0];
+  cur = { key, source, name, lab, stems, insts, color, drumSet, stem: firstStem, dur: lab.duration, hidden: new Set(), showAll: false, peaks: {}, view: 10 };
+  buffers = {};
+  drawList();
+  const maxRms = Math.max(...stems.filter(s => s !== "mix").map(s => lab.stems[s].rms || 0), 1e-9);
+  const checkRows = (CHECKS[lab.id] || []);
+  $("#view").innerHTML = `
+    <div class="title"><h2>${source === "aam" ? "AAM song " + esc(name) : esc(name.replace(/_/g, " "))}</h2>
+      <span>${esc(lab.source)} · ${fmt(lab.duration)} · ${lab.licence}${lab.label_shift_ms != null ? ` · labels moved ${lab.label_shift_ms} ms onto the audio` : ""}</span></div>
+    <div class="tabs" id="tabs">${stems.map(s => {
+      const st = lab.stems[s], lv = s === "mix" ? 100 : 100 * (st.rms || 0) / maxRms;
+      const leak = s !== "mix" && !st.notes.length;
+      return `<button class="tab" data-s="${s}" title="${esc(STEM_HELP[s] || "")}">${s}
+        <small>${st.notes.length ? st.notes.length + " notes" : (leak ? "no notes · leak" : "no notes")}</small>
+        <span class="lvl"><i style="width:${Math.max(2, lv).toFixed(0)}%"></i></span></button>`;
+    }).join("")}</div>
+    <div class="controls">
+      <button class="play" id="play">▶ Play</button>
+      <span class="time" id="time">0:00.0 / ${fmt(lab.duration)}</span>
+      <label>Stem <input type="range" id="sv" min="0" max="1" step="0.05" value="1"></label>
+      <label>Label tones <input type="range" id="lv" min="0" max="1" step="0.05" value="0.5"></label>
+      <label>Window <select id="win"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option><option value="0">Whole</option></select></label>
+      <label><input type="checkbox" id="all"> Labels of every stem</label>
+    </div>
+    <div class="card"><canvas id="roll"></canvas><canvas id="over"></canvas></div>
+    <div class="legend" id="legend"></div>
+    <div class="notes">
+      <p><b>How to check:</b> play a stem with label tones on. Tones should land exactly on the hits you hear, and the waveform's spikes should sit at the left edge of the note bars.</p>
+      <p><b>Splitting:</b> the bar under each stem name is its loudness. A stem with no notes should be near silent (it only holds what leaked in).</p>
+      <p id="stemhelp"></p>
+    </div>
+    ${checkRows.length ? `<table class="check"><tr><th>Stem</th><th>Best shift</th><th>Labels on a hit (50 ms)</th><th>Result</th></tr>${checkRows.map(r =>
+      `<tr><td>${r.stem}</td><td>${r.best_shift_ms > 0 ? "+" : ""}${r.best_shift_ms} ms</td><td>${Math.round(100 * r.hit_rate_50ms)}%</td><td>${Math.abs(r.best_shift_ms) <= 25 || r.hit_rate_50ms >= 0.9 ? "✓ lined up" : "⚠ off"}</td></tr>`).join("")}</table>` : ""}`;
+  $("#tabs").onclick = ev => { const b = ev.target.closest(".tab"); if (b) pickStem(b.dataset.s); };
+  $("#play").onclick = () => playing ? stop() : play();
+  $("#sv").oninput = e => stemGain.gain.value = +e.target.value;
+  $("#lv").oninput = e => labelGain.gain.value = +e.target.value;
+  stemGain.gain.value = 1; labelGain.gain.value = 0.5;
+  $("#win").onchange = e => { cur.view = +e.target.value; draw(); };
+  $("#all").onchange = e => { cur.showAll = e.target.checked; cur.notesCache = null; drawLegend(); draw(); };
+  setupCanvas();
+  pickStem(firstStem);
+}
+
+function shownNotes() {
+  if (cur.notesCache && cur.notesCache.stem === cur.stem) return cur.notesCache.ns;
+  let ns;
+  if (cur.showAll || cur.stem === "mix") ns = cur.lab.stems.mix ? cur.lab.stems.mix.notes : cur.lab.stems[cur.stem].notes;
+  else ns = cur.lab.stems[cur.stem].notes;
+  const maxLen = ns.reduce((m, n) => Math.max(m, n[1] - n[0]), 0);
+  let lo = 127, hi = 0; ns.forEach(n => { if (n[2] < lo) lo = n[2]; if (n[2] > hi) hi = n[2]; });
+  if (lo > hi) { lo = 40; hi = 84; }
+  lo = Math.max(0, lo - 2); hi = Math.min(127, hi + 2); if (hi - lo < 24) { const c = (lo + hi) / 2; lo = Math.floor(c - 12); hi = lo + 24; }
+  cur.notesCache = { stem: cur.stem, ns, maxLen, lo, hi };
+  return ns;
+}
+
+async function pickStem(s) {
+  const was = playing; stop();
+  cur.stem = s; cur.notesCache = null;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.s === s));
+  $("#stemhelp").textContent = s + ": " + (STEM_HELP[s] || "") + (cur.lab.stems[s].instruments.length ? " · labelled instruments: " + cur.lab.stems[s].instruments.join(", ") : " · no labelled instruments");
+  drawLegend(); draw();
+  if (!buffers[s]) {
+    const key = cur.key;
+    $("#play").disabled = true; $("#play").textContent = "Loading…";
+    const raw = await (await fetch(`/audio/${cur.source}/${cur.name}/${cur.lab.stems[s].file}`)).arrayBuffer();
+    const b = await ctx.decodeAudioData(raw);
+    if (!cur || cur.key !== key) return;
+    buffers[s] = b; cur.peaks[s] = peaks(b);
+    $("#play").disabled = false; $("#play").textContent = "▶ Play";
+    draw();
+  }
+  if (was && cur.stem === s) play();
+}
+
+function peaks(b) { // max |x| per 5 ms, for fast waveform drawing
+  const d = b.getChannelData(0), step = Math.max(1, Math.round(b.sampleRate * 0.005)), n = Math.ceil(d.length / step), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let m = 0; const e = Math.min(d.length, (i + 1) * step); for (let j = i * step; j < e; j++) { const v = d[j] < 0 ? -d[j] : d[j]; if (v > m) m = v; } out[i] = m; }
+  let top = 0; for (const v of out) if (v > top) top = v;
+  return { v: out, dt: 0.005, top: top || 1 };
+}
+
+function drawLegend() {
+  const ns = new Set((cur.showAll || cur.stem === "mix" ? cur.insts : cur.lab.stems[cur.stem].instruments));
+  $("#legend").innerHTML = cur.insts.map(k => `<span class="${ns.has(k) ? "" : "dim"}" data-k="${esc(k)}" style="cursor:pointer;${cur.hidden.has(k) ? "text-decoration:line-through" : ""}" title="Click to hide/show">
+    <i style="background:var(${cur.color[k]})"></i>${esc(k)} <small>(${cur.lab.instruments[k].stem})</small></span>`).join("");
+  $("#legend").onclick = ev => { const el = ev.target.closest("[data-k]"); if (!el) return; const k = el.dataset.k; cur.hidden.has(k) ? cur.hidden.delete(k) : cur.hidden.add(k); drawLegend(); draw(); };
+}
+
+// ---------- drawing ----------
+let roll, over, rc, oc, W = 0, H = 0, OW = 0, OH = 0, dpr = 1, hits = [];
+function setupCanvas() {
+  roll = $("#roll"); over = $("#over"); rc = roll.getContext("2d"); oc = over.getContext("2d");
+  const resize = () => { dpr = devicePixelRatio || 1; W = roll.clientWidth; H = roll.clientHeight; OW = over.clientWidth; OH = over.clientHeight;
+    roll.width = W * dpr; roll.height = H * dpr; over.width = OW * dpr; over.height = OH * dpr; draw(); };
+  new ResizeObserver(resize).observe(roll); resize();
+  roll.onclick = e => { const r = roll.getBoundingClientRect(), [t0, t1] = win(); seek(t0 + (e.clientX - r.left) / W * (t1 - t0)); };
+  over.onclick = e => { const r = over.getBoundingClientRect(); seek((e.clientX - r.left) / OW * cur.dur); };
+  roll.onmousemove = e => {
+    const r = roll.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const h = hits.find(h => x >= h.x - 3 && x <= h.x + h.w + 3 && y >= h.y - 2 && y <= h.y + h.h + 2);
+    const tip = $("#tip");
+    if (!h) { tip.style.display = "none"; return; }
+    const n = h.n, drum = cur.drumSet.has(n[4]);
+    tip.innerHTML = `${esc(n[4])} · ${drum ? "drum key " + n[2] : noteName(n[2])}${n.length > 6 ? ` · string ${n[5]} fret ${n[6]}` : ""}<br>${n[0].toFixed(3)}–${n[1].toFixed(3)} s · velocity ${n[3]}`;
+    tip.style.display = "block"; tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 14) + "px";
+  };
+  roll.onmouseleave = () => $("#tip").style.display = "none";
+}
+function win() {
+  const t = now();
+  if (!cur.view || cur.view >= cur.dur) return [0, cur.dur];
+  const v = cur.view; let a = t - v * 0.3; a = Math.max(0, Math.min(a, cur.dur - v)); return [a, a + v];
+}
+const CH = 18, WV = 70; // chord lane and waveform heights
+function draw() {
+  if (!cur || !rc) return;
+  const [t0, t1] = win(), X = t => (t - t0) / (t1 - t0) * W;
+  rc.setTransform(dpr, 0, 0, dpr, 0, 0); rc.clearRect(0, 0, W, H);
+  const ink3 = css("--ink3"), grid = css("--grid"), bar = css("--bar");
+  rc.font = "11px system-ui, sans-serif"; rc.textBaseline = "middle";
+  // beats
+  for (const [t, b, beat] of cur.lab.beats) { if (t < t0 || t > t1) continue; const x = Math.round(X(t)) + 0.5;
+    rc.strokeStyle = beat === 1 ? bar : grid; rc.lineWidth = 1; rc.beginPath(); rc.moveTo(x, CH); rc.lineTo(x, H); rc.stroke();
+    if (beat === 1 && (t1 - t0) <= 30) { rc.fillStyle = ink3; rc.fillText(b, x + 3, CH + 8); } }
+  // chords
+  const ch = cur.lab.chords;
+  for (let i = 0; i < ch.length; i++) { const a = ch[i][0], e = i + 1 < ch.length ? ch[i + 1][0] : cur.dur; if (e < t0 || a > t1) continue;
+    const x = Math.max(0, X(a)); rc.fillStyle = css("--ink2"); if ((X(e) - x) > 24) rc.fillText(ch[i][1].replace("maj", "").replace("min", "m"), x + 3, CH / 2); }
+  // waveform
+  const pk = cur.peaks[cur.stem], wy = CH + 4, mid = wy + WV / 2;
+  rc.fillStyle = css("--wave");
+  if (pk) { const scale = (WV / 2 - 2) / (cur.stem === "mix" ? pk.top : Math.max(pk.top, peaksTopMix() * 0.25));
+    for (let px = 0; px < W; px++) { const a = t0 + px / W * (t1 - t0), e = t0 + (px + 1) / W * (t1 - t0);
+      let m = 0; for (let i = Math.floor(a / pk.dt), j = Math.ceil(e / pk.dt); i < j && i < pk.v.length; i++) if (pk.v[i] > m) m = pk.v[i];
+      const h = Math.max(0.5, m * scale); rc.fillRect(px, mid - h, 1, 2 * h); } }
+  else { rc.fillStyle = ink3; rc.fillText("loading audio…", 8, mid); }
+  // notes
+  const ns = shownNotes(), c = cur.notesCache, top = wy + WV + 6, ph = H - top - 4, rows = c.hi - c.lo + 1, rh = ph / rows;
+  rc.strokeStyle = grid; rc.lineWidth = 1;
+  for (let p = c.lo; p <= c.hi; p++) if (p % 12 === 0) { const y = Math.round(top + (c.hi - p) * rh) + 0.5; rc.beginPath(); rc.moveTo(0, y); rc.lineTo(W, y); rc.stroke(); rc.fillStyle = ink3; rc.fillText(noteName(p), 2, y - 6); }
+  hits = [];
+  const showFret = (t1 - t0) <= 12;
+  for (let i = lowerBound(ns, t0 - c.maxLen); i < ns.length && ns[i][0] <= t1; i++) {
+    const n = ns[i]; if (n[1] < t0 || cur.hidden.has(n[4])) continue;
+    const x = X(n[0]), w = Math.max(3, X(n[1]) - x), y = top + (c.hi - n[2]) * rh, h = Math.max(3, rh - 1);
+    rc.fillStyle = css(cur.color[n[4]] || "--s1"); rc.globalAlpha = 0.35 + 0.65 * (n[3] / 127);
+    roundRect(x, y, w, h, Math.min(3, h / 2)); rc.globalAlpha = 1;
+    if (showFret && n.length > 6 && rh >= 9) { rc.fillStyle = css("--ink"); rc.fillText(n[6], x + 2, y + h / 2); }
+    hits.push({ x, y, w, h, n });
+  }
+  // playhead
+  const px = Math.round(X(now())) + 0.5; rc.strokeStyle = css("--head"); rc.lineWidth = 2; rc.beginPath(); rc.moveTo(px, 0); rc.lineTo(px, H); rc.stroke();
+  drawOverview(t0, t1);
+  $("#time").textContent = fmt(now()) + " / " + fmt(cur.dur);
+}
+function peaksTopMix() { return cur.peaks.mix ? cur.peaks.mix.top : 0; }
+function roundRect(x, y, w, h, r) { rc.beginPath(); rc.moveTo(x + r, y); rc.arcTo(x + w, y, x + w, y + h, r); rc.arcTo(x + w, y + h, x, y + h, r); rc.arcTo(x, y + h, x, y, r); rc.arcTo(x, y, x + w, y, r); rc.fill(); }
+function drawOverview(t0, t1) {
+  oc.setTransform(dpr, 0, 0, dpr, 0, 0); oc.clearRect(0, 0, OW, OH);
+  const pk = cur.peaks[cur.stem];
+  oc.fillStyle = css("--wave");
+  if (pk) for (let px = 0; px < OW; px++) { const a = Math.floor(px / OW * pk.v.length), e = Math.floor((px + 1) / OW * pk.v.length); let m = 0; for (let i = a; i < e; i++) if (pk.v[i] > m) m = pk.v[i]; const h = Math.max(0.5, m / pk.top * (OH / 2 - 2)); oc.fillRect(px, OH / 2 - h, 1, 2 * h); }
+  oc.fillStyle = css("--accent"); oc.globalAlpha = 0.15; oc.fillRect(t0 / cur.dur * OW, 0, (t1 - t0) / cur.dur * OW, OH); oc.globalAlpha = 1;
+  const x = Math.round(now() / cur.dur * OW) + 0.5; oc.strokeStyle = css("--head"); oc.lineWidth = 2; oc.beginPath(); oc.moveTo(x, 0); oc.lineTo(x, OH); oc.stroke();
+}
+(function loop() { if (playing) { draw(); if (cur && now() >= cur.dur) { stop(); pos = cur.dur; } } requestAnimationFrame(loop); })();
+document.addEventListener("keydown", e => { if (e.code === "Space" && cur && e.target.tagName !== "INPUT") { e.preventDefault(); playing ? stop() : play(); } });
+
+loadList(); loadProgress(); setInterval(loadProgress, 3000);
+</script>
+</body>
+</html>

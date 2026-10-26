@@ -506,6 +506,38 @@ def check(n):
     return report
 
 
+class Progress:
+    """Writes factory/progress.json after every example, for tools/factoryview.py."""
+    def __init__(self, total):
+        self.p = {"pid": os.getpid(), "started": time.time(), "total": total, "done": 0, "made": 0, "made_s": 0.0,
+                  "current": "", "failed": [], "finished": None, "updated": time.time()}
+        self.t = time.time()
+        self.save()
+
+    def save(self):
+        self.p["updated"] = time.time()
+        tmp = OUT / "progress.json.tmp"
+        tmp.write_text(json.dumps(self.p), encoding="utf-8")
+        os.replace(tmp, OUT / "progress.json")
+
+    def at(self, what):
+        self.p["current"], self.t = what, time.time()
+        self.save()
+
+    def done(self, new, fail=None):
+        self.p["done"] += 1
+        if new:  # skipped (already made) examples don't count toward the time per example
+            self.p["made"] += 1
+            self.p["made_s"] += time.time() - self.t
+        if fail:
+            self.p["failed"].append(fail)
+        self.save()
+
+    def finish(self):
+        self.p["current"], self.p["finished"] = "", time.time()
+        self.save()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["run", "check", "index"])
@@ -526,19 +558,29 @@ def main():
     songs = [s for s in songs if int(s) >= a.start]
     songs = songs[:a.aam] if a.aam else songs
     groups = aam_groups()
+    gt = [] if a.no_gtechs else list(gtechs_pairs())
+    prog = Progress(len(songs) + len(gt))
     made = 0
     for s in songs:
+        prog.at(f"aam {s}")
         try:
-            made += make_aam(s, groups)
+            new = make_aam(s, groups)
+            made += new
+            prog.done(new)
         except Exception as e:  # one bad song never stops the run; it is retried next time
             say(f"aam {s}: failed: {e!r}")
-    if not a.no_gtechs:
-        for ex, mid, mics in gtechs_pairs():
-            try:
-                made += make_gtechs(ex, mid, mics)
-            except Exception as e:
-                say(f"guitar-techs {ex}: failed: {e!r}")
+            prog.done(False, f"aam {s}: {e!r}")
+    for ex, mid, mics in gt:
+        prog.at(f"guitar-techs {ex}")
+        try:
+            new = make_gtechs(ex, mid, mics)
+            made += new
+            prog.done(new)
+        except Exception as e:
+            say(f"guitar-techs {ex}: failed: {e!r}")
+            prog.done(False, f"guitar-techs {ex}: {e!r}")
     say(f"made {made} new examples")
+    prog.finish()
     index()
 
 
