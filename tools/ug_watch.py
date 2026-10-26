@@ -49,6 +49,18 @@ def song_tabs(port, official_only=False):
             and ("-official-" in t["url"] or not official_only)]
 
 
+CLAIM = Path.home() / ".fretboard" / "ug-claim.json"  # written by ug_collect.py --claim (a script's own save)
+
+
+def claimed():
+    """The song a script is saving now (ug_collect.py --claim), or None. A claim over 20 minutes old is stale."""
+    try:
+        c = json.loads(CLAIM.read_text(encoding="utf-8"))
+        return c["url"] if time.time() - c["time"] < 1200 else None
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 # ---------- the collector Chrome's window: out of sight while it works ----------
 # Minimized windows draw about once a second and can't be captured reliably, so "out of sight" is
 # off the screen instead; these flags keep Chrome drawing at full speed there.
@@ -879,6 +891,9 @@ def main():
                         state["asked"][u.split("?")[0]] = now
                         if state.get("back_to"):
                             threading.Thread(target=back_to_app, args=(a.port,), daemon=True).start()
+            mine = claimed()
+            if mine in urls:  # a script is saving this song: leave it (and don't save it later either)
+                state["skip"].add(mine)
             seen = {u: seen.get(u, now) for u in urls}
             passed &= set(urls)  # a song closed and opened again is asked again
             state["skip"] &= set(urls)

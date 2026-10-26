@@ -2338,6 +2338,11 @@ def work(ui, a, result):
         tidy_tabs(a.url)
 
 
+# A script's save (tests/yt2gp5/fromlink.py) claims its song here; the UG helper (ug_watch.py) skips a claimed song.
+# Two saves of one song in one Chrome switch each other's tracks ("The track changed while ... was saved").
+CLAIM = Path.home() / ".fretboard" / "ug-claim.json"
+
+
 def main():
     global PORT, NOTATION, SHOTS
     ap = argparse.ArgumentParser()
@@ -2355,7 +2360,13 @@ def main():
     ap.add_argument("--shots", action="store_true", help="pictures of the score instead of UG's Print (the other way, for a retry)")
     ap.add_argument("--gp", action="store_true", help="official songs: their Guitar Pro version instead of the PDFs, when UG has one")
     ap.add_argument("--auto-official", action="store_true", help="Official / Pro songs and Guitar Pro tabs: save without asking (chords and plain tabs still ask)")
+    ap.add_argument("--claim", action="store_true", help="a script's save: the UG helper leaves this song alone while it runs (CLAIM)")
     a = ap.parse_args()
+    if a.claim:  # before the song's tab opens, so the helper never starts a second save of it
+        CLAIM.parent.mkdir(parents=True, exist_ok=True)
+        CLAIM.write_text(json.dumps({"url": a.url.split("?")[0].split("#")[0], "pid": os.getpid(), "time": time.time()}), encoding="utf-8")
+        import atexit
+        atexit.register(lambda: CLAIM.unlink(missing_ok=True))
     PORT = a.port
     NOTATION = a.notation
     SHOTS = a.shots

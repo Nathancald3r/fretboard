@@ -142,7 +142,7 @@ def collect(ug_url):
     try:  # its own lines show as they happen; a stuck save (UG's player never loading) ends after 10 min
         # into a folder of our own and without telling the UG helper: else Fretboard adds the song to the
         # library by itself, a copy with no video beside the synced one this script makes
-        r = subprocess.run([sys.executable, str(ROOT / "tools" / "ug_collect.py"), ug_url, "--no-ui", "--auto-official", "--root", str(OWN_ROOT)],
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "ug_collect.py"), ug_url, "--no-ui", "--auto-official", "--claim", "--root", str(OWN_ROOT)],
                            cwd=ROOT, env={**os.environ, "PYTHONUNBUFFERED": "1", "FB_HELPER_PORT": "9"}, timeout=600)
     except subprocess.TimeoutExpired:
         sys.exit("The UG save took over 10 minutes and was stopped. Is the collector Chrome logged in to UG Pro?")

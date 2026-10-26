@@ -91,13 +91,16 @@ def recording_beats(wav, out):
     return np.asarray(beats, float), np.asarray(downbeats, float)
 
 
-def tab_mix(song, info):
-    """The whole tab (every track rendered by Fretboard's synth, as listen.py did), in tab time, mono at SR."""
+def tab_mix(song, info, kinds=None):
+    """The whole tab (every track rendered by Fretboard's synth, as listen.py did), in tab time, mono at SR.
+    kinds: only the tracks of these categories (guitar, bass, drums, piano...)."""
     import librosa
     folder = real.CACHE / run.slug(song["name"]) / f"gp-{info['gp_sha']}" / "tracks"
     meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
     mix = None
     for t in meta["tracks"]:
+        if kinds and t["category"] not in kinds:
+            continue
         y = np.fromfile(folder / f"track{t['index']}.f32", dtype=np.float32).reshape(-1, 2).mean(axis=1)
         if mix is None:
             mix = y
@@ -105,6 +108,30 @@ def tab_mix(song, info):
             n = max(len(mix), len(y))
             mix = np.pad(mix, (0, n - len(mix))) + np.pad(y, (0, n - len(y)))
     return librosa.resample(mix, orig_sr=meta["rate"], target_sr=SR)
+
+
+STEM_OF = {"guitar": "other", "piano": "other", "other": "other", "bass": "bass", "drums": "drums", "vocals": "vocals"}
+
+
+def only_tracks():
+    """FB_SYNC_TRACKS (e.g. "guitar", "guitar,bass", "guitar,bass,drums"): the tracks the sync lines up on."""
+    import os
+    v = os.environ.get("FB_SYNC_TRACKS", "").strip()
+    return {k.strip() for k in v.split(",") if k.strip()} or None
+
+
+def stems_of(song, info, wav, kinds, n):
+    """The recording's Demucs stems for these kinds of track, mixed, mono at SR (drumclock splits them once)."""
+    import soundfile as sf
+    import drumclock
+    folder = wav.parent / f"stems-{wav.stem.split('recording-')[-1]}"
+    if not all((folder / f"{s}.wav").exists() for s in ("drums", "bass", "other", "vocals")):
+        drumclock.split(wav, folder)
+    y = np.zeros(n, np.float32)
+    for s in sorted({STEM_OF.get(k, "other") for k in kinds}):
+        a = sf.read(str(folder / f"{s}.wav"), dtype="float32")[0][:n]
+        y[:len(a)] += a
+    return y
 
 
 def chroma(y):
@@ -641,9 +668,13 @@ def improve(song, check=False, quiet=False, fit=False, one=False):
     beats, downs = recording_beats(wav, out) if fit else (np.array([]), np.array([]))
     say("reading the recording and the tab...")
     rec, _ = librosa.load(str(wav), sr=SR, mono=True)
+    kinds = only_tracks()
+    if kinds:  # the sync ladder: line up only these tracks of the tab with the same parts of the recording
+        rec = stems_of(song, info, wav, kinds, len(rec)) if kinds != {"all"} else rec
+        say(f"  lining up on {', '.join(sorted(kinds))} only")
     env = librosa.onset.onset_strength(y=rec, sr=SR, hop_length=HOP)
     rec_c = chroma(rec)
-    mix = tab_mix(song, info)
+    mix = tab_mix(song, info, kinds if kinds and kinds != {"all"} else None)
     tab_c = chroma(mix)
     tab_env = librosa.onset.onset_strength(y=mix, sr=SR, hop_length=HOP)
     look = Look(tab_env, env, tab_c, rec_c, info["shift"])
