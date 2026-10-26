@@ -264,3 +264,10 @@ Other notes:
   - Run the tests and push.
   - Tell the user to restart the UG helper.
   - Delete the old When I Go Down card and re-import.
+
+## Sync ladder: where it stopped (2026-10-26)
+- 12 songs in `tests/yt2gp5/ladder.json`, all official studio audio / lyric videos; their recordings are already downloaded (cache/real), so public Wi-Fi is fine.
+- Fake-recording test (`synctest.py`): 5 of 5 right (every bar within 17 ms).
+- **Ho Hey starts ~0.9 s late** (user heard ~1 s). The intro runs ~2 % slower than the rest; one steady tempo fits the whole song and gives up bars 1-16. The music-video run measured per 4 bars: -0.85, -0.76, -0.39, -0.28, then 0 from bar 17. Stomps/shouts put bar 1 at ~0.72 s.
+- `fix_start` in `syncqa.py` moves the first bars, but its check rejects it: onset match over bars 1-16 drops 0.034 → -0.079 while the harmony says -0.85 s. Next: find out which is right (listen; check the drum stem), then rerun Ho Hey on the new studio link (SuZytYa71lk).
+- Then `python tests/yt2gp5/ladder.py` (12 songs), then `--tracks guitar`, `guitar,bass`, `guitar,bass,drums`.

@@ -363,6 +363,46 @@ def one_tempo(raw_y, bars, tab_env, env, look=None):
     return Sync(x, start + slope * x)
 
 
+START_MOST = 2.0  # s: how far the first bars may sit from the one steady tempo's line
+
+
+def fix_start(sync, bars, look):
+    """The first bars on their own (the user: the beginning is crucial). The one tempo fits the whole song
+    best, but a band can start slower or faster than it settles: Ho Hey's first 16 bars ran 2 % slow, so
+    bar 1 came 0.9 s late. Each 4-bar stretch is located (note starts, the harmony picking among their
+    peaks). When the first stretch with notes is clearly off, the bars before it move by that much and a
+    straight line joins it to the first two stretches in a row that line up. Kept only when the note starts
+    over those bars line up better. Returns the sync and (ms bar 1 moved, bar joined at) or None."""
+    n = len(bars)
+    x = np.array([b[0] for b in bars])
+    ok = lambda g: abs(g) <= STEADY_MS / 1000
+    best, y0 = None, float(sync(x[0]))
+    for _ in range(3):  # each pass measures again on the line before
+        lags = []
+        for p in range(0, n, STRETCH):
+            q = min(n, p + STRETCH)
+            g, gain = locate(sync, look, part=(bars[p][0], bars[q - 1][1]), most=START_MOST)
+            lags.append((p, g, gain >= CLEAR))
+        a = next((i for i, (_, _, clear) in enumerate(lags) if clear), None)
+        if a is None or ok(lags[a][1]):
+            break
+        j = next((i for i in range(a + 1, len(lags)) if ok(lags[i][1])), None)
+        if j is None:
+            break
+        xa = (bars[lags[a][0]][0] + bars[min(n, lags[a][0] + STRETCH) - 1][1]) / 2  # the stretch's middle
+        xj = x[lags[j][0]]
+        move = lags[a][1] * np.clip((xj - x) / max(1e-9, xj - xa), 0, 1)
+        new = Sync(x, sync(x) + move)
+        part = (x[0], xj)
+        c_old = lag_curve(sync, look.tab_env, look.env, most=0, part=part)[1][0]
+        c_new = lag_curve(new, look.tab_env, look.env, most=0, part=part)[1][0]
+        if c_new <= c_old:
+            break
+        sync = new
+        best = (round(1000 * float(sync(x[0]) - y0)), lags[j][0] + 1)
+    return sync, best
+
+
 SECTION_MAX = 16   # bars: a longer section of the tab is cut into equal parts this long or less
 SECTION_PCT = 6    # a section's tempo stays within this of the one steady tempo (%)
 SECTION_SHIFT = 0.1  # s: a section start moves at most this far from the one steady tempo. Further, the note
@@ -692,6 +732,9 @@ def improve(song, check=False, quiet=False, fit=False, one=False):
         sync = one_tempo(raw_line(info, bars), bars, tab_env, env, look)
         say(f"  one tempo: the tab at {round(100 * float(np.median(np.diff(sync.x)) / np.median(np.diff(sync.y))), 2)}% of its own speed, "
             f"bar 1 at {float(sync.y[0]):.3f} s")
+        sync, start = fix_start(sync, bars, look)
+        if start:
+            say(f"  the start: bar 1 moved {start[0]:+d} ms to {float(sync.y[0]):.3f} s, joining the steady tempo at bar {start[1]}")
         st1 = steadiness(sync, bars, tab_env, env, look)
         if not st1["steady"] and not one:  # the band changes speed: one tempo per section of the tab
             starts = section_starts(notes, len(bars))
