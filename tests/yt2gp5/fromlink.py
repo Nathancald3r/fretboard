@@ -32,7 +32,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "tools"))
 import songdb  # noqa: E402
 
-UG_ROOT = Path.home() / "Downloads" / "UG Songs"
+UG_ROOT = Path.home() / "Downloads" / "UG Songs"  # the UG helper's songs (Fretboard adds these to the library)
+OWN_ROOT = HERE / "cache" / "ug-pdf"  # this script's own UG saves
 CACHE_UG = HERE / "cache" / "ug"
 CDP = 9222
 PROFILE = r"C:\ug-chrome"
@@ -126,9 +127,7 @@ def key(s):
 
 def saved_folder(title, artist):
     """The song's folder in Downloads/UG Songs, when the helper saved it before (with its PDFs)."""
-    if not UG_ROOT.exists():
-        return None
-    for d in UG_ROOT.iterdir():
+    for d in [d for r in (OWN_ROOT, UG_ROOT) if r.exists() for d in r.iterdir()]:
         m = re.match(r"(.+?) - (.+?)(?: \(Key [^)]+\))?$", d.name)
         if d.is_dir() and m and key(m.group(1)) == key(title) and key(m.group(2)) == key(artist) and any(d.glob("*.pdf")):
             return d
@@ -141,13 +140,15 @@ def collect(ug_url):
     say("  saving every track from UG (about 20 s)...")
     import os
     try:  # its own lines show as they happen; a stuck save (UG's player never loading) ends after 10 min
-        r = subprocess.run([sys.executable, str(ROOT / "tools" / "ug_collect.py"), ug_url, "--no-ui", "--auto-official"], cwd=ROOT,
-                           env={**os.environ, "PYTHONUNBUFFERED": "1"}, timeout=600)
+        # into a folder of our own and without telling the UG helper: else Fretboard adds the song to the
+        # library by itself, a copy with no video beside the synced one this script makes
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "ug_collect.py"), ug_url, "--no-ui", "--auto-official", "--root", str(OWN_ROOT)],
+                           cwd=ROOT, env={**os.environ, "PYTHONUNBUFFERED": "1", "FB_HELPER_PORT": "9"}, timeout=600)
     except subprocess.TimeoutExpired:
         sys.exit("The UG save took over 10 minutes and was stopped. Is the collector Chrome logged in to UG Pro?")
     if r.returncode != 0:
         sys.exit(f"The UG helper couldn't save {ug_url} (code {r.returncode}): see above.")
-    latest = (UG_ROOT / "latest.txt").read_text(encoding="utf-8").strip().splitlines()[-1]
+    latest = (OWN_ROOT / "latest.txt").read_text(encoding="utf-8").strip().splitlines()[-1]
     return Path(latest)
 
 
