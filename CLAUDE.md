@@ -19,6 +19,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - `node scripts/test.mjs` runs every test (`--round` adds the round-trip test).
   - `node scripts/ship.mjs -m "message" file1 file2 …` checks and fixes flipped line endings, refuses out/, APKs and `_xxx/` folders, commits only the named files with the Co-Authored-By line, and pushes to main. `--check` only checks.
   - `node scripts/apk.mjs` bumps the version, builds, checks the 30 MB limit, keeps `Fretboard-<version>.apk`, installs on the phone and checks the version. `--no-bump` rebuilds or reinstalls the same version; `--no-install` skips the phone. Then send `APK_PATH` with SendUserFile.
+  - `python tools/datasets.py get|find|status`: TabMaker training data. `get [--budget GB]` downloads the approved commercial-use datasets (AAM, Guitar-TECHS, E-GMD, Groove) to `%USERPROFILE%retboard-data`, resumable, checked, with CREDITS.md. `find` lists new candidates in CANDIDATES.md there; a person approves them.
   - `python tools/autopilot.py [--loop]` works through `autopilot/tasks.md` headless while the user is away: checks, retries, a review, questions to `autopilot/questions.md`.
   - yt2gp5: `listen.py --export`, `qa.py`, `compare.py`, `anchors.py` (see `tests/yt2gp5/PLAN.md`).
 - **Dev server:** `node server.mjs` serves http://localhost:8420, the user's own copy. `PORT=8421` is the preview.
