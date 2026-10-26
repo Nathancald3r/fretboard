@@ -93,8 +93,15 @@ def free_gb():
     return shutil.disk_usage(DATA).free / 1e9
 
 
+CONNS = 8               # Zenodo limits each connection (~1 MB/s); 8 at once measured ~7x faster
+CHUNK = 64 << 20        # bytes per parallel piece
+
+
 def download(url, dest, size, md5):
-    """Resumable download with a .part file; checks size and md5."""
+    """Resumable download with a .part file; checks size and md5. Big files come in CHUNK pieces over CONNS
+    connections; finished pieces are listed in <file>.part.done, so a break only loses the pieces in flight."""
+    if size > 2 * CHUNK:
+        return download_parallel(url, dest, size, md5)
     part = dest.with_suffix(dest.suffix + ".part")
     have = part.stat().st_size if part.exists() else 0
     for attempt in range(8):
@@ -118,6 +125,62 @@ def download(url, dest, size, md5):
             have = part.stat().st_size if part.exists() else 0
     if have != size:
         raise RuntimeError(f"{dest.name}: got {have} of {size} bytes")
+    finish(part, dest, md5)
+
+
+def download_parallel(url, dest, size, md5):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    part = dest.with_suffix(dest.suffix + ".part")
+    log = Path(str(part) + ".done")
+    n = (size + CHUNK - 1) // CHUNK
+    done = {int(x) for x in log.read_text().split()} if log.exists() else set()
+    if part.exists() and not log.exists():  # an older one-connection .part: keep its whole pieces
+        done = set(range(part.stat().st_size // CHUNK))
+    log.write_text("".join(f"{i}\n" for i in sorted(done)))  # before the resize, so a full-size .part is never taken as old
+    with open(part, "ab") as f:
+        f.truncate(size)  # full size up front; pieces are written in place
+    lock, got, last = threading.Lock(), [len(done) * CHUNK], [0.0]
+
+    def piece(i):
+        a, b = i * CHUNK, min(size, (i + 1) * CHUNK) - 1
+        for attempt in range(8):
+            pos = a
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "fretboard-datasets/1.0", "Range": f"bytes={a}-{b}"})
+                with urllib.request.urlopen(req, timeout=120) as r, open(part, "r+b") as f:
+                    if r.status != 206:
+                        raise RuntimeError("server ignored the byte range")
+                    f.seek(a)
+                    while chunk := r.read(1 << 20):
+                        f.write(chunk)
+                        pos += len(chunk)
+                        with lock:
+                            got[0] += len(chunk)
+                            if time.time() - last[0] > 30:
+                                last[0] = time.time()
+                                say(f"  {dest.name}: {got[0] / 1e9:.2f} / {size / 1e9:.2f} GB")
+                if pos != b + 1:
+                    raise RuntimeError(f"piece {i} short")
+                with lock:
+                    with open(log, "a") as g:
+                        g.write(f"{i}\n")
+                return
+            except Exception as e:
+                with lock:
+                    got[0] -= pos - a
+                say(f"  {dest.name} piece {i}: {e}; retrying in {10 * (attempt + 1)} s")
+                time.sleep(10 * (attempt + 1))
+        raise RuntimeError(f"{dest.name}: piece {i} failed 8 times; run again to resume")
+
+    todo = [i for i in range(n) if i not in done]
+    with ThreadPoolExecutor(CONNS) as ex:
+        list(ex.map(piece, todo))
+    finish(part, dest, md5)
+    log.unlink(missing_ok=True)
+
+
+def finish(part, dest, md5):
     if md5:
         h = hashlib.md5()
         with open(part, "rb") as f:
@@ -125,8 +188,20 @@ def download(url, dest, size, md5):
                 h.update(b)
         if h.hexdigest() != md5:
             part.unlink()
+            Path(str(part) + ".done").unlink(missing_ok=True)
             raise RuntimeError(f"{dest.name}: md5 mismatch, deleted; run again")
     part.rename(dest)
+
+
+def unzip(zpath, folder):
+    """Extract, skipping Mac junk (__MACOSX, ._ files, 'Icon\r') and names Windows can't create."""
+    bad = set('<>:"|?*') | {chr(c) for c in range(32)}
+    with zipfile.ZipFile(zpath) as z:
+        for info in z.infolist():
+            parts = info.filename.replace("\\", "/").split("/")
+            if "__MACOSX" in parts or parts[-1].startswith("._") or any(bad & set(p) for p in parts):
+                continue
+            z.extract(info, folder)
 
 
 def manifest():
@@ -174,8 +249,7 @@ def get(budget_gb, only):
             if not zpath.exists():
                 download(url, zpath, fsize, md5)
             say(f"  unzip {name}")
-            with zipfile.ZipFile(zpath) as z:
-                z.extractall(folder)
+            unzip(zpath, folder)
             zpath.unlink()
             entry["files"][name] = "unzipped"
             save_manifest(m)
