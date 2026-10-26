@@ -227,6 +227,17 @@ The user thought Stupid Deep was 69–70 BPM. Its 54 bars only fill the 2:59 off
 - **Stupid Deep's "guitar" is a banjo whose tab pitches are 38-52** (a banjo's lowest open string is D3 = 50), so `ug_to_gp.py` probably gave it a wrong tuning; it scores 0 % and is left out of the mean.
 - Real recordings stay low (14-35 %): several guitars at once, the "other" stem also holds keys and pads, and the band doesn't play every tab note. Next: a better guitar transcriber than basic-pitch (guitar-specific models), and splitting the "other" stem further.
 
+## One command: a YouTube link → a synced song (2026-10-26)
+
+`python tests/yt2gp5/fromlink.py "<youtube link>"`: video name (yt-dlp) → UG Official tab (search in the collector
+Chrome) → PDFs (ug_collect.py --no-ui) → .gp (ug_to_gp.py) → songs.json with this exact video → listen.py --export
+(one steady tempo + start, QA gate). Each step is skipped when already done; `--again` redoes all.
+
+Tested:
+- 10,000 Reasons, two videos (5:42 and 5:00 vs the tab's 5:08): FAIL, the recordings aren't the tabbed version (it now warns when the lengths differ by > 8%).
+- Battle Belongs, Official Audio (4:48, tab 4:44, 17 tracks saved, 14 kept at 96 bars): FAIL. The tab matches (harmony 0.94), but one steady tempo drifts in 60 of 96 bars (49% of notes within 30 ms); the raw per-bar line-up had 59%, and section tempos 44%.
+- So the script works end to end; the sync itself is step 2 (drifting band tempo).
+
 ## Next steps
 
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).

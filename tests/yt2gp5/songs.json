@@ -243,21 +243,14 @@
    "status": "suggested",
    "official": true,
    "ug": "https://tabs.ultimate-guitar.com/tab/chris-tomlin/here-i-am-to-worship-official-2874398",
-   "youtube": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
+   "youtube": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
    "video": {
-    "title": "Chris Tomlin - Here I am To Worship",
-    "channel": "Theverrmuth",
-    "seconds": 295
+    "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
+    "channel": "Patrick Phiaphakdy",
+    "seconds": 284
    },
    "confidence": 75.7,
    "others": [
-    {
-     "url": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
-     "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
-     "channel": "Patrick Phiaphakdy",
-     "seconds": 284,
-     "score": 69.0
-    },
     {
      "url": "https://www.youtube.com/watch?v=H8ZZK3W7YqM",
      "title": "Here I am to Worship with lyrics- Chris Tomlin",
@@ -278,6 +271,13 @@
      "channel": "juanito vassallo",
      "seconds": 395,
      "score": 55.0
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
+     "title": "Chris Tomlin - Here I am To Worship",
+     "channel": "Theverrmuth",
+     "seconds": 295,
+     "score": null
     },
     {
      "url": "https://www.youtube.com/watch?v=O1FVi0QgTq8",
@@ -302,20 +302,6 @@
     }
    ],
    "tried": [
-    {
-     "url": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
-     "title": "Chris Tomlin - Here I am To Worship",
-     "channel": "Theverrmuth",
-     "tier": 4,
-     "ok": false,
-     "dist": 0.094,
-     "worst": 0.202,
-     "head_s": 8.9,
-     "tail_s": 4.6,
-     "length_ratio": 1.073,
-     "shift": 0,
-     "bad": []
-    },
     {
      "url": "https://www.youtube.com/watch?v=wfJSOpCDgUw",
      "title": "CHRIS TOMLIN - Here I Am To Worship (Lyric Video)",
@@ -387,6 +373,20 @@
      ]
     },
     {
+     "url": "https://www.youtube.com/watch?v=LDKcBbEx8uY",
+     "title": "Chris Tomlin - Here I am To Worship",
+     "channel": "Theverrmuth",
+     "tier": 4,
+     "ok": false,
+     "dist": 0.094,
+     "worst": 0.202,
+     "head_s": 8.9,
+     "tail_s": 4.6,
+     "length_ratio": 1.073,
+     "shift": 0,
+     "bad": []
+    },
+    {
      "url": "https://www.youtube.com/watch?v=O1FVi0QgTq8",
      "title": "Here I Am To Worship",
      "channel": "Michael W. Smith",
@@ -408,7 +408,7 @@
      "channel": "Michael W. Smith",
      "tier": 4,
      "ok": false,
-     "dist": 0.145,
+     "dist": 0.146,
      "worst": 0.239,
      "head_s": -0.1,
      "tail_s": -0.1,
@@ -459,13 +459,6 @@
    "confidence": 97.8,
    "others": [
     {
-     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
-     "title": "How Great Is Our God",
-     "channel": "Chris Tomlin",
-     "seconds": 267,
-     "score": 83.5
-    },
-    {
      "url": "https://www.youtube.com/watch?v=UkeTNZwooQ0",
      "title": "How Great Is Our God",
      "channel": "Chris Tomlin",
@@ -485,6 +478,13 @@
      "channel": "Chris Tomlin",
      "seconds": 295,
      "score": 98.6
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "seconds": 267,
+     "score": 83.5
     },
     {
      "url": "https://www.youtube.com/watch?v=oIXa7FzmXFE",
@@ -515,8 +515,8 @@
      "channel": "Chris Tomlin",
      "tier": 1,
      "ok": false,
-     "dist": 0.114,
-     "worst": 0.41,
+     "dist": 0.14,
+     "worst": 0.411,
      "head_s": -0.6,
      "tail_s": -0.1,
      "length_ratio": 1.032,
@@ -527,42 +527,22 @@
      ]
     },
     {
-     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
-     "title": "How Great Is Our God",
-     "channel": "Chris Tomlin",
-     "tier": 2,
-     "ok": false,
-     "dist": 0.13,
-     "worst": 0.382,
-     "head_s": -0.1,
-     "tail_s": -0.1,
-     "length_ratio": 0.903,
-     "shift": 0,
-     "bad": [
-      "0-10 s: chords differ",
-      "191-201 s: recording 6 s shorter here",
-      "201-211 s: recording 6 s shorter here",
-      "211-221 s: recording 6 s shorter here",
-      "221-231 s: recording 6 s shorter here"
-     ]
-    },
-    {
      "url": "https://www.youtube.com/watch?v=UkeTNZwooQ0",
      "title": "How Great Is Our God",
      "channel": "Chris Tomlin",
      "tier": 2,
      "ok": false,
-     "dist": 0.126,
+     "dist": 0.145,
      "worst": 0.336,
      "head_s": -1.0,
-     "tail_s": 1.0,
+     "tail_s": 0.9,
      "length_ratio": 0.985,
      "shift": -4,
      "bad": [
       "0-10 s: chords differ",
       "191-201 s: recording 6 s shorter here",
       "201-211 s: recording 6 s shorter here",
-      "211-221 s: recording 6 s shorter here",
+      "211-221 s: recording 5 s shorter here",
       "221-231 s: recording 5 s shorter here"
      ]
     },
@@ -572,7 +552,7 @@
      "channel": "Chris Tomlin",
      "tier": 2,
      "ok": false,
-     "dist": 0.126,
+     "dist": 0.144,
      "worst": 0.338,
      "head_s": -1.0,
      "tail_s": 1.0,
@@ -583,7 +563,7 @@
       "191-201 s: recording 6 s shorter here",
       "201-211 s: recording 6 s shorter here",
       "211-221 s: recording 6 s shorter here",
-      "221-231 s: recording 6 s shorter here"
+      "221-231 s: recording 5 s shorter here"
      ]
     },
     {
@@ -592,16 +572,37 @@
      "channel": "Chris Tomlin",
      "tier": 2,
      "ok": false,
-     "dist": 0.128,
-     "worst": 0.397,
+     "dist": 0.135,
+     "worst": 0.398,
      "head_s": -0.1,
-     "tail_s": -0.9,
+     "tail_s": 3.6,
      "length_ratio": 0.989,
      "shift": -2,
      "bad": [
       "0-10 s: chords differ",
+      "70-80 s: recording 4 s longer here",
       "201-211 s: recording 5 s shorter here",
       "211-221 s: recording 4 s shorter here"
+     ]
+    },
+    {
+     "url": "https://www.youtube.com/watch?v=bdlvdQ2uRRM",
+     "title": "How Great Is Our God",
+     "channel": "Chris Tomlin",
+     "tier": 2,
+     "ok": false,
+     "dist": 0.143,
+     "worst": 0.383,
+     "head_s": -0.1,
+     "tail_s": -0.1,
+     "length_ratio": 0.902,
+     "shift": 0,
+     "bad": [
+      "0-10 s: chords differ",
+      "191-201 s: recording 6 s shorter here",
+      "201-211 s: recording 6 s shorter here",
+      "211-221 s: recording 6 s shorter here",
+      "221-231 s: recording 4 s shorter here"
      ]
     },
     {
@@ -610,18 +611,18 @@
      "channel": "Chris Tomlin",
      "tier": 2,
      "ok": false,
-     "dist": 0.131,
+     "dist": 0.145,
      "worst": 0.402,
      "head_s": -1.0,
-     "tail_s": 0.0,
+     "tail_s": -0.1,
      "length_ratio": 0.903,
      "shift": 0,
      "bad": [
       "0-10 s: chords differ",
       "191-201 s: recording 6 s shorter here",
       "201-211 s: recording 6 s shorter here",
-      "211-221 s: recording 6 s shorter here",
-      "221-231 s: recording 5 s shorter here"
+      "211-221 s: recording 5 s shorter here",
+      "221-231 s: recording 4 s shorter here"
      ]
     },
     {
@@ -630,29 +631,24 @@
      "channel": "Chris Tomlin",
      "tier": 2,
      "ok": false,
-     "dist": 0.131,
-     "worst": 0.443,
+     "dist": 0.143,
+     "worst": 0.444,
      "head_s": -1.0,
-     "tail_s": 0.3,
-     "length_ratio": 1.412,
+     "tail_s": 0.1,
+     "length_ratio": 1.411,
      "shift": -1,
      "bad": [
       "0-10 s: chords differ",
-      "70-80 s: recording 23 s longer here",
-      "80-90 s: recording 22 s longer here",
-      "90-100 s: recording 21 s longer here",
-      "100-110 s: recording 22 s longer here",
-      "110-120 s: recording 9 s longer here",
-      "120-130 s: recording 8 s longer here",
-      "130-140 s: recording 10 s longer here",
-      "140-151 s: recording 10 s longer here",
-      "161-171 s: recording 28 s longer here",
-      "171-181 s: recording 28 s longer here",
-      "181-191 s: recording 28 s longer here",
+      "130-141 s: recording 29 s longer here",
+      "141-151 s: recording 28 s longer here",
+      "151-161 s: recording 28 s longer here",
+      "161-171 s: recording 56 s longer here",
+      "171-181 s: recording 27 s longer here",
+      "181-191 s: recording 23 s longer here",
       "191-201 s: recording 23 s longer here",
       "201-211 s: recording 5 s shorter here",
-      "211-221 s: recording 4 s shorter here",
-      "241-251 s: recording 4 s longer here"
+      "221-231 s: recording 4 s longer here",
+      "241-251 s: recording 5 s longer here"
      ]
     },
     {
@@ -661,10 +657,10 @@
      "channel": "Maranatha! Music - Topic",
      "tier": 4,
      "ok": false,
-     "dist": 0.121,
-     "worst": 0.277,
+     "dist": 0.137,
+     "worst": 0.278,
      "head_s": -0.9,
-     "tail_s": 0.0,
+     "tail_s": 3.6,
      "length_ratio": 0.867,
      "shift": -1,
      "bad": [
@@ -1059,6 +1055,57 @@
     }
    ],
    "lineup": 0.07
+  },
+  {
+   "name": "Matt Redman - 10000 Reasons Bless The Lord (official)",
+   "title": "10000 Reasons Bless The Lord",
+   "artist": "Matt Redman",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Matt Redman - 10000 Reasons Bless The Lord.gp",
+   "sha1": "42a8c1b85bfdac32",
+   "seconds": 308,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/matt-redman/10000-reasons-bless-the-lord-official-2405017",
+   "youtube": "https://www.youtube.com/watch?v=pYvrBs-iSOk",
+   "video": {
+    "title": "10,000 Reasons (Bless the Lord)",
+    "channel": "Matt Redman",
+    "seconds": 300
+   },
+   "confidence": null
+  },
+  {
+   "name": "Phil Wickham - Battle Belongs (official)",
+   "title": "Battle Belongs",
+   "artist": "Phil Wickham",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Phil Wickham - Battle Belongs.gp",
+   "sha1": "afeb77c9da8fb0a4",
+   "seconds": 284,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "other",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/phil-wickham/battle-belongs-official-4044997",
+   "youtube": "https://www.youtube.com/watch?v=qJOhfv31L4E",
+   "video": {
+    "title": "Phil Wickham - Battle Belongs (Official Audio)",
+    "channel": "Phil Wickham",
+    "seconds": 288
+   },
+   "confidence": null
   },
   {
    "name": "Relient K - Be My Escape (official)",
