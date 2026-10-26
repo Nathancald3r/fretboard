@@ -4,6 +4,20 @@
 
 The plan, the file list, where it stands and the next steps are all in `tests/yt2gp5/PLAN.md`. Start there.
 
+## Practice tab: guitar skills first (the user's plan, 2026-10-25)
+
+Research with sources: `practice-research.md` in the session notes (summary here). What works: fix the exact hard spot slowly until it stays right, timing feedback, spaced review. Skip streaks, XP, video libraries, whole-song scores.
+
+**Phase 1: guitar hands (build first).** All checked by the phone's mic (pitch + onset detection in the browser).
+1. **Clean-speed loop:** pick bars in any song; it loops them, +5% tempo after 3 clean passes, -5% after a miss. Shows the best clean tempo per spot.
+2. **Strum timing:** a click (any time signature) and the mic marks each strum early/late in ms; worship strum patterns (down, down-up, 16ths, 6/8).
+3. **Scales and shapes:** major/minor pentatonic, major scale, CAGED chord shapes drawn on the neck; played up and down with a click, tempo rises as it gets clean.
+4. **Chord changes:** two chords, count clean changes per minute (G-C, D-G, Em-C...), from the songs you play.
+5. **Fret notes:** "play C on string 5"; the mic checks it; misses come back sooner (spaced repetition); a heat map of weak frets.
+6. **Daily 30 min:** timing 5, scale 5, chord changes 5, fret notes 5, hard spots from your songs 10. A log of clean tempos, changes per minute and fret-note accuracy, a weekly chart.
+
+**Phase 2: later.** Ear training (name the 1-7 note or chord in a key), theory on the neck (why 1-4-5-6m works in every key, the number system), tab and sheet-music reading drills, memorising worship sets (form outline, chart that fades, recall before Sunday), levels with a weekly self-test.
+
 ## The UG workflow: search, pick, save in the background, review, import (the user's plan, 2026-10-23)
 
 **The user's answers:** skip the review when the automatic checks pass; the recording for syncing is YouTube (UG's linked video); build setup + queue + background first.
