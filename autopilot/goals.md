@@ -12,3 +12,14 @@
 - **Guitar sound quality comes first**, above everything else.
 - Fretboard is a PWA plus an Android APK under 30 MB; the soundfont is never bundled.
 - Replies and docs: short, plain, simple bullets.
+
+# The long-term plan: `autopilot/tabmaker_handoff.md` (the user's TabMaker handoff; private, not in git)
+
+- **Now (to Nov 4): the personal tool.** The user chose this first (2026-10-25): best sound, any model.
+- **Later: a sellable product.** Read the handoff before any work that touches it. Its rules, in short:
+  - UG official tabs and the user's synced songs are a **private test set only**: never training data, never in the product.
+  - Product code uses only commercially cleared models and data (Spleeter, Basic Pitch, AAM, Guitar-TECHS, E-GMD,
+    Groove MIDI, own data). Demucs, the UVR/RoFormer models, madmom, YourMT3 and yt-dlp are personal-tool only.
+  - The product takes uploaded audio; YouTube only through the embedded player. Add a Credits page.
+- Don't build product-only work unless a task asks for it; keep personal-tool work from closing that door
+  (keep stem splitting, note reading and syncing as swappable steps).
