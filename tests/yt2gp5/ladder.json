@@ -1,17 +1,17 @@
 {
- "about": "The sync ladder: simple songs first (studio, played to a click, short), each a UG Official tab + the artist's own upload. ladder.py runs them in this order.",
+ "about": "The sync ladder: simple songs first, short to long. Each a UG Official tab + the official studio audio or official lyric video (never the music video: it adds intros and cuts). ladder.py runs them in this order.",
  "songs": [
-  {"link": "https://www.youtube.com/watch?v=EJN-rzytlYI", "artist": "The Lumineers", "title": "Ho Hey"},
+  {"link": "https://www.youtube.com/watch?v=SuZytYa71lk", "artist": "The Lumineers", "title": "Ho Hey"},
   {"link": "https://www.youtube.com/watch?v=6k8cpUkKK4c", "artist": "Bruno Mars", "title": "Count On Me"},
   {"link": "https://www.youtube.com/watch?v=nbcCG7PkI18", "artist": "WALK THE MOON", "title": "Shut Up And Dance"},
   {"link": "https://www.youtube.com/watch?v=IhP3J0j9JmY", "artist": "Imagine Dragons", "title": "Believer"},
-  {"link": "https://www.youtube.com/watch?v=uJ_1HMAGb4k", "artist": "Vance Joy", "title": "Riptide"},
+  {"link": "https://www.youtube.com/watch?v=En_6WWOWh8E", "artist": "Vance Joy", "title": "Riptide"},
   {"link": "https://www.youtube.com/watch?v=ilLEuwH4hws", "artist": "Bastille", "title": "Pompeii"},
-  {"link": "https://www.youtube.com/watch?v=kVpv8-5XWOI", "artist": "Train", "title": "Hey Soul Sister"},
+  {"link": "https://www.youtube.com/watch?v=_2qJy5r-WAY", "artist": "Train", "title": "Hey Soul Sister"},
   {"link": "https://www.youtube.com/watch?v=k_aQYP8rsgE", "artist": "Foster the People", "title": "Pumped Up Kicks"},
-  {"link": "https://www.youtube.com/watch?v=dvgZkm1xWPE", "artist": "Coldplay", "title": "Viva La Vida"},
+  {"link": "https://www.youtube.com/watch?v=ALsvdSA9tOU", "artist": "Coldplay", "title": "Viva La Vida"},
   {"link": "https://www.youtube.com/watch?v=5y_KJAg8bHI", "artist": "Avicii", "title": "Wake Me Up"},
-  {"link": "https://www.youtube.com/watch?v=pXRviuL6vMY", "artist": "twenty one pilots", "title": "Stressed Out"},
+  {"link": "https://www.youtube.com/watch?v=K1FlAphL2p8", "artist": "twenty one pilots", "title": "Stressed Out"},
   {"link": "https://www.youtube.com/watch?v=-35W_FWCT9Q", "artist": "Lynyrd Skynyrd", "title": "Sweet Home Alabama"}
  ]
 }

@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import subprocess
+import time
 import sys
 import urllib.parse
 from pathlib import Path
@@ -149,7 +150,7 @@ def collect(ug_url):
     if r.returncode != 0:
         sys.exit(f"The UG helper couldn't save {ug_url} (code {r.returncode}): see above.")
     latest = (OWN_ROOT / "latest.txt").read_text(encoding="utf-8").strip().splitlines()[-1]
-    return Path(latest)
+    return OWN_ROOT / latest  # latest.txt holds the folder's name (a full path stays as it is)
 
 
 def to_gp(folder, again):
@@ -160,10 +161,12 @@ def to_gp(folder, again):
         say(f"  {gp.name} is there already")
         return gp
     say("  turning the PDFs into one .gp...")
-    for _ in range(2):  # once more when it fails (the first run after a UG save failed once without a word)
-        subprocess.run([sys.executable, str(HERE / "ug_to_gp.py"), str(folder.parent), "-k", folder.name], cwd=ROOT)
+    for i in range(3):  # again when it fails (right after a UG save it has failed without a word)
+        r = subprocess.run([sys.executable, "-u", str(HERE / "ug_to_gp.py"), str(folder.parent), "-k", folder.name], cwd=ROOT)
         if gp.exists():
             break
+        say(f"  the .gp wasn't made (exit code {r.returncode}); trying again")
+        time.sleep(5 * (i + 1))
     if not gp.exists():
         sys.exit(f"Couldn't turn {folder.name} into a .gp: see above.")
     return gp

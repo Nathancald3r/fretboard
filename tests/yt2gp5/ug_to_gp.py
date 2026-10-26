@@ -45,6 +45,8 @@ def main():
             print(f"skip {d.name}")
             continue
         todo.append((d, pdfs, title, artist, key))
+    if not todo:
+        sys.exit(f"no song folder in {args.folder} matches {args.k!r}")
     OUT.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright
     srv = run.serve()
