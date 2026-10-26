@@ -56,6 +56,8 @@ section { padding: 16px; min-width: 0; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .tab { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; }
 .tab small { display: block; color: var(--ink3); font-size: 11.5px; }
+.tab.off { opacity: .55; border-style: dashed; }
+.tab.off small { color: var(--warn); }
 .tab.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .tab .lvl { display: block; height: 4px; border-radius: 2px; background: var(--grid); margin-top: 4px; }
 .tab .lvl i { display: block; height: 100%; border-radius: 2px; background: var(--ink3); }
@@ -243,9 +245,11 @@ async function openExample(key) {
       <span>${esc(lab.source)} · ${fmt(lab.duration)} · ${lab.licence}${lab.label_shift_ms != null ? ` · labels moved ${lab.label_shift_ms} ms onto the audio` : ""}</span></div>
     <div class="tabs" id="tabs">${stems.map(s => {
       const st = lab.stems[s], lv = s === "mix" ? 100 : 100 * (st.rms || 0) / maxRms;
-      const leak = s !== "mix" && !st.notes.length;
-      return `<button class="tab" data-s="${s}" title="${esc(STEM_HELP[s] || "")}">${s}
-        <small>${st.notes.length ? st.notes.length + " notes" : (leak ? "no notes · leak" : "no notes")}</small>
+      const off = st.use === false, moved = (st.moved_in || []).length;
+      const sub = off ? (st.notes.length ? "ignored · sound is in other" : "ignored · bleed")
+        : st.notes.length + " notes" + (moved ? " (+" + st.moved_in.join(", ") + ")" : "");
+      return `<button class="tab${off ? " off" : ""}" data-s="${s}" title="${esc(off ? st.why : STEM_HELP[s] || "")}">${s}
+        <small>${sub}</small>
         <span class="lvl"><i style="width:${Math.max(2, lv).toFixed(0)}%"></i></span></button>`;
     }).join("")}</div>
     <div class="controls">
@@ -260,7 +264,7 @@ async function openExample(key) {
     <div class="legend" id="legend"></div>
     <div class="notes">
       <p><b>How to check:</b> play a stem with label tones on. Tones should land exactly on the hits you hear, and the waveform's spikes should sit at the left edge of the note bars.</p>
-      <p><b>Splitting:</b> the bar under each stem name is its loudness. A stem with no notes should be near silent (it only holds what leaked in).</p>
+      <p><b>Splitting:</b> the bar under each stem name is its loudness. Dashed stems are ignored for training: "bleed" has no labelled notes (only what leaked in), "sound is in other" means Spleeter put that instrument into the other stem, so its labels were moved there.</p>
       <p id="stemhelp"></p>
     </div>
     ${checkRows.length ? `<table class="check"><tr><th>Stem</th><th>Best shift</th><th>Labels on a hit (50 ms)</th><th>Result</th></tr>${checkRows.map(r =>
@@ -293,7 +297,8 @@ async function pickStem(s) {
   const was = playing; stop();
   cur.stem = s; cur.notesCache = null;
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.s === s));
-  $("#stemhelp").textContent = s + ": " + (STEM_HELP[s] || "") + (cur.lab.stems[s].instruments.length ? " · labelled instruments: " + cur.lab.stems[s].instruments.join(", ") : " · no labelled instruments");
+  const st = cur.lab.stems[s];
+  $("#stemhelp").textContent = s + ": " + (STEM_HELP[s] || "") + (st.use === false ? " · IGNORED: " + st.why : "") + (st.moved_in ? " · has the labels of: " + st.moved_in.join(", ") : "") + (cur.lab.stems[s].instruments.length ? " · labelled instruments: " + cur.lab.stems[s].instruments.join(", ") : " · no labelled instruments");
   drawLegend(); draw();
   if (!buffers[s]) {
     const key = cur.key;

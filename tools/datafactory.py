@@ -11,7 +11,8 @@ Input: %USERPROFILE%\\fretboard-data, filled by `python tools/datasets.py get`.
 Output: fretboard-data\\factory\\<source>\\<example>\\ with mono FLAC stems and labels.json:
   {"id", "source", "licence", "sr", "duration", "beats": [[t, bar, beat]], "chords": [[t, name]],
    "instruments": {name: {"group", "stem"}},
-   "stems": {stem: {"file", "rms", "instruments": [...], "notes": [[onset, offset, pitch, velocity, instrument(, string, fret)]]}}}
+   "stems": {stem: {"file", "rms", "instruments": [...], "notes": [[onset, offset, pitch, velocity, instrument(, string, fret)]],
+           "use", "why"}}}   use = false: training skips the stem (bleed, or its sound went to another stem; see judge)
   AAM songs: the mix plus Spleeter's 5 stems (vocals, drums, bass, piano, other). The idea of the plan: train on these
   messy stems with AAM's exact labels. AAM has no singing, so "vocals" has no notes (it holds what Spleeter leaked there).
   Times are seconds from the start of the audio. Guitar-TECHS strings: 1 = high e ... 6 = low E, standard tuning.
@@ -294,6 +295,43 @@ def rms(x):
     return round(float(np.sqrt(np.mean(np.square(x, dtype="float64")))), 5)
 
 
+QUIET = 0.06  # stem loudness while its labelled notes play, as a share of the mix's: below this it holds none of them
+
+
+def judge(stems, audio):
+    """Mark the stems training must skip: "use": false plus "why". Changes `stems` in place; returns what it did.
+    - No labelled notes: what's there is bleed from other instruments (AAM has no singing, so always "vocals").
+    - Labelled notes but near silent while they play: Spleeter put that instrument's sound in another stem (AAM's piano
+      went to "other" in 8 of the first 20 songs; measured 0.00-0.03 of the mix vs 0.13+ for a real piano stem).
+      Its labels move to "other", where the sound went, so "other" isn't left with unlabelled notes."""
+    import numpy as np
+    mix = stems.get("mix", {}).get("rms") or max(v["rms"] for v in stems.values()) or 1e-9
+    did = []
+    for name, st in stems.items():
+        if name == "mix" or "use" in st:
+            continue
+        if not st["notes"]:
+            st.update(use=False, why="bleed: nothing labelled plays in this stem")
+            did.append(f"{name} bleed")
+            continue
+        x = audio[name]
+        on = np.zeros(len(x), bool)
+        for n in st["notes"]:
+            on[int(n[0] * SR):int(n[1] * SR) + 1] = True
+        level = float(np.sqrt(np.mean(np.square(x[on[:len(x)]], dtype="float64")))) / mix if on.any() else 0.0
+        st["level_in_notes"] = round(level, 3)
+        if level < QUIET and name != "other" and "other" in stems:
+            st.update(use=False, why=f"silent: its instruments' sound went to another stem ({level:.2f} of the mix); labels moved to other")
+            o = stems["other"]
+            o["notes"] = sorted(o["notes"] + st["notes"])
+            o["instruments"] = sorted(set(o["instruments"]) | set(st["instruments"]))
+            o.setdefault("moved_in", []).append(name)
+            did.append(f"{name} silent -> other")
+        else:
+            st["use"] = True
+    return did
+
+
 # ---------- makers ----------
 
 _sep = None
@@ -347,6 +385,8 @@ def make_aam(song, groups):
         insts = sorted(notes) if name == "mix" else [k for k in sorted(notes) if instruments[k]["stem"] == name]
         ns = sorted([*n, k] for k in insts for n in notes[k])
         stems[name] = {"file": f"{name}.flac", "rms": rms(mono), "instruments": insts, "notes": ns}
+        audio[name] = mono
+    judge(stems, audio)
     labels = {"id": f"aam-{song}", "source": "AAM", "licence": "CC BY 4.0", "sr": SR, "duration": round(len(x) / sr, 3),
               "beats": beats, "chords": chords, "instruments": instruments, "stems": stems}
     (tmp / "labels.json").write_text(json.dumps(labels, separators=(",", ":")), encoding="utf-8")
@@ -428,6 +468,13 @@ def index():
     rows, hours, inst_hours, note_hours = [], {}, {}, {}
     for lab in sorted(OUT.glob("*/*/labels.json")):
         d = json.loads(lab.read_text(encoding="utf-8"))
+        if d["source"] == "AAM" and any("use" not in v for k, v in d["stems"].items() if k != "mix"):
+            import soundfile as sf  # made before judge() existed: judge it now from the saved stems
+            audio = {k: sf.read(str(lab.parent / v["file"]), dtype="float32")[0] for k, v in d["stems"].items() if k != "mix"}
+            did = judge(d["stems"], audio)
+            lab.write_text(json.dumps(d, separators=(",", ":")), encoding="utf-8")
+            say(f"{d['id']}: {', '.join(did) or 'all stems used'}")
+        d["stems"] = {k: v for k, v in d["stems"].items() if v.get("use", True)}  # skipped stems don't count
         h = d["duration"] / 3600
         hours[d["source"]] = hours.get(d["source"], 0) + h
         for stem, s in d["stems"].items():
@@ -481,7 +528,7 @@ def check(n):
     for lab in labs:
         d = json.loads(lab.read_text(encoding="utf-8"))
         for stem, s in d["stems"].items():
-            if stem in ("mix", "vocals") or not s["notes"]:
+            if stem in ("mix", "vocals") or not s["notes"] or not s.get("use", True):
                 continue
             env, fs = onset_env(lab.parent / s["file"])
             ons = np.unique(np.round(np.array([x[0] for x in s["notes"]]) / fs).astype(int))
