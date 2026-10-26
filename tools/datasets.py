@@ -9,13 +9,18 @@ Commands:
   python tools/datasets.py find                                    search Zenodo + Hugging Face for new candidates -> data/CANDIDATES.md
   python tools/datasets.py status                                  what is downloaded
 
+Speed: a steady 80% of the line at home (measured once per network), a low 1 MB/s on a public network
+(tools/netcap.py). One stream of pieces runs across all files, so unzipping never stalls the line.
 Downloads resume after a break, are checked (md5 or size), unzipped, and the zip is deleted.
 Data lives in %USERPROFILE%\\fretboard-data (outside the repo). CREDITS.md there lists every dataset with its
 attribution, for the app's Credits page. New candidates are never downloaded by themselves: a CC BY licence on
 Zenodo doesn't prove the audio isn't someone's copyrighted song, so a person adds them to APPROVED after a look.
 """
-import argparse, hashlib, json, os, shutil, sys, time, urllib.parse, urllib.request, zipfile
+import argparse, hashlib, json, os, queue, shutil, sys, threading, time, urllib.parse, urllib.request, zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from netcap import limit  # noqa: E402  a steady 80% of the line; low on public Wi-Fi
 
 DATA = Path(os.environ.get("FRETBOARD_DATA", Path.home() / "fretboard-data"))
 KEEP_FREE_GB = 60  # never fill the disk below this
@@ -93,104 +98,99 @@ def free_gb():
     return shutil.disk_usage(DATA).free / 1e9
 
 
-CONNS = 8               # Zenodo limits each connection (~1 MB/s); 8 at once measured ~7x faster
-CHUNK = 64 << 20        # bytes per parallel piece
+CHUNK = 64 << 20        # bytes per piece; a break only loses the pieces in flight
+MAX_CONNS = {"zenodo.org": 48, "default": 16}  # Zenodo gives each connection ~1 MB/s; Google ~13 MB/s
+START_CONNS = {"zenodo.org": 32, "default": 8}  # measured, so the rate is high from the first minute
 
 
-def download(url, dest, size, md5):
-    """Resumable download with a .part file; checks size and md5. Big files come in CHUNK pieces over CONNS
-    connections; finished pieces are listed in <file>.part.done, so a break only loses the pieces in flight."""
-    if size > 2 * CHUNK:
-        return download_parallel(url, dest, size, md5)
-    part = dest.with_suffix(dest.suffix + ".part")
-    have = part.stat().st_size if part.exists() else 0
+class Gate:
+    """Lets at most `limit` threads in at once; the limit can change while they run."""
+
+    def __init__(self, limit):
+        self.limit, self.active, self.cv = limit, 0, threading.Condition()
+
+    def set(self, n):
+        with self.cv:
+            self.limit = max(1, int(n))
+            self.cv.notify_all()
+
+    def __enter__(self):
+        with self.cv:
+            while self.active >= self.limit:
+                self.cv.wait(1)
+            self.active += 1
+
+    def __exit__(self, *a):
+        with self.cv:
+            self.active -= 1
+            self.cv.notify_all()
+
+
+class Job:
+    """One file: a full-size .part written in place by CHUNK pieces; finished pieces are listed in <part>.done."""
+
+    def __init__(self, ds, name, url, size, md5, folder):
+        self.ds, self.name, self.url, self.size, self.md5 = ds, name, url, size, md5
+        self.dest = folder / name
+        self.part = self.dest.with_suffix(self.dest.suffix + ".part")
+        self.log = Path(str(self.part) + ".done")
+        self.n = max(1, (size + CHUNK - 1) // CHUNK)
+        self.host = urllib.parse.urlparse(url).hostname
+        if self.dest.exists():  # downloaded, not yet unzipped
+            self.done, self.todo = set(range(self.n)), []
+            return
+        done = {int(x) for x in self.log.read_text().split()} if self.log.exists() else set()
+        if self.part.exists() and not self.log.exists():  # an older one-connection .part: keep its whole pieces
+            done = set(range(min(self.n, self.part.stat().st_size // CHUNK)))
+        self.log.write_text("".join(f"{i}\n" for i in sorted(done)))  # before the resize, so a full-size .part is never taken as old
+        with open(self.part, "ab") as f:
+            f.truncate(size)
+        self.done, self.todo = done, [i for i in range(self.n) if i not in done]
+
+
+def fetch(job, i, lim, throttled):
+    """Download piece i of job at the shared steady rate. Retries; raises after 8 failures."""
+    a, b = i * CHUNK, min(job.size, (i + 1) * CHUNK) - 1
     for attempt in range(8):
-        if have >= size:
-            break
+        pos = a
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "fretboard-datasets/1.0", "Range": f"bytes={have}-"})
-            with urllib.request.urlopen(req, timeout=120) as r, open(part, "ab" if r.status == 206 else "wb") as f:
-                if r.status != 206:
-                    have = 0
-                last = 0
-                while chunk := r.read(1 << 20):
+            req = urllib.request.Request(job.url, headers={"User-Agent": "fretboard-datasets/1.0", "Range": f"bytes={a}-{b}"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(job.part, "r+b") as f:
+                if r.status != 206 and not (a == 0 and b + 1 == job.size):
+                    raise RuntimeError("server ignored the byte range")
+                f.seek(a)
+                while pos <= b and (chunk := lim.read(r)):
                     f.write(chunk)
-                    have += len(chunk)
-                    if time.time() - last > 30:
-                        last = time.time()
-                        say(f"  {dest.name}: {have / 1e9:.2f} / {size / 1e9:.2f} GB")
-        except Exception as e:  # network blips: wait and resume
-            say(f"  {dest.name}: {e}; retrying in {10 * (attempt + 1)} s")
-            time.sleep(10 * (attempt + 1))
-            have = part.stat().st_size if part.exists() else 0
-    if have != size:
-        raise RuntimeError(f"{dest.name}: got {have} of {size} bytes")
-    finish(part, dest, md5)
+                    pos += len(chunk)
+            if pos != b + 1:
+                raise RuntimeError(f"piece {i} short")
+            return
+        except Exception as e:
+            wait = 10 * (attempt + 1)
+            if getattr(e, "code", None) in (429, 503):  # the server asks us to slow down
+                throttled.set()
+                try:
+                    wait = max(wait, int(e.headers.get("Retry-After") or 0))
+                except Exception:
+                    pass
+            say(f"  {job.name} piece {i}: {e}; retrying in {wait} s")
+            time.sleep(wait)
+    raise RuntimeError(f"{job.name}: piece {i} failed 8 times; run again to resume")
 
 
-def download_parallel(url, dest, size, md5):
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
-    part = dest.with_suffix(dest.suffix + ".part")
-    log = Path(str(part) + ".done")
-    n = (size + CHUNK - 1) // CHUNK
-    done = {int(x) for x in log.read_text().split()} if log.exists() else set()
-    if part.exists() and not log.exists():  # an older one-connection .part: keep its whole pieces
-        done = set(range(part.stat().st_size // CHUNK))
-    log.write_text("".join(f"{i}\n" for i in sorted(done)))  # before the resize, so a full-size .part is never taken as old
-    with open(part, "ab") as f:
-        f.truncate(size)  # full size up front; pieces are written in place
-    lock, got, last = threading.Lock(), [len(done) * CHUNK], [0.0]
-
-    def piece(i):
-        a, b = i * CHUNK, min(size, (i + 1) * CHUNK) - 1
-        for attempt in range(8):
-            pos = a
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "fretboard-datasets/1.0", "Range": f"bytes={a}-{b}"})
-                with urllib.request.urlopen(req, timeout=120) as r, open(part, "r+b") as f:
-                    if r.status != 206:
-                        raise RuntimeError("server ignored the byte range")
-                    f.seek(a)
-                    while chunk := r.read(1 << 20):
-                        f.write(chunk)
-                        pos += len(chunk)
-                        with lock:
-                            got[0] += len(chunk)
-                            if time.time() - last[0] > 30:
-                                last[0] = time.time()
-                                say(f"  {dest.name}: {got[0] / 1e9:.2f} / {size / 1e9:.2f} GB")
-                if pos != b + 1:
-                    raise RuntimeError(f"piece {i} short")
-                with lock:
-                    with open(log, "a") as g:
-                        g.write(f"{i}\n")
-                return
-            except Exception as e:
-                with lock:
-                    got[0] -= pos - a
-                say(f"  {dest.name} piece {i}: {e}; retrying in {10 * (attempt + 1)} s")
-                time.sleep(10 * (attempt + 1))
-        raise RuntimeError(f"{dest.name}: piece {i} failed 8 times; run again to resume")
-
-    todo = [i for i in range(n) if i not in done]
-    with ThreadPoolExecutor(CONNS) as ex:
-        list(ex.map(piece, todo))
-    finish(part, dest, md5)
-    log.unlink(missing_ok=True)
-
-
-def finish(part, dest, md5):
-    if md5:
+def finish(job):
+    """md5 check, then the .part becomes the file."""
+    if job.md5:
         h = hashlib.md5()
-        with open(part, "rb") as f:
+        with open(job.part, "rb") as f:
             while b := f.read(1 << 22):
                 h.update(b)
-        if h.hexdigest() != md5:
-            part.unlink()
-            Path(str(part) + ".done").unlink(missing_ok=True)
-            raise RuntimeError(f"{dest.name}: md5 mismatch, deleted; run again")
-    part.rename(dest)
+        if h.hexdigest() != job.md5:
+            job.part.unlink()
+            job.log.unlink(missing_ok=True)
+            raise RuntimeError(f"{job.name}: md5 mismatch, deleted; run again")
+    job.part.rename(job.dest)
+    job.log.unlink(missing_ok=True)
 
 
 def unzip(zpath, folder):
@@ -221,42 +221,160 @@ def save_manifest(m):
 
 
 def get(budget_gb, only):
+    """One stream of pieces across every file, so the line stays busy at a steady rate: the next file downloads
+    while the last one is checked and unzipped in its own thread. Connections grow while each step still helps."""
     DATA.mkdir(parents=True, exist_ok=True)
+    lim = limit()
     m = manifest()
     used = sum(v.get("bytes", 0) for v in m.values()) / 1e9
     say(f"data folder {DATA}; {used:.1f} GB already, budget {budget_gb} GB, {free_gb():.0f} GB free on disk")
-    for ds in APPROVED:
-        if only and ds["id"] not in only:
-            continue
-        if m.get(ds["id"], {}).get("done"):
-            continue
-        files = files_of(ds)
-        size = sum(f[2] for f in files) / 1e9
-        if used + size > budget_gb:
-            say(f"skip {ds['id']} ({size:.1f} GB): over the {budget_gb} GB budget")
-            continue
-        if free_gb() - 2 * size < KEEP_FREE_GB:  # zip + unzipped copy at once
-            say(f"skip {ds['id']} ({size:.1f} GB): would leave under {KEEP_FREE_GB} GB free")
-            continue
-        say(f"get {ds['id']}: {ds['title']} ({size:.1f} GB, {ds['licence']})")
-        folder = DATA / ds["id"]
-        folder.mkdir(exist_ok=True)
-        entry = m.setdefault(ds["id"], {"title": ds["title"], "licence": ds["licence"], "files": {}})
-        for name, url, fsize, md5 in files:
-            if entry["files"].get(name) == "unzipped":
-                continue
-            zpath = folder / name
-            if not zpath.exists():
-                download(url, zpath, fsize, md5)
-            say(f"  unzip {name}")
-            unzip(zpath, folder)
-            zpath.unlink()
-            entry["files"][name] = "unzipped"
-            save_manifest(m)
-        entry.update(done=True, bytes=int(size * 1e9), when=time.strftime("%Y-%m-%d"))
-        used += size
+    lock = threading.RLock()  # next_piece holds it while jobs() runs, which takes it again
+    left = {}         # dataset id -> files not yet unzipped
+    pending = [0.0]   # GB queued but not yet unzipped
+    fin_q, errors, throttled, stop = queue.Queue(), [], threading.Event(), threading.Event()
+
+    def mark_done(ds):
+        m[ds["id"]].update(done=True, bytes=int(sum(f[2] for f in ds["_files"])), when=time.strftime("%Y-%m-%d"))
         save_manifest(m)
         say(f"done {ds['id']}")
+
+    def jobs():
+        nonlocal used
+        for ds in APPROVED:
+            if (only and ds["id"] not in only) or m.get(ds["id"], {}).get("done"):
+                continue
+            files = files_of(ds)
+            size = sum(f[2] for f in files) / 1e9
+            if used + size > budget_gb:
+                say(f"skip {ds['id']} ({size:.1f} GB): over the {budget_gb} GB budget")
+                continue
+            if free_gb() - 2 * (size + pending[0]) < KEEP_FREE_GB:  # zip + unzipped copy at once
+                say(f"skip {ds['id']} ({size:.1f} GB): would leave under {KEEP_FREE_GB} GB free")
+                continue
+            say(f"get {ds['id']}: {ds['title']} ({size:.1f} GB, {ds['licence']})")
+            ds["_files"] = files
+            folder = DATA / ds["id"]
+            folder.mkdir(exist_ok=True)
+            with lock:
+                entry = m.setdefault(ds["id"], {"title": ds["title"], "licence": ds["licence"], "files": {}})
+                todo = [f for f in files if entry["files"].get(f[0]) != "unzipped"]
+                left[ds["id"]] = len(todo)
+                used += size
+                if not todo:
+                    mark_done(ds)
+            for name, url, fsize, md5 in todo:
+                with lock:
+                    pending[0] += fsize / 1e9
+                job = Job(ds, name, url, fsize, md5, folder)
+                if job.todo:
+                    yield job
+                else:
+                    fin_q.put(job)
+
+    src, cur, host = jobs(), [None], [None]
+
+    def next_piece():
+        with lock:
+            while not errors:
+                if cur[0] and cur[0].todo:
+                    if cur[0].host != host[0] and not lim.public:  # a new server: start at its known count at once
+                        gate.limit = max(gate.limit, START_CONNS.get(cur[0].host, START_CONNS["default"]))
+                    host[0] = cur[0].host
+                    return cur[0], cur[0].todo.pop(0)
+                try:
+                    cur[0] = next(src)
+                except StopIteration:
+                    return None
+            return None
+
+    def worker():
+        while True:
+            with gate:
+                p = next_piece()
+                if p is None:
+                    return
+                job, i = p
+                try:
+                    fetch(job, i, lim, throttled)
+                except Exception as e:
+                    errors.append(e)
+                    return
+                with lock:
+                    job.done.add(i)
+                    with open(job.log, "a") as g:
+                        g.write(f"{i}\n")
+                    if len(job.done) == job.n:
+                        fin_q.put(job)
+
+    def finisher():
+        while (job := fin_q.get()) is not None:
+            try:
+                if not job.dest.exists():
+                    finish(job)
+                say(f"  unzip {job.name}")
+                unzip(job.dest, job.dest.parent)
+                job.dest.unlink()
+            except Exception as e:
+                errors.append(e)
+                say(f"  {job.name}: {e}")
+                continue
+            with lock:
+                pending[0] -= job.size / 1e9
+                m[job.ds["id"]]["files"][job.name] = "unzipped"
+                save_manifest(m)
+                left[job.ds["id"]] -= 1
+                if left[job.ds["id"]] == 0:
+                    mark_done(job.ds)
+
+    def steer():
+        """Every 15 s: add connections while under the cap and the last step up still helped; halve on 429."""
+        best, last_host, frozen, t_log = None, None, 0.0, 0.0
+        b0, t0 = lim.bytes, time.time()
+        while not stop.wait(15):
+            rate = (lim.bytes - b0) / (time.time() - t0)
+            b0, t0 = lim.bytes, time.time()
+            maxc = MAX_CONNS.get(host[0], MAX_CONNS["default"])
+            if time.time() - t_log > 29:
+                t_log = time.time()
+                j = cur[0]
+                say(f"  {rate / 1e6:.1f} MB/s, {gate.limit} connections, {lim.mode} cap {lim.cap / 1e6:.0f} MB/s" +
+                    (f"; {j.name} {min(j.size, len(j.done) * CHUNK) / 1e9:.1f} / {j.size / 1e9:.1f} GB" if j else ""))
+            if lim.public:
+                gate.set(lim.conns)
+                best = None
+                continue
+            if host[0] != last_host:  # a new server (its start count is set in next_piece): measure afresh
+                last_host, best, frozen = host[0], None, 0.0
+                continue
+            if throttled.is_set():
+                throttled.clear()
+                gate.set(max(2, gate.limit // 2))
+                frozen = time.time() + 300
+                continue
+            if rate >= 0.92 * lim.cap or gate.limit >= maxc or time.time() < frozen:
+                continue
+            if best and gate.limit > best[1] and rate < best[0] * 1.08:  # the last step up didn't help: back and hold
+                gate.set(best[1])
+                frozen = time.time() + 300
+                continue
+            if not best or rate > best[0]:
+                best = (rate, gate.limit)
+            gate.set(min(maxc, gate.limit * 1.5 + 1))
+
+    gate = Gate(lim.conns or 8)
+    fin = threading.Thread(target=finisher, daemon=True)
+    fin.start()
+    threading.Thread(target=steer, daemon=True).start()
+    workers = [threading.Thread(target=worker, daemon=True) for _ in range(max(MAX_CONNS.values()))]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    fin_q.put(None)
+    fin.join()
+    stop.set()
+    if errors:
+        raise SystemExit(f"stopped: {errors[0]}")
     say(f"finished: {used:.1f} GB in {DATA}")
 
 
@@ -341,7 +459,13 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["get", "find", "status"])
     ap.add_argument("--budget", type=float, default=80, help="GB to download in total (default 80)")
     ap.add_argument("--only", default="", help="comma-separated dataset ids")
+    ap.add_argument("--net", choices=["home", "public"], help="treat this network as home or public (default: ask Windows)")
+    ap.add_argument("--cap", type=float, help="MB/s limit instead of 80%% of the measured line")
     a = ap.parse_args()
+    if a.net:
+        os.environ["FRETBOARD_NET"] = a.net
+    if a.cap:
+        os.environ["FRETBOARD_CAP_MBS" if a.net != "public" else "FRETBOARD_PUBLIC_MBS"] = str(a.cap)
     DATA.mkdir(parents=True, exist_ok=True)
     if a.cmd == "get":
         get(a.budget, {s for s in a.only.split(",") if s})

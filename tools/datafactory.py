@@ -24,6 +24,9 @@ restarts itself in it.
 import argparse, json, os, re, shutil, subprocess, sys, time, urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from netcap import limit as LIMIT  # noqa: E402
+
 DATA = Path(os.environ.get("FRETBOARD_DATA", Path.home() / "fretboard-data"))
 OUT = DATA / "factory"
 ENV = DATA / ".spleeter-env"
@@ -225,7 +228,10 @@ class RemoteZip:
         for attempt in range(6):
             try:
                 with urllib.request.urlopen(urllib.request.Request(self.url, headers={"Range": f"bytes={a}-{b}"}), timeout=120) as r:
-                    return r.read()
+                    out = []
+                    while c := LIMIT().read(r):  # shared steady cap (tools/netcap.py)
+                        out.append(c)
+                    return b"".join(out)
             except Exception as e:
                 say(f"  range read failed ({e}), retrying")
                 time.sleep(5 * (attempt + 1))
