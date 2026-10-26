@@ -243,6 +243,36 @@ def table(rows, cols):
 
 
 # ---------------------------------------------------------------- listening pages
+def pages_b():
+    """out/sepcheck/real/index.html: each real song's recording and every split's guitar stem, with part B's F1."""
+    import html
+    import os
+    out = run.OUT / "sepcheck" / "real"
+    out.mkdir(parents=True, exist_ok=True)
+    got = json.loads((run.OUT / "sepcheck.json").read_text(encoding="utf-8")).get("b", {}) if (run.OUT / "sepcheck.json").exists() else {}
+    rel = lambda f: os.path.relpath(f, out).replace(os.sep, "/")
+    body = []
+    for name in notecheck.songs(""):
+        cache = real.CACHE / name / "sepcheck"
+        wavs = sorted(cache.glob("guitar-*.wav")) if cache.exists() else []
+        if not wavs:
+            continue
+        _, _, wav, _ = notecheck.truth(run.OUT / "listen" / name)
+        rows = [f"<p>Recording<br><audio controls preload=none src='{rel(wav)}'></audio></p>"]
+        for f in wavs:
+            tag = f.stem[len("guitar-"):]
+            label = next((k for k in got.get(name, {}) if k.split(" (")[0].replace(" ", "_") == tag), tag)
+            f1 = got.get(name, {}).get(label, {}).get("f1")
+            rows.append(f"<p>Guitar · {html.escape(label)}{f' · F1 {f1:.2f}' if f1 is not None else ''}<br>"
+                        f"<audio controls preload=none src='{rel(f)}'></audio></p>")
+        body.append(f"<h2>{html.escape(name.replace('_', ' '))}</h2>" + "".join(rows))
+    (out / "index.html").write_text("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
+                                    "<title>Guitar stems, real songs</title><style>body{font:16px system-ui;max-width:640px;margin:1rem auto;padding:0 1rem}"
+                                    "audio{width:100%}h2{font-size:1.1rem;margin-top:2rem}</style><h1>Guitar stems on real songs</h1>"
+                                    "<p>Higher F1 = more of the tab's guitar notes found.</p>" + "".join(body), encoding="utf-8")
+    print(out / "index.html")
+
+
 SPLITS = {  # page folder → (title, {stem: cache folder}, the instrumental that "other" is the rest of)
     "true": ("The true stems", {}, None),
     "now": ("Now: Kim Vocal 2 + MDX23C, then Demucs", {"vocals": "kim", "guitar": "6s@mdx23c", "piano": "6s@mdx23c",
@@ -319,7 +349,11 @@ def main():
     ap.add_argument("--cpu", type=float, default=notecheck.CPU_SHARE)
     ap.add_argument("--gpu", type=float, default=notecheck.GPU_SHARE)
     ap.add_argument("--page", action="store_true", help="only write the listening pages")
+    ap.add_argument("--page-b", action="store_true", help="only write the real-song guitar page (out/sepcheck/real/)")
     args = ap.parse_args()
+    if args.page_b:
+        pages_b()
+        return
     if args.page:
         return pages()
     cores = max(1, int((os.cpu_count() or 2) * args.cpu))
