@@ -3,3 +3,8 @@ tests/roundtrip/out/
 tests/yt2gp5/cache/
 tests/yt2gp5/out/
 __pycache__/
+autopilot/state.json
+autopilot/.lock
+autopilot/STOP
+autopilot/log.md
+autopilot/STATUS.md
