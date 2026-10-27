@@ -76,6 +76,8 @@ KNOT_GAP = 8.0             # s: tempo changes at least this far apart
 KNOT_GAIN = 0.010          # a tempo change must cut the weighted squared misfit by this much (s^2); a free knot on pure noise buys ~0.003
 TEMPO_PCT = 4              # a segment's tempo stays within this of the song's one line (%)
 NEED_Z = 3.0               # a window is "clear" when its peak stands this far above its other lags (z)
+LAG_COST = 0.4             # z per second of lag away from the file's sync (a one-beat alias, 0.67 s, costs 0.27)
+POOLED_Z = 6.0             # a lag every window agrees on (chance gives ~3)
 FLOOR_Z = 1.5              # below this a window has no say in the line
 REFINE_S = 0.10            # s: the whole-song tuning moves a knot at most this far from where the windows put it
 
@@ -406,11 +408,13 @@ def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=
         Z = zscore(S, wsum)
         mid = (edges[:-1] + edges[1:]) / 2
         reach = np.r_[0, np.ceil(LAG_STEP_PCT / 100 * np.diff(mid) / DT)]  # bins the lag may move from one window to the next
-        path = viterbi(Z, LAMBDA, reach)
+        Zp = Z - LAG_COST * np.abs(lags)[None, :] * (wsum > 1e-6)[:, None]  # a strummed song looks the same one beat away: when two lags score alike, the one nearer the file's sync wins
+        path = viterbi(Zp, LAMBDA, reach)
         g = np.array([(parabola(S[w], i) - (len(lags) - 1) / 2) * DT for w, i in enumerate(path)])
         z = np.array([Z[w, i] for w, i in enumerate(path)])
         keep = (wsum > 1e-6) & (z >= FLOOR_Z)  # every window with some evidence, each weighed by how clear it is
-        if (keep & (z >= NEED_Z)).sum() < 3:
+        pooled = Z.sum(0) / np.sqrt(max(1, int((wsum > 1e-6).sum())))  # every window's score at one lag, added: a song whose windows each see a weak peak at the same lag shows up here
+        if (keep & (z >= NEED_Z)).sum() < 3 and pooled.max() < POOLED_Z:
             raise RuntimeError("There are too few clear note starts to line the tab up on.")
         t, v = centre[keep], base(centre[keep]) + g[keep]
         knots, sol = choose_knots(t, v, np.clip(z[keep] - FLOOR_Z, 0.1, 7), bars_t, ending)
@@ -488,6 +492,48 @@ def selftest(use=None):
     return ok == total
 
 
+def run(slug, use=None, rng=RANGE_S, check=False, verbose=False):
+    """Line the song up, judge it, and write the bar times when they are better than the file's (never worse).
+    The verdict of the sync the song has afterwards. Used by main() and by listen.py (every new song)."""
+    import fixsync  # the gate and the rule for what is better (they need the yt2gp5 Python)
+    import qa
+    s = qa.load(aligner.read_json(aligner.LISTEN / slug / "info.json")["name"])
+    old = qa.judge(s)
+    print(f"  {old['verdict']:6} the file's sync: {len(old['fails'])} fails, {len(old['listen'])} listens, {fixsync.score(old)[2]} bars drift")
+    fb = aligner.fretboard_of(aligner.LISTEN / slug)
+    first = fb.with_name(fb.name + ".before-wavefit")  # a second run starts from the file as it was before wavefit first wrote it, so it gives the same answer
+    start = first if first.exists() else None
+    best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
+    for name, ending in (("wavefit", False), ("wavefit + ending", True)):
+        try:
+            r = fit_song(slug, base_file=start, use=use, rng=rng, ending=ending, say=print if not ending else (lambda *x: None))
+        except RuntimeError as e:  # too few note starts to go on: the file's own sync stays
+            print(f"  wavefit left out: {e}")
+            break
+        if ending and best and list(r["knots"]) == list(best[1]["knots"]):
+            continue
+        if not ending:
+            show(r, verbose)
+        else:
+            print("  with an ending knot: " + ", ".join(f"{k0:.0f}-{k1:.0f}s {100 / sl:.2f}%" for k0, k1, sl in zip(r["knots"][:-1], r["knots"][1:], r["slopes"])))
+        v = qa.judge({**s, "sections": r["sections"]}, points=r["points"])
+        print(f"  {v['verdict']:6} {name}: {len(v['fails'])} fails, {len(v['listen'])} listens, {fixsync.score(v)[2]} bars drift")
+        for x in v["fails"] + v["listen"]:
+            print(f"           {x[:150]}")
+        if best is None or fixsync.score(v) < fixsync.score(best[2]):
+            best = (name, r, v)
+    if best is None:
+        return old
+    name, r, new = best
+    better = fixsync.score(new) < fixsync.score(old)
+    if better and not check:
+        out = aligner.save(slug, r["points"], f"{name}: {old['verdict']} -> {new['verdict']}", by="wavefit", sections=r["sections"])
+        print(f"{name} is better, written: {out['file']} (the first version is {out['backup']}); import it in Fretboard with Replace it")
+        return new
+    print("not better than the file's sync, so nothing is written" if not better else f"{name} is better (--check: nothing written)")
+    return old
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
@@ -507,37 +553,8 @@ def main():
         sys.exit(__doc__)
     slug = find(a.name)
     print(slug)
-    import fixsync  # the gate and the rule for what is better (they need the yt2gp5 Python)
-    import qa
-    s = qa.load(aligner.read_json(aligner.LISTEN / slug / "info.json")["name"])
-    old = qa.judge(s)
-    print(f"  {old['verdict']:6} the file's sync: {len(old['fails'])} fails, {len(old['listen'])} listens, {fixsync.score(old)[2]} bars drift")
-    fb = aligner.fretboard_of(aligner.LISTEN / slug)
-    first = fb.with_name(fb.name + ".before-wavefit")  # a second run starts from the file as it was before wavefit first wrote it, so it gives the same answer
-    start = first if first.exists() else None
-    best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
-    for name, ending in (("wavefit", False), ("wavefit + ending", True)):
-        r = fit_song(slug, base_file=start, use=use, rng=a.range, ending=ending, say=print if not ending else (lambda *x: None))
-        if ending and best and list(r["knots"]) == list(best[1]["knots"]):
-            continue
-        if not ending:
-            show(r, a.verbose)
-        elif ending:
-            print("  with an ending knot: " + ", ".join(f"{k0:.0f}-{k1:.0f}s {100 / sl:.2f}%" for k0, k1, sl in zip(r["knots"][:-1], r["knots"][1:], r["slopes"])))
-        v = qa.judge({**s, "sections": r["sections"]}, points=r["points"])
-        print(f"  {v['verdict']:6} {name}: {len(v['fails'])} fails, {len(v['listen'])} listens, {fixsync.score(v)[2]} bars drift")
-        for x in v["fails"] + v["listen"]:
-            print(f"           {x[:150]}")
-        if best is None or fixsync.score(v) < fixsync.score(best[2]):
-            best = (name, r, v)
-    name, r, new = best
-    better = fixsync.score(new) < fixsync.score(old)
-    if better and not a.check:
-        out = aligner.save(slug, r["points"], f"{name}: {old['verdict']} -> {new['verdict']}", by="wavefit", sections=r["sections"])
-        print(f"{name} is better, written: {out['file']} (the first version is {out['backup']}); import it in Fretboard with Replace it")
-    else:
-        print("not better than the file's sync, so nothing is written" if not better else f"{name} is better (--check: nothing written)")
-    sys.exit(0 if new["verdict"] == "PASS" else 2 if new["verdict"] == "LISTEN" else 3)
+    v = run(slug, use=use, rng=a.range, check=a.check, verbose=a.verbose)
+    sys.exit(0 if v["verdict"] == "PASS" else 2 if v["verdict"] == "LISTEN" else 3)
 
 
 if __name__ == "__main__":

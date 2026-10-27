@@ -112,7 +112,7 @@ def main():
     rows = [old[s["title"]] for s in songs if s["title"] in old]
     OUT.write_text("# Sync ladder\n\n" + table(rows) + "\n", encoding="utf-8")
     print("\n" + table(rows))
-    print(f"\n{sum(r['verdict'] == 'PASS' for r in rows)} PASS of {len(rows)}; table: {out}")
+    print(f"\n{sum(r['verdict'] == 'PASS' for r in rows)} PASS of {len(rows)}; table: {OUT}")
 
 
 if __name__ == "__main__":

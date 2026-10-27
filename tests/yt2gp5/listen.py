@@ -6,6 +6,7 @@
     python tests/yt2gp5/listen.py NAME --export   only write the .fretboard file: one steady tempo and the right start
     python tests/yt2gp5/listen.py NAME --fit      fit every bar to the recording instead (only when the user asks)
     python tests/yt2gp5/listen.py NAME --raw      the line-up as it came (bar by bar, eased)
+    python tests/yt2gp5/listen.py NAME --no-wavefit   skip the note-start fit (wavefit.py) that normally follows the one tempo
 
 Each track of the tab is played by Fretboard's synth on its own, then stretched (pitch kept) to follow the
 recording's timing, as real.whole_match lined the two up. A local page plays the recording in the left ear and
@@ -350,6 +351,13 @@ def main():
         print("fitting every bar to the recording's beats..." if "--fit" in a else "finding the tempo and the start...")
         fb.with_suffix(".fretboard.before").unlink(missing_ok=True)  # the line-up just written is the new "before"
         syncqa.improve(song, fit="--fit" in a, one="--one" in a)
+        fb.with_suffix(".fretboard.before-wavefit").unlink(missing_ok=True)  # a backup of an older line-up isn't this song's
+        if "--no-wavefit" not in a:  # then the tab's note starts against the recording's (wavefit.py): a late start, the band slowing down; written only when the gate likes it better
+            try:
+                import wavefit
+                wavefit.run(out.name)
+            except Exception as e:
+                print(f"  (wavefit left out: {e})")
         import qa  # the gate: PASS, LISTEN or FAIL (qa.py --selftest proves it catches broken syncs)
         verdict = qa.judge(qa.load(song["name"]))
         (out / "qa.json").write_text(json.dumps(verdict, indent=1), encoding="utf-8")
