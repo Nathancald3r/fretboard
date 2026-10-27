@@ -159,6 +159,11 @@ def save(slug, points, note):
         raise ValueError("The bar times must start at 0 or later and keep rising.")
     entry["syncPoints"] = pts
     entry["syncDone"] = True
+    # "Replace it" keeps the library song's own nudge, start section and tempo unless the file sets them,
+    # and they would sit on top of these bar times (the nudge buttons in the app, the old start point).
+    entry["syncOffset"] = 0
+    entry["videoMaster"] = 0
+    entry["videoBpm"] = 0
     auto = entry.get("autoSync") or {}
     auto["aligned"] = {"by": "aligner", "at": datetime.datetime.now().isoformat(timespec="seconds"), "note": note}
     entry["autoSync"] = auto
