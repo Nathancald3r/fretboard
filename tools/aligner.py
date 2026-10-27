@@ -146,10 +146,10 @@ def song_data(slug):
     }
 
 
-def save(slug, points, note):
+def save(slug, points, note, by="aligner"):
     d = LISTEN / slug
     fb = fretboard_of(d)
-    backup = fb.with_name(fb.name + ".before-aligner")
+    backup = fb.with_name(fb.name + f".before-{by}")
     if not backup.exists():
         backup.write_bytes(fb.read_bytes())  # the first version stays; later saves build on each other
     doc = json.loads(fb.read_text(encoding="utf-8"))
@@ -165,7 +165,7 @@ def save(slug, points, note):
     entry["videoMaster"] = 0
     entry["videoBpm"] = 0
     auto = entry.get("autoSync") or {}
-    auto["aligned"] = {"by": "aligner", "at": datetime.datetime.now().isoformat(timespec="seconds"), "note": note}
+    auto["aligned"] = {"by": by, "at": datetime.datetime.now().isoformat(timespec="seconds"), "note": note}
     entry["autoSync"] = auto
     fb.write_text(json.dumps(doc), encoding="utf-8")
     return {"ok": True, "file": str(fb), "backup": str(backup), "points": len(pts)}

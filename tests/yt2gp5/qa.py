@@ -78,9 +78,14 @@ def features(out, song, info):
     """The recording's and the tab's note-start strength (cached beside the song)."""
     import librosa
     f = out / "qa_env.npz"
-    if f.exists():
+    wav = real.CACHE / run.slug(song["name"]) / f"recording-{info['url'].split('v=')[-1].split('&')[0]}.wav"
+    if f.exists() and wav.exists():
+        import wave
+        with wave.open(str(wav)) as w:
+            seconds = w.getnframes() / w.getframerate()
         d = np.load(f)
-        if str(d["sha"]) == info["gp_sha"] and "rec_c" in d:
+        # the same tab and the same recording: a new link gives another length (Ho Hey was judged on its old video, 2026-10-27)
+        if str(d["sha"]) == info["gp_sha"] and "rec_c" in d and abs(float(d["length"]) - seconds) < 0.2:
             return d["env"], d["tab_env"], d["rec_c"], d["tab_c"], float(d["length"])
     wav = real.download(info["url"], real.CACHE / run.slug(song["name"]))
     rec, _ = librosa.load(str(wav), sr=SR, mono=True)

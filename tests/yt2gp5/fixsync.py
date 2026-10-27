@@ -76,6 +76,12 @@ def tries(s, files=True):
     starts = syncqa.section_starts(notes, len(bars))
     if len(starts) > 1:
         out.append(("sections", points_of(syncqa.section_tempo(one, bars, starts, look), bars), starts))
+    try:  # the note starts of the tab against the recording's, window by window (wavefit.py)
+        import wavefit
+        w = wavefit.fit_song(info["slug"], base_points=sorted(s["points"]), say=lambda *a: None)
+        out.append(("wavefit", w["points"], w["sections"]))
+    except Exception as e:  # no stems or saved tracks, or too few clear note starts: this try is left out
+        print(f"  (wavefit left out: {e})")
     for name, pts, secs in list(out):
         moved = drum_moved(s, pts)
         if moved:
