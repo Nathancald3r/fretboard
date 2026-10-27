@@ -80,6 +80,9 @@ def tries(s, files=True):
         import wavefit
         w = wavefit.fit_song(info["slug"], base_points=sorted(s["points"]), say=lambda *a: None)
         out.append(("wavefit", w["points"], w["sections"]))
+        e = wavefit.fit_song(info["slug"], base_points=sorted(s["points"]), say=lambda *a: None, ending=True)  # the band slowing down at the end
+        if list(e["knots"]) != list(w["knots"]):
+            out.append(("wavefit + ending", e["points"], e["sections"]))
     except Exception as e:  # no stems or saved tracks, or too few clear note starts: this try is left out
         print(f"  (wavefit left out: {e})")
     for name, pts, secs in list(out):

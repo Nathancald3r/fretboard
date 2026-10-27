@@ -20,10 +20,16 @@ How (the same few steps for every song):
      of the search, it is centred again on what it found and repeated.
   3. One path through the windows, the best total evidence, with a small cost for every ms the lag moves from one
      window to the next (Viterbi). It decides among look-alike peaks (the 8th notes of a strum) by the whole
-     song, not by one window. A parabola on the peak gives the lag to about 2 ms.
+     song, not by one window; the lag may move at most 6% of the time between two windows (a band's tempo, not half
+     a beat in one step). A parabola on the peak gives the lag to about 2 ms. A short last window is joined to the
+     one before it (a lone last bar voted -225 ms on Ho Hey).
   4. One straight line (one steady tempo and the start) through the confident windows (robust fit). A tempo change
      is added only where a stretch of windows sits more than 40 ms off the line, only at a bar line, only with two
      clear windows on each side, and only within 4% of the line's speed.
+     The ending is a second try, "wavefit + ending": bands slow down in the last bars (Ho Hey: 3%, the user heard
+     it) where there are few clear windows. The last stretch takes one more knot, on the line, with its own end
+     value; the steady middle is left exactly as it was. A few windows can't tell a real slow-down from a chance
+     peak (the self-test's noisy case shows it), so this try is only kept when the gate likes it better.
   5. Whole-song tuning: each tempo knot is nudged (+-0.1 s, steps 20 ms down to 1 ms) to the time where the whole
      tab's note starts line up best with the whole recording's. This is the step that makes the steady middle exact.
   6. The trust check is the gate itself (qa.judge, scored by fixsync.score). Written only when it is better than the
@@ -63,9 +69,11 @@ STEMS = ("drums", "bass", "other", "vocals")
 STEM_OF = {"guitar": "other", "piano": "other", "other": "other", "bass": "bass", "drums": "drums", "vocals": "vocals"}
 WINDOW_S = 5.0             # a window is whole bars of at least this long
 RANGE_S = 1.5              # the lag searched either side of the file's own sync
+LAG_STEP_PCT = 6           # the lag moves at most this % of the time between two windows (a tempo change a band could make)
 LAMBDA = 0.02              # cost (in z) per 5 ms the lag moves between windows
 KNOT_TOL = 0.040           # s: a stretch this far off the line gets its own tempo (the gate's STEADY_MS)
 KNOT_GAP = 8.0             # s: tempo changes at least this far apart
+KNOT_GAIN = 0.010          # a tempo change must cut the weighted squared misfit by this much (s^2); a free knot on pure noise buys ~0.003
 TEMPO_PCT = 4              # a segment's tempo stays within this of the song's one line (%)
 NEED_Z = 3.0               # a window is "clear" when its peak stands this far above its other lags (z)
 FLOOR_Z = 1.5              # below this a window has no say in the line
@@ -185,7 +193,7 @@ def windows(bars_t):
         if t - edges[-1] >= WINDOW_S:
             edges.append(float(t))
     end = float(bars_t[-1] + np.median(np.diff(bars_t)))
-    if end - edges[-1] < WINDOW_S / 2 and len(edges) > 1:
+    if end - edges[-1] < WINDOW_S and len(edges) > 1:  # a short last window is noise (Ho Hey's last bar voted -225 ms): join it to the one before
         edges.pop()
     edges.append(end)
     return np.array(edges)
@@ -229,19 +237,21 @@ def zscore(S, wsum):
     return Z
 
 
-def viterbi(Z, lam):
-    """The path of lags (one per window) with the most evidence, paying lam per bin the lag moves between windows."""
+def viterbi(Z, lam, reach):
+    """The path of lags (one per window) with the most evidence, paying lam per bin the lag moves between windows, and
+    never moving more than reach[w] bins into window w (a band's tempo changes by a few %, not by half a beat in one step)."""
     W, G = Z.shape
     best, back = np.zeros((W, G)), np.zeros((W, G), int)
     best[0] = Z[0]
     for w in range(1, W):
-        f, src = best[w - 1].copy(), np.arange(G)
-        for g in range(1, G):
-            if f[g - 1] - lam > f[g]:
-                f[g], src[g] = f[g - 1] - lam, src[g - 1]
-        for g in range(G - 2, -1, -1):
-            if f[g + 1] - lam > f[g]:
-                f[g], src[g] = f[g + 1] - lam, src[g + 1]
+        L = min(int(reach[w]), G - 1)
+        f, src = np.full(G, -np.inf), np.zeros(G, int)
+        for s in range(-L, L + 1):  # from lag g - s in the window before to lag g in this one
+            lo, hi = max(0, s), min(G, G + s)
+            cand = best[w - 1][lo - s:hi - s] - lam * abs(s)
+            better = cand > f[lo:hi]
+            f[lo:hi] = np.where(better, cand, f[lo:hi])
+            src[lo:hi] = np.where(better, np.arange(lo, hi) - s, src[lo:hi])
         best[w], back[w] = Z[w] + f, src
     path = [int(np.argmax(best[-1]))]
     for w in range(W - 1, 0, -1):
@@ -274,24 +284,24 @@ def pw_fit(t, v, w, knots):
     return sol, B @ sol
 
 
-def choose_knots(t, v, w, bars_t):
+def choose_knots(t, v, w, bars_t, ending=False):
     """Straight line first; a knot (a tempo change) only where a stretch of windows stays off it, at the nearest bar line."""
     knots = [float(bars_t[0]), float(bars_t[-1])]
     sol, _ = pw_fit(t, v, w, np.array(knots))
     s0 = float((np.diff(sol) / np.diff(knots))[0])
     plausible = lambda kn, sl: bool(np.all(np.abs(np.diff(sl) / np.diff(kn) / s0 - 1) <= TEMPO_PCT / 100))
-    for _ in range(12):
+    clear = w >= NEED_Z - FLOOR_Z
+    for _ in range(12):  # 1. the strict pass: each stretch needs two clear windows of its own
         sol, fit = pw_fit(t, v, w, np.array(knots))
         res = np.where(w > 0, v - fit, 0.0)
         sm = np.array([np.median(res[max(0, i - 1):i + 2]) for i in range(len(res))])  # a lone window can't make a knot
         for i in np.argsort(-np.abs(sm)):
             if abs(sm[i]) <= KNOT_TOL:
-                return np.array(knots), sol
+                break
             k = float(bars_t[int(np.argmin(np.abs(bars_t - t[i])))])
             trial = sorted(knots + [k])
             if not all(abs(k - x) >= KNOT_GAP for x in knots):
                 continue
-            clear = w >= NEED_Z - FLOOR_Z
             support = [int(np.sum((t >= a) & (t <= b) & clear)) for a, b in zip(trial[:-1], trial[1:])]
             sol_t, _ = pw_fit(t, v, w, np.array(trial))
             if min(support) >= 2 and plausible(np.array(trial), sol_t):  # two clear windows to stand on, and a speed a band could play
@@ -299,8 +309,34 @@ def choose_knots(t, v, w, bars_t):
                 break
         else:
             break
-    sol, _ = pw_fit(t, v, w, np.array(knots))
-    return np.array(knots), sol
+        if abs(sm[i]) <= KNOT_TOL:
+            break
+    sol, fit = pw_fit(t, v, w, np.array(knots))
+    # 2. the ending: a band slows down in the last bars, where there are few clear windows and the long steady middle
+    # before them has none of its own. The middle stays exactly as it is; the last stretch gets one more knot, on the
+    # line, and its own end value from the windows after it. Only the bar line that fits them best, and only if it buys a lot.
+    res = np.where(w > 0, v - fit, 0.0)
+    sm = np.array([np.median(res[max(0, i - 1):i + 2]) for i in range(len(res))])
+    last = knots[-1]
+    if ending and np.abs(sm[t >= knots[-2]]).max() > KNOT_TOL:
+        best = None
+        for k in map(float, bars_t):
+            if not (knots[-2] + KNOT_GAP <= k <= last - KNOT_GAP):
+                continue
+            m = (t >= k) & (t <= last)
+            if clear[m].sum() < 2:
+                continue
+            yk = float(np.interp(k, knots, sol))
+            x = (t[m] - k) / (last - k)
+            y = yk + float(np.sum(w[m] * x * (v[m] - yk)) / np.sum(w[m] * x * x))
+            after = v[m] - (yk + (y - yk) * x)
+            gain = float(np.sum(w[m] * ((v[m] - fit[m]) ** 2 - after ** 2)))
+            coherent = bool(np.all(np.abs(after[clear[m]]) <= KNOT_TOL))  # every clear window after the knot agrees with the one new line (a lone alias doesn't)
+            if gain >= KNOT_GAIN and coherent and plausible(np.array([k, last]), np.array([yk, y])) and (best is None or gain > best[0]):
+                best = (gain, k, yk, y)
+        if best:
+            knots, sol = knots[:-1] + [best[1], last], np.r_[sol[:-1], best[2], best[3]]
+    return np.array(knots), np.asarray(sol)
 
 
 def refine(layers, knots, vals, reach=REFINE_S):
@@ -349,7 +385,7 @@ def get_curves(info, vid, use):
     return _CACHE[key]
 
 
-def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print):
+def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print, ending=False):
     """The song's bar times lined up on the recording, starting from the points given (or the file's own)."""
     d = aligner.LISTEN / slug
     info = aligner.read_json(d / "info.json")
@@ -368,14 +404,16 @@ def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=
     for attempt in range(4):
         S, wsum, centre = score_matrix(layers, base, edges, lags)
         Z = zscore(S, wsum)
-        path = viterbi(Z, LAMBDA)
+        mid = (edges[:-1] + edges[1:]) / 2
+        reach = np.r_[0, np.ceil(LAG_STEP_PCT / 100 * np.diff(mid) / DT)]  # bins the lag may move from one window to the next
+        path = viterbi(Z, LAMBDA, reach)
         g = np.array([(parabola(S[w], i) - (len(lags) - 1) / 2) * DT for w, i in enumerate(path)])
         z = np.array([Z[w, i] for w, i in enumerate(path)])
         keep = (wsum > 1e-6) & (z >= FLOOR_Z)  # every window with some evidence, each weighed by how clear it is
         if (keep & (z >= NEED_Z)).sum() < 3:
             raise RuntimeError("There are too few clear note starts to line the tab up on.")
         t, v = centre[keep], base(centre[keep]) + g[keep]
-        knots, sol = choose_knots(t, v, np.clip(z[keep] - FLOOR_Z, 0.1, 7), bars_t)
+        knots, sol = choose_knots(t, v, np.clip(z[keep] - FLOOR_Z, 0.1, 7), bars_t, ending)
         sync = Sync(knots, sol)
         if attempt == 3 or not (np.abs(g[keep]) >= rng - 0.3).any():
             break
@@ -469,22 +507,33 @@ def main():
         sys.exit(__doc__)
     slug = find(a.name)
     print(slug)
-    r = fit_song(slug, use=use, rng=a.range)
-    show(r, a.verbose)
     import fixsync  # the gate and the rule for what is better (they need the yt2gp5 Python)
     import qa
     s = qa.load(aligner.read_json(aligner.LISTEN / slug / "info.json")["name"])
-    old, new = qa.judge(s), qa.judge({**s, "sections": r["sections"]}, points=r["points"])
-    for name, v in (("the file's sync", old), ("wavefit", new)):
+    old = qa.judge(s)
+    print(f"  {old['verdict']:6} the file's sync: {len(old['fails'])} fails, {len(old['listen'])} listens, {fixsync.score(old)[2]} bars drift")
+    best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
+    for name, ending in (("wavefit", False), ("wavefit + ending", True)):
+        r = fit_song(slug, use=use, rng=a.range, ending=ending, say=print if not ending else (lambda *x: None))
+        if ending and best and list(r["knots"]) == list(best[1]["knots"]):
+            continue
+        if not ending:
+            show(r, a.verbose)
+        elif ending:
+            print("  with an ending knot: " + ", ".join(f"{k0:.0f}-{k1:.0f}s {100 / sl:.2f}%" for k0, k1, sl in zip(r["knots"][:-1], r["knots"][1:], r["slopes"])))
+        v = qa.judge({**s, "sections": r["sections"]}, points=r["points"])
         print(f"  {v['verdict']:6} {name}: {len(v['fails'])} fails, {len(v['listen'])} listens, {fixsync.score(v)[2]} bars drift")
         for x in v["fails"] + v["listen"]:
             print(f"           {x[:150]}")
+        if best is None or fixsync.score(v) < fixsync.score(best[2]):
+            best = (name, r, v)
+    name, r, new = best
     better = fixsync.score(new) < fixsync.score(old)
     if better and not a.check:
-        out = aligner.save(slug, r["points"], f"wavefit: {old['verdict']} -> {new['verdict']}", by="wavefit")
-        print(f"better, written: {out['file']} (the first version is {out['backup']}); import it in Fretboard with Replace it")
+        out = aligner.save(slug, r["points"], f"{name}: {old['verdict']} -> {new['verdict']}", by="wavefit", sections=r["sections"])
+        print(f"{name} is better, written: {out['file']} (the first version is {out['backup']}); import it in Fretboard with Replace it")
     else:
-        print("not better than the file's sync, so nothing is written" if not better else "better (--check: nothing written)")
+        print("not better than the file's sync, so nothing is written" if not better else f"{name} is better (--check: nothing written)")
     sys.exit(0 if new["verdict"] == "PASS" else 2 if new["verdict"] == "LISTEN" else 3)
 
 

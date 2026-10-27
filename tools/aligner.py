@@ -146,7 +146,7 @@ def song_data(slug):
     }
 
 
-def save(slug, points, note, by="aligner"):
+def save(slug, points, note, by="aligner", sections=None):
     d = LISTEN / slug
     fb = fretboard_of(d)
     backup = fb.with_name(fb.name + f".before-{by}")
@@ -166,6 +166,8 @@ def save(slug, points, note, by="aligner"):
     entry["videoBpm"] = 0
     auto = entry.get("autoSync") or {}
     auto["aligned"] = {"by": by, "at": datetime.datetime.now().isoformat(timespec="seconds"), "note": note}
+    if sections is not None:  # the bars where the tempo changes (0-based here, 1-based in the file, as fixsync.py writes them): the gate lets those jump
+        auto.setdefault("beats", {})["tempo_sections"] = [int(p) + 1 for p in sections]
     entry["autoSync"] = auto
     fb.write_text(json.dumps(doc), encoding="utf-8")
     return {"ok": True, "file": str(fb), "backup": str(backup), "points": len(pts)}

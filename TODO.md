@@ -6,7 +6,7 @@ Live, editable board: https://claude.ai/artifact/6bKMech8PfTJJwNHbYdVf7 (page `r
 
 **Next up, in order**
 1. Get the PC checked (burning smell, 2026-10-26). No long CPU/GPU runs before that.
-2. Ho Hey's start: `python tests/yt2gp5/wavefit.py "Ho Hey"` is done (bar 1 at 2.467 s, intro 98.2%, gate FAIL only on bars 37-40 and 49-51). Next: the user imports `tests/yt2gp5/out/listen/The_Lumineers_-_Ho_Hey_official/Ho_Hey.fretboard` with "Replace it", listens, and fine-tunes in `python tools/aligner.py "Ho Hey"` if needed. Then run wavefit on the other ladder songs. Light CPU, Wi-Fi OK.
+2. Ho Hey's start and ending: `python tests/yt2gp5/wavefit.py "Ho Hey"` is done (bar 1 at 2.467 s, intro 98.2%, the band slows ~3% in the last 9 s, gate FAIL only on bars 37-40). The user heard the first version perfect up to bar 47; the ending fix is new. Next: the user imports `tests/yt2gp5/out/listen/The_Lumineers_-_Ho_Hey_official/Ho_Hey.fretboard` with "Replace it", listens, and fine-tunes in `python tools/aligner.py "Ho Hey"` if needed. Then run wavefit on the other ladder songs. Light CPU, Wi-Fi OK.
 3. Sync ladder stage 1: 10 of 12 songs PASS, guitar only (`python tests/yt2gp5/ladder.py --tracks guitar`). Heavy CPU, Wi-Fi OK.
 4. Plain hands-off docs before 2026-11-04: one page per job (song from a link, UG helper, APK, data factory), each with its one command and what PASS / FAIL means.
 
