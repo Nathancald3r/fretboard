@@ -2,7 +2,7 @@
 
 ## Roadmap: what's next (2026-10-27)
 
-Live board: https://claude.ai/artifact/5udvK5nrRMJgcBKCF7SAb1 (source `roadmap/board.html`). Wi-Fi OK = nothing to download.
+Live, editable board: https://claude.ai/artifact/6bKMech8PfTJJwNHbYdVf7 (page `roadmap/board.html`, starting cards `roadmap/board-seed.json`; the cards live in the artifact's database). Wi-Fi OK = nothing to download.
 
 **Next up, in order**
 1. Get the PC checked (burning smell, 2026-10-26). No long CPU/GPU runs before that.

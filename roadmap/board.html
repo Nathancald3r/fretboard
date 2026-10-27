@@ -2,7 +2,8 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
 <style>
-/* Layout: status strip, filter row, four columns (Avenues → Next → Doing → Done) that wrap to 2 then 1; tap a card to move it right, tap i for details */
+/* Layout: status line, progress, goal chips with their own progress, four columns (Avenues → Next up → Doing → Done) that wrap to 2 then 1.
+   Cards live in the artifact database: edit, drag, tick steps, and Claude's own updates all show live. */
 :root{
   --bg:#f2f4f3;--panel:#e6e9e7;--card:#ffffff;--fg:#1c2421;--muted:#5b6762;--line:#d0d6d2;
   --accent:#2c4a6b;--accent-bg:#e2e9f2;
@@ -24,198 +25,385 @@
   --crit:#ff8a80;--crit-bg:#3d1c1a;color-scheme:dark}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
-.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
 h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,4vw,36px);margin:0;letter-spacing:-.01em;text-wrap:balance}
 .sub{color:var(--muted);margin:2px 0 0;max-width:62ch}
-.pct{font-family:var(--mono);font-size:32px;font-variant-numeric:tabular-nums;text-align:right}
+.pct{font-family:var(--mono);font-size:32px;font-variant-numeric:tabular-nums;text-align:right;line-height:1.1}
 .pct small{display:block;font-size:12px;color:var(--muted)}
 .bar{height:10px;background:var(--panel);border-radius:6px;overflow:hidden}
 .bar>i{display:block;height:100%;width:0;background:var(--done);transition:width .4s ease}
+.status{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;font-size:13px;color:var(--muted)}
+.status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px}
+.status.live .dot{background:var(--done)}
+.status.bad .dot{background:var(--crit)}
+.status .sp{flex:1}
+.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:5px 12px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.pri{background:var(--accent);color:var(--card);border-color:var(--accent)}
+.btn.warn{color:var(--crit)}
+.btn:focus-visible,.f:focus-visible,.tt:focus-visible,.mv button:focus-visible,.lnk:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.alerts{display:flex;flex-direction:column;gap:6px}
 .alert{display:flex;gap:10px;align-items:flex-start;background:var(--crit-bg);color:var(--crit);border-radius:10px;padding:10px 14px;font-weight:700}
 .alert span{font-weight:400;color:var(--fg)}
 .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .filters .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
-.f{font:inherit;font-size:13px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;transition:background .15s,color .15s}
+.f{font:inherit;font-size:13px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);color:var(--muted);cursor:pointer;
+  background:linear-gradient(to right,var(--done-bg) var(--p,0%),var(--card) var(--p,0%));transition:color .15s}
+.f b{font-family:var(--mono);font-weight:500;font-size:11.5px;margin-left:6px;font-variant-numeric:tabular-nums}
 .f[aria-pressed="true"]{background:var(--accent);color:var(--card);border-color:var(--accent)}
-.f:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.goal{margin:-6px 0 0;color:var(--fg);min-height:1.5em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.goal input{font:inherit;flex:1 1 280px;min-width:0}
+.lnk{font:inherit;font-size:13px;background:none;border:0;color:var(--accent);text-decoration:underline;cursor:pointer;padding:0}
 .cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
 @media (max-width:1040px){.cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:620px){.cols{grid-template-columns:minmax(0,1fr)}}
-.col{background:var(--panel);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:120px;transition:outline-color .15s}
+.col{background:var(--panel);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:120px}
 .col.over{outline:2px dashed var(--muted);outline-offset:-4px}
-.col h2{font-family:var(--display);font-weight:500;font-size:17px;margin:2px 4px 0;display:flex;justify-content:space-between;align-items:center}
+.col h2{font-family:var(--display);font-weight:500;font-size:17px;margin:2px 4px 0;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.col h2 span{display:flex;align-items:center;gap:8px}
 .col h2 b{font-family:var(--mono);font-weight:500;font-size:13px;color:var(--muted)}
+.col h2 button{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--accent);font-size:16px;line-height:1;cursor:pointer;padding:0}
+.col h2 button:hover{background:var(--accent);color:var(--card)}
+.col h2 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .col p.hint{margin:0 4px 4px;font-size:12.5px;color:var(--muted)}
 .col[data-s="next"] h2{color:var(--next)}.col[data-s="doing"] h2{color:var(--doing)}.col[data-s="done"] h2{color:var(--done)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:grab;
-  transition:box-shadow .15s,border-color .15s;will-change:transform}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;transition:box-shadow .15s,border-color .15s;will-change:transform}
+.card[draggable="true"]{cursor:grab}
 .card:hover{border-color:var(--muted)}
-.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .card[data-s="next"]{border-left:4px solid var(--next);border-radius:0 8px 8px 0}
 .card[data-s="doing"]{border-left:4px solid var(--doing);border-radius:0 8px 8px 0;background:var(--doing-bg)}
 .card[data-s="done"] .tt{text-decoration:line-through;color:var(--muted)}
 .card.crit{border-color:var(--crit);background:var(--crit-bg)}
+.card.before{box-shadow:0 -3px 0 0 var(--accent)}
+.card.fresh{animation:fresh 2.4s ease-out}
+@keyframes fresh{0%,60%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
 .row{display:flex;gap:10px;align-items:flex-start}
 .tag{flex:none;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;background:var(--accent-bg);color:var(--accent);margin-top:2px}
-.t{flex:1;min-width:0}
-.tt{display:block}
+.tt{flex:1;min-width:0;font:inherit;text-align:left;background:none;border:0;color:var(--fg);padding:0;cursor:pointer;overflow-wrap:anywhere}
+.mv{flex:none;display:flex;gap:4px}
+.mv button{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0}
+.mv button:hover{background:var(--accent);color:var(--card);border-color:var(--accent)}
 .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .pill{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .pill.ok{color:var(--done);border-color:transparent;background:var(--done-bg)}
 .pill.warn{color:var(--next);border-color:transparent;background:var(--next-bg)}
 .pill.bad{color:var(--crit);border-color:transparent;background:var(--crit-bg)}
-.info{flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--accent);
-  font-family:var(--mono);font-size:13px;cursor:pointer;display:grid;place-items:center;padding:0;transition:background .2s,color .2s,transform .25s}
-.info:hover,.info.on{background:var(--accent);color:var(--card);border-color:var(--accent)}
-.info.on{transform:rotate(180deg)}
-.info:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.back{flex:none;border:0;background:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px}
-.back:hover{color:var(--fg)}
-/* Smooth drop-down: rows animate from 0fr to 1fr */
 .drop{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s ease,opacity .25s ease;opacity:0}
 .drop.open{grid-template-rows:1fr;opacity:1}
 .drop>div{overflow:hidden;min-height:0}
 .dl{margin:10px 0 0;padding-top:10px;border-top:1px dashed var(--line);display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:13.5px}
 .dl dt{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding-top:2px}
-.dl dd{margin:0}
-.dl code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:1px 4px;border-radius:3px;word-break:break-all}
+.dl dd{margin:0;overflow-wrap:anywhere}
+code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:1px 4px;border-radius:3px;word-break:break-all}
+.steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.steps li label{display:flex;gap:8px;align-items:flex-start;padding:3px 0;cursor:pointer}
+.steps input{margin-top:4px;flex:none}
+.steps input:checked+span{color:var(--muted);text-decoration:line-through}
+.dsub{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 0 0}
+.acts{display:flex;gap:8px;margin-top:10px}
 .empty{color:var(--muted);font-size:13px;padding:8px 4px}
-.foot{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px}
-.foot button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:6px 12px;cursor:pointer}
-@media (prefers-reduced-motion:reduce){.bar>i,.drop,.info,.card{transition:none!important}}
+.foot{display:flex;flex-direction:column;gap:8px;color:var(--muted);font-size:13px}
+.foot .cd{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.foot code{color:var(--fg);overflow-wrap:anywhere}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;z-index:20;max-width:calc(100vw - 32px)}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);padding:0;width:min(580px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
+dialog::backdrop{background:rgb(0 0 0 / .45)}
+dialog form{display:flex;flex-direction:column;gap:12px;padding:18px}
+dialog h2{font-family:var(--display);font-weight:700;font-size:22px;margin:0}
+.fg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:480px){.fg{grid-template-columns:minmax(0,1fr)}}
+.fl{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+.fl.w{grid-column:1/-1}
+.fl input,.fl select,.fl textarea,.goal input{font:inherit;font-size:14px;text-transform:none;letter-spacing:0;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-width:0}
+.fl textarea{resize:vertical;min-height:64px}
+.ck{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--fg);text-transform:none;letter-spacing:0}
+.dacts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.dacts .sp{flex:1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){.bar>i,.drop,.card{transition:none!important}.card.fresh{animation:none}}
 </style>
 
 <div class="wrap">
   <header>
     <div>
       <h1>Fretboard roadmap</h1>
-      <p class="sub">Every open avenue for Fretboard, with what's next. Tap a card to move it right, ↩ to move it back, or drag it. Tap <b>i</b> to see why, the cost and what it unlocks.</p>
+      <p class="sub">The goals for Fretboard and the steps to reach each one. Drag a card, use ‹ ›, tick its steps, or open it to edit. Changes save for everyone and show live.</p>
     </div>
-    <div class="pct" id="pct">0%<small>of cards done</small></div>
+    <div class="pct" id="pct">0%<small id="pct-s">of cards done</small></div>
   </header>
-  <div class="bar"><i id="bar"></i></div>
-  <div class="alert" role="note">PC first.<span>It smelled like burning on 2026-10-26. Get it checked before any long CPU or GPU run (sync ladder, TabMaker training).</span></div>
-  <div class="filters" id="filters"><span class="lbl">Show</span></div>
-  <div class="cols">
-    <section class="col" data-s="avenue"><h2>Avenues <b id="n-avenue">0</b></h2><p class="hint">Possible routes. Pick one to move up.</p></section>
-    <section class="col" data-s="next"><h2>Next up <b id="n-next">0</b></h2><p class="hint">In order. Top card first.</p></section>
-    <section class="col" data-s="doing"><h2>Doing <b id="n-doing">0</b></h2><p class="hint">One or two at a time.</p></section>
-    <section class="col" data-s="done"><h2>Done <b id="n-done">0</b></h2><p class="hint">Shipped and pushed.</p></section>
+  <div class="bar" role="progressbar" aria-label="Cards done" aria-valuemin="0" aria-valuemax="100" id="barwrap"><i id="bar"></i></div>
+  <div class="status" id="status" role="status"><span><i class="dot"></i><span id="st-txt">Connecting…</span></span><span id="st-days"></span><span class="sp"></span><button class="btn pri" type="button" id="add" hidden>Add card</button></div>
+  <div class="alerts" id="alerts"></div>
+  <div class="filters" id="filters"><span class="lbl">Goals</span></div>
+  <p class="goal" id="goal"></p>
+  <div class="cols" id="cols">
+    <section class="col" data-s="avenue"><h2><span>Avenues <b id="n-avenue">0</b></span><button type="button" data-add="avenue" aria-label="Add a card to Avenues" title="Add a card" hidden>+</button></h2><p class="hint">Possible routes. Pick one to move up.</p></section>
+    <section class="col" data-s="next"><h2><span>Next up <b id="n-next">0</b></span><button type="button" data-add="next" aria-label="Add a card to Next up" title="Add a card" hidden>+</button></h2><p class="hint">In order. Top card first.</p></section>
+    <section class="col" data-s="doing"><h2><span>Doing <b id="n-doing">0</b></span><button type="button" data-add="doing" aria-label="Add a card to Doing" title="Add a card" hidden>+</button></h2><p class="hint">One or two at a time.</p></section>
+    <section class="col" data-s="done"><h2><span>Done <b id="n-done">0</b></span><button type="button" data-add="done" aria-label="Add a card to Done" title="Add a card" hidden>+</button></h2><p class="hint">Shipped and pushed.</p></section>
   </div>
   <div class="foot">
-    <span>Cost key: CPU light/heavy (cap 60%), GPU (cap 85%), Wi-Fi OK = nothing to download. Hands-off date: 2026-11-04.</span>
-    <button id="reset" type="button">Reset board</button>
+    <span>Cost key: CPU light or heavy (cap 60%), GPU (cap 85%). Wi-Fi OK means nothing to download.</span>
+    <div class="cd"><span>Run commands from the project folder:</span><code id="cd">cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"</code><button class="btn" type="button" id="copy">Copy</button></div>
   </div>
 </div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<dialog id="dlg" aria-labelledby="dlg-h">
+  <form id="card-form">
+    <h2 id="dlg-h">Edit card</h2>
+    <div class="fg">
+      <label class="fl w" for="f-title">Title<input id="f-title" required maxlength="200"></label>
+      <label class="fl" for="f-area">Goal (area)<input id="f-area" list="areas" required maxlength="40"></label>
+      <datalist id="areas"></datalist>
+      <label class="fl" for="f-col">Column<select id="f-col"><option value="avenue">Avenues</option><option value="next">Next up</option><option value="doing">Doing</option><option value="done">Done</option></select></label>
+      <label class="fl" for="f-time">Time<input id="f-time" maxlength="40" placeholder="2 h"></label>
+      <label class="fl" for="f-cpu">Machine cost<select id="f-cpu"><option value="">Not set</option><option value="none">None</option><option value="light">CPU light</option><option value="heavy">CPU heavy</option><option value="GPU">CPU + GPU</option></select></label>
+      <label class="fl w" for="f-why">Why<textarea id="f-why" maxlength="2000"></textarea></label>
+      <label class="fl w" for="f-unlocks">Unlocks<input id="f-unlocks" maxlength="200"></label>
+      <label class="fl w" for="f-steps">Steps to get there (one per line)<textarea id="f-steps" rows="5" maxlength="4000"></textarea></label>
+      <label class="fl w" for="f-how">Commands and notes (put commands in backticks)<textarea id="f-how" maxlength="2000"></textarea></label>
+      <label class="ck" for="f-wifi"><input type="checkbox" id="f-wifi">Wi-Fi OK (nothing to download)</label>
+      <label class="ck" for="f-crit"><input type="checkbox" id="f-crit">Blocks everything else (shows a red banner)</label>
+    </div>
+    <div class="dacts"><button class="btn warn" type="button" id="del">Delete card</button><span class="sp"></span><button class="btn" type="button" id="cancel">Cancel</button><button class="btn pri" type="submit">Save</button></div>
+  </form>
+</dialog>
 
 <script>
-// [id, column, area, title, why, time, cpu, wifiOk, unlocks, how, crit]
-const T=[
- ["pc","next","PC","Get the PC checked (burning smell)","Smelled like burning while the CPU was near 100%. Long runs could damage it or start a fire.","1 visit","none",true,"Every heavy run below","Check fans, dust, thermal paste and the power supply. Until then keep runs short.",true],
- ["hohey","next","Sync","Fix Ho Hey's start on the studio audio","The beginning sync is crucial: bar 1 lands ~0.9 s late. The intro runs ~2% slower, and one steady tempo gives up bars 1-16. fix_start moves them, but its onset check rejects the move.","1-2 h","light",true,"The ladder rerun","Rerun on SuZytYa71lk, then check bars 1-16 against the drum stem and by ear. Then fix fix_start's acceptance check.<br><code>python tests/yt2gp5/fromlink.py \"https://youtu.be/SuZytYa71lk\" --again</code>"],
- ["ladder1","next","Sync","Sync ladder, stage 1: 10 of 12 songs PASS (guitar)","The goal you set: simple songs synced perfectly 100% of the time, one track first. All 12 recordings are downloaded already.","2-3 h","heavy",true,"Stage 2","<code>python tests/yt2gp5/ladder.py --tracks guitar</code><br>Fix each FAIL one at a time; rerun only that song."],
- ["docs","next","Hands-off","Plain docs so it runs by itself","You stop using Claude on 2026-11-04. Everything has to run from one command with a plain guide.","2 h","none",true,"Everything after Nov 4","One page per job: add a song from a link, the UG helper, the APK, the data factory. Each with its one command and what PASS / FAIL means."],
- ["ladder2","avenue","Sync","Sync ladder, stage 2: guitar + bass","Two tracks must line up together. Bass shows tempo drift that guitar alone hides.","2 h","heavy",true,"Stage 3","<code>python tests/yt2gp5/ladder.py --tracks guitar,bass</code>"],
- ["ladder3","avenue","Sync","Sync ladder, stage 3: guitar + bass + drums","Drums give the clearest beat; if all three line up, the whole song is right.","2 h","heavy",true,"Longer songs","<code>python tests/yt2gp5/ladder.py --tracks guitar,bass,drums</code>"],
- ["longer","avenue","Sync","Longer songs on the ladder","After short songs pass: longer songs with tempo changes and bridges.","3 h + downloads","heavy",false,"Any song from a link","Pick 10 longer songs with official audio. Downloads are needed, so do it at home."],
- ["battle","avenue","Sync","Battle Belongs: a band tempo that drifts","One tempo can't fit a live-feel recording. One tempo per section is allowed only when drift is proven.","1-2 h","light",true,"Worship songs from links","Prove the drift with the per-4-bar check, then let section_tempo take only those sections."],
- ["escape","avenue","Sync","Be My Escape and Stupid Deep: confirm and commit","The sync work is done but uncommitted. It's waiting for you to listen and say it sounds right.","15 min","none",true,"A clean main branch","Open both songs, play with the video, tell Claude yes or what's off."],
- ["widi","avenue","Import","When I Go Down: finish the PDF import","Piano line 3 is lost (37 bars), drums read 71 and percussion 33 of 114 bars (multi-bar rests).","2-3 h","light",true,"Correct imports for rest-heavy parts","Compare bars per line with the printed bar numbers; fix thickRest / readRestCount for the drum staves."],
- ["chords","avenue","Import","Here I Am To Worship: wrong chords","Some chords import wrong, and the sound is off on imported songs.","1-2 h","light",true,"Chord sheets you can trust","Compare Chords.txt with the chords on the tab; find where they part."],
- ["trust","avenue","Import","Trust In God: the leftovers","The rest of your Notion list for this song.","1 h","light",true,"A finished reference song","See the Trust In God section in TODO.md."],
- ["ugflow","avenue","Import","UG workflow: review step and automatic checks","Steps 4 and 6 of your plan: review a saved song before import, then check bar counts by itself.","3 h","light",true,"Fewer bad imports","Review dialog shows bars per part; auto-check flags parts that don't match the song's bar count."],
- ["fastpdf","avenue","Import","Quicker PDF reading","~200 of ~240 reads per part are dynamics guesses that never pay off (~50 ms each).","2 h","light",true,"Imports in under a minute","A cheap test before reading each candidate."],
- ["live","avenue","Songbook","Live mode with page turns","Play a set on stage: big chords, hands-free page turns.","4 h","light",true,"Using it at church","Full-screen chart, page turn by tap or pedal (keyboard keys)."],
- ["chartpdf","avenue","Songbook","Chord chart as a laid-out PDF","Print or share a clean chart, like MusicStand's.","2 h","light",true,"Sharing to bands","Two columns, sections, chords above words."],
- ["openapp","avenue","Songbook","\"Open in app\" on the helper's Done window","After a UG save, one button opens the song in Fretboard.","1 h","light",true,"Faster song adding","Button links to the song in the app."],
- ["shares","avenue","Songbook","Check shares in MusicStand, OnSong, SongbookPro","Shares are built but not checked in the real apps.","1 h","none",true,"Confidence in sharing","Share one song and one setlist to each app on the phone."],
- ["practice","avenue","Practice","Practice tab, phase 1: guitar hands","Your plan: clean-speed loop, strum timing, scales, chord changes, fret notes, 30 minutes a day. All checked by the phone's mic.","1-2 days","light",true,"Actually getting better at guitar","Start with the clean-speed loop: loop bars, +5% after 3 clean passes."],
- ["apk","avenue","App","Install the newest APK on the phone","Fretboard-1.52.apk is built; the phone may still have an older one.","5 min","none",true,"Latest fixes on Android","Plug in the Pixel 8a, then:<br><code>node scripts/apk.mjs --no-bump</code>"],
- ["banjo","avenue","App","Banjo tuning","Add banjo to the tuning menu.","30 min","none",true,"Banjo songs","Add the tuning; check the fretboard draws 5 strings."],
- ["tabmaker","avenue","TabMaker","Train TabMaker on the factory data","300 of 300 training examples are ready. Next: train the model that turns audio into tab.","days","GPU",false,"Tabs for songs with no UG tab","Use free Colab (T4) so your PC stays cool. Cap 85% GPU if local."],
- ["d-factory","done","TabMaker","Data factory: 300 of 300 examples","Every AAM mix split into stems with labels; no failures.","","",true,"",""],
- ["d-claim","done","Sync","Helper claim lock","Scripts and the UG helper no longer save the same song at once.","","",true,"",""],
- ["d-links","done","Sync","Ladder on official audio only","12 songs moved to official studio audio / lyric videos; the .gp step bug fixed.","","",true,"",""],
- ["d-synctest","done","Sync","Fake-recording test: 5 of 5","The sync math itself is right to 17 ms on known answers.","","",true,"",""],
- ["d-round","done","Import","Round-trip import: 7 of 7, 99.6%","","","",true,"",""],
- ["d-lib","done","App","Library songs open again","","","",true,"",""]
-];
-const COLS=["avenue","next","doing","done"];
-const AREAS=["All","Wi-Fi OK","Sync","Import","Songbook","Practice","App","TabMaker","Hands-off"];
-const KEY="fretboard-board-v1";
-let state={};try{state=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){state={}}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
-const byId=Object.fromEntries(T.map(t=>[t[0],t]));
-const st=id=>(state.c&&state.c[id])||byId[id][1];
-const order=()=>state.o||T.map(t=>t[0]);
-let filter="All";const open=new Set();
-const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const COLS=[["avenue","Avenues","Nothing here for this goal."],["next","Next up","Nothing queued for this goal."],["doing","Doing","Move a Next up card here to start it."],["done","Done","Finished cards land here."]];
+const CPU={none:["ok","CPU none"],light:["","CPU light"],heavy:["warn","CPU heavy"],GPU:["bad","CPU + GPU"]};
+const HANDS_OFF=new Date(2026,10,4);
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=s=>esc(s).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\n/g,"<br>");
+const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"goal";
+const byPos=(a,b)=>a.pos-b.pos;
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let db=null,readOnly=false,ready=false,cards=[],goals=[],filter="All",editingGoal=false,editId=null,delArmed=false,dragId=null,cardsErr="";
+const open=new Set(),fresh=new Set(),mine=new Set(),queue={};
 
-function setCol(id,s,toTop){state.c=state.c||{};state.c[id]=s;
-  const o=order().filter(x=>x!==id);
-  if(toTop){const first=o.findIndex(x=>st(x)===s);o.splice(first<0?o.length:first,0,id)}else o.push(id);
-  state.o=o;save();}
-function move(id,dir){const i=COLS.indexOf(st(id))+dir;if(i<0||i>3)return;flip(()=>setCol(id,COLS[i],dir<0));
-  const el=document.querySelector(`[data-id="${id}"]`);if(el)el.focus({preventScroll:true});}
-function toggle(id){const card=document.querySelector(`[data-id="${id}"]`);if(!card)return;
-  const on=!open.has(id);on?open.add(id):open.delete(id);
-  card.querySelector(".drop").classList.toggle("open",on);
-  const b=card.querySelector(".info");b.classList.toggle("on",on);b.setAttribute("aria-expanded",on);}
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>{t.hidden=true},3500)}
+function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return"just now";const m=Math.round(s/60);if(m<60)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" days ago"}
 
-// FLIP: cards glide to their new place
-function flip(change){const before=new Map();document.querySelectorAll(".card").forEach(c=>before.set(c.dataset.id,c.getBoundingClientRect()));
-  change();render();if(reduce)return;
+// ---- writes ----
+function note(id){mine.add(id);setTimeout(()=>mine.delete(id),4000)}
+function fail(e){toast("Couldn't save"+(e&&e.code?" ("+e.code+")":"")+". This view may be read-only.")}
+function write(id,patch){
+  if(!db||readOnly)return Promise.resolve();
+  note(id);
+  const ref=db.collection("cards").doc(id);
+  const p=(queue[id]||Promise.resolve()).then(()=>ref.update(Object.assign({},patch,{upd:Date.now()})));
+  queue[id]=p.catch(()=>{});
+  return p.catch(fail);
+}
+const inCol=(c,ex)=>cards.filter(x=>x.col===c&&x.id!==ex).sort(byPos);
+function posFor(c,id,before){
+  const list=inCol(c,id);if(!list.length)return 1;
+  if(before){const i=list.findIndex(x=>x.id===before);if(i>=0){const nx=list[i].pos,pv=i?list[i-1].pos:nx-2;return(pv+nx)/2}}
+  return list[list.length-1].pos+1;
+}
+function moveTo(id,col,before){write(id,{col,pos:posFor(col,id,before)})}
+function step(id,dir){
+  const c=cards.find(x=>x.id===id);if(!c)return;
+  const i=COLS.findIndex(x=>x[0]===c.col)+dir;if(i<0||i>=COLS.length)return;
+  const col=COLS[i][0],top=inCol(col,id)[0];
+  moveTo(id,col,(dir<0||col==="done")&&top?top.id:null);
+}
+
+// ---- render ----
+function flip(change){
+  const before=new Map();document.querySelectorAll(".card").forEach(c=>before.set(c.dataset.id,c.getBoundingClientRect()));
+  change();if(reduce)return;
   document.querySelectorAll(".card").forEach(c=>{const b=before.get(c.dataset.id);if(!b)return;const a=c.getBoundingClientRect();
     const dx=b.left-a.left,dy=b.top-a.top;if(!dx&&!dy)return;
-    c.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:"none"}],{duration:320,easing:"cubic-bezier(.2,.8,.2,1)"});});}
-
-function visible(t){if(filter==="All")return true;if(filter==="Wi-Fi OK")return t[7]&&st(t[0])!=="done";return t[2]===filter;}
-function cpuPill(c){if(!c)return"";const cls=c==="none"?"ok":c==="light"?"":c==="GPU"?"bad":"warn";return`<span class="pill ${cls}">CPU ${c==="GPU"?"+ GPU":c}</span>`;}
-
-function card(t){const[id,,area,title,why,time,cpu,wifi,unlocks,how,crit]=t;const s=st(id);
-  const d=document.createElement("div");d.className="card"+(crit&&s!=="done"?" crit":"");d.dataset.id=id;d.dataset.s=s;d.tabIndex=0;d.draggable=true;
-  d.setAttribute("role","button");d.setAttribute("aria-label",title+(s==="done"?" (done)":", activate to move right"));
-  const isOpen=open.has(id);
-  const rows=[["Why",esc(why)],time&&["Time",esc(time)],unlocks&&["Unlocks",esc(unlocks)],how&&["How",how]].filter(Boolean);
-  d.innerHTML=`<div class="row"><span class="tag">${area}</span><span class="t"><span class="tt">${esc(title)}</span>
-    <span class="meta">${time?`<span class="pill">${esc(time)}</span>`:""}${cpuPill(cpu)}${s!=="done"?(wifi?'<span class="pill ok">Wi-Fi OK</span>':'<span class="pill warn">needs home net</span>'):""}</span></span>
-    <button class="info${isOpen?" on":""}" type="button" aria-label="Show details" aria-expanded="${isOpen}" aria-controls="dd-${id}">i</button>
-    ${s!=="avenue"?'<button class="back" type="button" title="Move back" aria-label="Move back">↩</button>':""}</div>
-    <div class="drop${isOpen?" open":""}" id="dd-${id}"><div><dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div></div>`;
-  d.querySelector(".info").onclick=e=>{e.stopPropagation();toggle(id)};
-  const bk=d.querySelector(".back");if(bk)bk.onclick=e=>{e.stopPropagation();move(id,-1)};
-  d.querySelector(".drop").onclick=e=>e.stopPropagation();
-  d.onclick=()=>move(id,1);
-  d.oncontextmenu=e=>{e.preventDefault();toggle(id)};
-  d.onkeydown=e=>{if(e.target!==d)return;if(e.key==="Enter"||e.key===" "){e.preventDefault();move(id,1)}
-    if(e.key==="Backspace"){e.preventDefault();move(id,-1)}if(e.key==="i"){e.preventDefault();toggle(id)}};
-  d.ondragstart=e=>{e.dataTransfer.setData("text/plain",id)};
-  return d;}
-
+    c.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:"none"}],{duration:320,easing:"cubic-bezier(.2,.8,.2,1)"});});
+}
+function visible(c){if(filter==="All")return true;if(filter==="Wi-Fi OK")return c.wifi&&c.col!=="done";return c.area===filter}
+function areas(){
+  const out=goals.map(g=>g.name);
+  cards.map(c=>c.area).filter(Boolean).sort().forEach(a=>{if(!out.includes(a))out.push(a)});
+  return out;
+}
+function cardEl(c){
+  const steps=c.steps,nd=steps.filter(x=>x.d).length,isOpen=open.has(c.id);
+  const i=COLS.findIndex(x=>x[0]===c.col);
+  const el=document.createElement("article");
+  el.className="card"+(c.crit&&c.col!=="done"?" crit":"")+(fresh.has(c.id)?" fresh":"");
+  el.dataset.id=c.id;el.dataset.s=c.col;el.draggable=!readOnly;
+  const cp=CPU[c.cpu];
+  const rows=[c.why&&["Why",esc(c.why)],c.time&&["Time",esc(c.time)],c.unlocks&&["Unlocks",esc(c.unlocks)],c.how&&["Notes",fmt(c.how)]].filter(Boolean);
+  el.innerHTML=`<div class="row"><span class="tag">${esc(c.area)}</span>
+    <button class="tt" type="button" aria-expanded="${isOpen}" aria-controls="dd-${c.id}" data-fk="${c.id}:t">${esc(c.title)}</button>
+    ${readOnly?"":`<span class="mv">${i>0?`<button type="button" data-m="-1" data-fk="${c.id}:m-1" aria-label="Move to ${COLS[i-1][1]}" title="Move to ${COLS[i-1][1]}">‹</button>`:""}${i<COLS.length-1?`<button type="button" data-m="1" data-fk="${c.id}:m1" aria-label="Move to ${COLS[i+1][1]}" title="Move to ${COLS[i+1][1]}">›</button>`:""}</span>`}</div>
+    <div class="meta">${c.time?`<span class="pill">${esc(c.time)}</span>`:""}${cp?`<span class="pill ${cp[0]}">${cp[1]}</span>`:""}${c.col!=="done"?(c.wifi?'<span class="pill ok">Wi-Fi OK</span>':'<span class="pill warn">needs home net</span>'):""}${steps.length?`<span class="pill ${nd===steps.length?"ok":""}">${nd}/${steps.length} steps</span>`:""}</div>
+    <div class="drop${isOpen?" open":""}" id="dd-${c.id}"><div>
+      ${rows.length?`<dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`:""}
+      ${steps.length?`<p class="dsub">Steps to get there</p><ul class="steps">${steps.map((x,j)=>`<li><label for="s-${c.id}-${j}"><input type="checkbox" id="s-${c.id}-${j}" data-step="${j}" data-fk="${c.id}:s${j}"${x.d?" checked":""}${readOnly?" disabled":""}><span>${esc(x.t)}</span></label></li>`).join("")}</ul>`:""}
+      ${readOnly?"":`<div class="acts"><button class="btn" type="button" data-edit data-fk="${c.id}:e">Edit card</button></div>`}
+    </div></div>`;
+  return el;
+}
 function render(){
-  document.querySelectorAll(".col").forEach(c=>c.querySelectorAll(".card,.empty").forEach(n=>n.remove()));
-  const counts={avenue:0,next:0,doing:0,done:0};
-  order().forEach(id=>{const t=byId[id];if(!t)return;const s=st(id);counts[s]++;
-    if(visible(t))document.querySelector(`.col[data-s="${s}"]`).appendChild(card(t));});
-  COLS.forEach(s=>{document.getElementById("n-"+s).textContent=counts[s];
-    const col=document.querySelector(`.col[data-s="${s}"]`);
-    if(!col.querySelector(".card")){const e=document.createElement("div");e.className="empty";
-      e.textContent=s==="doing"?"Tap a Next up card to start it.":s==="done"?"Finished cards land here.":"Nothing here for this filter.";col.appendChild(e);}});
-  const pct=Math.round(counts.done/T.length*100);
-  document.getElementById("pct").firstChild.textContent=pct+"%";document.getElementById("bar").style.width=pct+"%";}
+  const a=document.activeElement,fk=a&&a.dataset&&a.dataset.fk;
+  if(filter!=="All"&&filter!=="Wi-Fi OK"&&!areas().includes(filter))filter="All";
+  document.querySelectorAll(".col .card,.col .empty").forEach(n=>n.remove());
+  let done=0;
+  COLS.forEach(([k,,none])=>{
+    const col=$(`.col[data-s="${k}"]`),all=cards.filter(c=>c.col===k).sort(byPos),vis=all.filter(visible);
+    if(k==="done")done=all.length;
+    vis.forEach(c=>col.appendChild(cardEl(c)));
+    $("#n-"+k).textContent=all.length;
+    if(!vis.length){const e=document.createElement("div");e.className="empty";
+      e.textContent=!ready?"Loading cards…":!db?"The board's database isn't available in this view.":cardsErr?"Couldn't read the cards ("+cardsErr+").":!cards.length?"No cards yet. Add one with +, or ask Claude to fill the board.":none;
+      col.appendChild(e);}
+  });
+  const pct=cards.length?Math.round(done/cards.length*100):0;
+  $("#pct").firstChild.textContent=pct+"%";$("#pct-s").textContent=`of cards done (${done} of ${cards.length})`;
+  $("#bar").style.width=pct+"%";$("#barwrap").setAttribute("aria-valuenow",pct);
+  $("#alerts").innerHTML=cards.filter(c=>c.crit&&c.col!=="done").map(c=>`<div class="alert" role="note">${esc(c.title)}.<span>${esc((c.why||"").split(/(?<=\.)\s/)[0])}</span></div>`).join("");
+  renderChips();renderGoal();renderStatus();
+  document.querySelectorAll("[data-add],#add").forEach(b=>{b.hidden=readOnly||!db});
+  if(fk){const n=document.querySelector(`[data-fk="${fk}"]`)||document.querySelector(`[data-fk="${fk.split(":")[0]}:t"]`);if(n&&n!==document.activeElement)n.focus({preventScroll:true})}
+}
+function renderChips(){
+  const box=$("#filters"),a=document.activeElement,ak=a&&a.dataset&&a.dataset.chip;
+  box.querySelectorAll(".f").forEach(n=>n.remove());
+  const list=["All","Wi-Fi OK",...areas()];
+  list.forEach(name=>{
+    let tx="",p=0;
+    if(name==="All"){const d=cards.filter(c=>c.col==="done").length;tx=cards.length?`${d}/${cards.length}`:"";p=cards.length?d/cards.length*100:0}
+    else if(name==="Wi-Fi OK"){tx=String(cards.filter(c=>c.wifi&&c.col!=="done").length)}
+    else{const all=cards.filter(c=>c.area===name),d=all.filter(c=>c.col==="done").length;tx=`${d}/${all.length}`;p=all.length?d/all.length*100:0}
+    const b=document.createElement("button");b.className="f";b.type="button";b.dataset.chip=name;b.style.setProperty("--p",p+"%");
+    b.setAttribute("aria-pressed",name===filter);b.innerHTML=esc(name)+(tx?`<b>${tx}</b>`:"");
+    b.onclick=()=>{filter=name;editingGoal=false;flip(render)};box.appendChild(b);
+  });
+  if(ak){const n=box.querySelector(`[data-chip="${CSS.escape(ak)}"]`);if(n&&n!==document.activeElement)n.focus({preventScroll:true})}
+  $("#areas").innerHTML=areas().map(n=>`<option value="${esc(n)}">`).join("");
+}
+function renderGoal(){
+  if(editingGoal)return;
+  const el=$("#goal");let h;
+  if(filter==="All")h="Every card serves one goal. Tap a goal to see what it is for and the steps that reach it.";
+  else if(filter==="Wi-Fi OK")h="Cards that need nothing downloaded, so they work on any network.";
+  else{const g=goals.find(x=>x.name===filter);h=g&&g.goal?esc(g.goal):"No goal written yet.";if(!readOnly&&db)h+=' <button class="lnk" type="button" id="goal-edit">Edit goal</button>'}
+  el.innerHTML=h;
+  const ed=$("#goal-edit");if(ed)ed.onclick=startGoalEdit;
+}
+function startGoalEdit(){
+  editingGoal=true;const g=goals.find(x=>x.name===filter),el=$("#goal");
+  el.innerHTML=`<label class="sr" for="goal-in">Goal for ${esc(filter)}</label><input id="goal-in" maxlength="300"><button class="btn pri" type="button" id="goal-save">Save</button><button class="btn" type="button" id="goal-cancel">Cancel</button>`;
+  const inp=$("#goal-in");inp.value=g?g.goal||"":"";inp.focus();
+  const stop=()=>{editingGoal=false;renderGoal()};
+  $("#goal-cancel").onclick=stop;
+  const save=()=>{const name=filter,val=inp.value.trim(),ex=goals.find(x=>x.name===name);
+    db.collection("goals").doc(ex?ex.id:slug(name)).set({name,goal:val,order:ex&&ex.order!=null?ex.order:100+goals.length}).catch(fail);stop()};
+  $("#goal-save").onclick=save;inp.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();save()}if(e.key==="Escape")stop()};
+}
+function renderStatus(){
+  const s=$("#status"),t=$("#st-txt");
+  const last=cards.reduce((m,c)=>Math.max(m,c.upd||0),0);
+  s.className="status"+(db&&ready&&!cardsErr?" live":"")+(ready&&(!db||cardsErr)?" bad":"");
+  t.textContent=!ready?"Connecting…":!db?"Offline: this view can't open the board's database":cardsErr?"Can't read the board ("+cardsErr+")":(readOnly?"Live, view only":"Live")+(last?" · last change "+ago(last):"");
+  const d=Math.round((HANDS_OFF-new Date(new Date().toDateString()))/864e5);
+  $("#st-days").textContent=d>0?`${d} day${d===1?"":"s"} to the hands-off date (Nov 4)`:"Hands-off date (Nov 4) has passed";
+}
 
-const fb=document.getElementById("filters");
-AREAS.forEach(a=>{const b=document.createElement("button");b.className="f";b.type="button";b.textContent=a;b.setAttribute("aria-pressed",a===filter);
-  b.onclick=()=>{filter=a;fb.querySelectorAll(".f").forEach(x=>x.setAttribute("aria-pressed",x===b));flip(()=>{})};fb.appendChild(b);});
+// ---- board events ----
+const cols=$("#cols");
+cols.addEventListener("click",e=>{
+  const card=e.target.closest(".card"),add=e.target.closest("[data-add]");
+  if(add){openDlg(null,add.dataset.add);return}
+  if(!card)return;const id=card.dataset.id;
+  if(e.target.closest(".tt")){
+    const on=!open.has(id);on?open.add(id):open.delete(id);
+    card.querySelector(".drop").classList.toggle("open",on);card.querySelector(".tt").setAttribute("aria-expanded",on);return}
+  const m=e.target.closest("[data-m]");if(m){step(id,+m.dataset.m);return}
+  if(e.target.closest("[data-edit]"))openDlg(id);
+});
+cols.addEventListener("change",e=>{
+  const cb=e.target.closest("[data-step]");if(!cb)return;
+  const id=cb.closest(".card").dataset.id,c=cards.find(x=>x.id===id);if(!c)return;
+  const steps=c.steps.map(x=>({t:x.t,d:x.d}));steps[+cb.dataset.step].d=cb.checked;write(id,{steps});
+});
+cols.addEventListener("dragstart",e=>{const c=e.target.closest&&e.target.closest(".card");if(!c)return;dragId=c.dataset.id;e.dataTransfer.setData("text/plain",dragId);e.dataTransfer.effectAllowed="move"});
+cols.addEventListener("dragend",()=>{dragId=null;clearDrop()});
+function clearDrop(){document.querySelectorAll(".col.over").forEach(c=>c.classList.remove("over"));document.querySelectorAll(".card.before").forEach(c=>c.classList.remove("before"))}
+function dropTarget(col,y){return[...col.querySelectorAll(".card")].find(c=>c.dataset.id!==dragId&&y<c.getBoundingClientRect().top+c.getBoundingClientRect().height/2)||null}
+cols.addEventListener("dragover",e=>{
+  const col=e.target.closest(".col");if(!col||!dragId)return;e.preventDefault();
+  clearDrop();col.classList.add("over");const t=dropTarget(col,e.clientY);if(t)t.classList.add("before");
+});
+cols.addEventListener("drop",e=>{
+  const col=e.target.closest(".col");if(!col||!dragId)return;e.preventDefault();
+  const t=dropTarget(col,e.clientY),id=dragId;dragId=null;clearDrop();moveTo(id,col.dataset.s,t?t.dataset.id:null);
+});
 
-document.querySelectorAll(".col").forEach(c=>{
-  c.ondragover=e=>{e.preventDefault();c.classList.add("over")};
-  c.ondragleave=()=>c.classList.remove("over");
-  c.ondrop=e=>{e.preventDefault();c.classList.remove("over");const id=e.dataTransfer.getData("text/plain");if(id&&byId[id])flip(()=>setCol(id,c.dataset.s,false));};});
-let armed=false;const r=document.getElementById("reset");
-r.onclick=()=>{if(!armed){armed=true;r.textContent="Tap again to reset";setTimeout(()=>{armed=false;r.textContent="Reset board"},3000);return}
-  state={};save();armed=false;r.textContent="Reset board";flip(()=>{});};
-render();
+// ---- add / edit dialog ----
+function openDlg(id,col){
+  if(readOnly||!db)return;
+  const c=id?cards.find(x=>x.id===id):null;editId=c?c.id:null;delArmed=false;$("#del").textContent="Delete card";
+  $("#dlg-h").textContent=c?"Edit card":"New card";
+  $("#f-title").value=c?c.title:"";
+  $("#f-area").value=c?c.area:(filter!=="All"&&filter!=="Wi-Fi OK"?filter:"");
+  $("#f-col").value=c?c.col:(col||"avenue");
+  $("#f-time").value=c&&c.time||"";$("#f-cpu").value=c&&c.cpu||"";
+  $("#f-why").value=c&&c.why||"";$("#f-unlocks").value=c&&c.unlocks||"";$("#f-how").value=c&&c.how||"";
+  $("#f-steps").value=c?c.steps.map(x=>x.t).join("\n"):"";
+  $("#f-wifi").checked=c?!!c.wifi:true;$("#f-crit").checked=c?!!c.crit:false;
+  $("#del").hidden=!c;$("#dlg").showModal();$("#f-title").focus();
+}
+$("#add").onclick=()=>openDlg(null,"next");
+$("#cancel").onclick=()=>$("#dlg").close();
+$("#card-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const old=editId?cards.find(x=>x.id===editId):null;
+  const prev=new Map((old?old.steps:[]).map(s=>[s.t,s.d]));
+  const steps=$("#f-steps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(t=>({t,d:!!prev.get(t)}));
+  const col=$("#f-col").value;
+  const data={title:$("#f-title").value.trim(),area:$("#f-area").value.trim(),col,time:$("#f-time").value.trim(),cpu:$("#f-cpu").value,
+    why:$("#f-why").value.trim(),unlocks:$("#f-unlocks").value.trim(),how:$("#f-how").value.trim(),steps,wifi:$("#f-wifi").checked,crit:$("#f-crit").checked};
+  $("#dlg").close();
+  const top=inCol(col,old?old.id:"")[0];
+  if(old){if(old.col!==col)data.pos=posFor(col,old.id,col==="done"&&top?top.id:null);write(old.id,data)}
+  else{const id="c"+Date.now().toString(36);data.pos=posFor(col,id,col==="done"&&top?top.id:null);note(id);open.add(id);
+    db.collection("cards").doc(id).set(Object.assign(data,{upd:Date.now()})).catch(fail)}
+});
+$("#del").onclick=()=>{
+  const b=$("#del");
+  if(!delArmed){delArmed=true;b.textContent="Tap again to delete";setTimeout(()=>{delArmed=false;b.textContent="Delete card"},3000);return}
+  const id=editId;delArmed=false;b.textContent="Delete card";$("#dlg").close();note(id);open.delete(id);
+  db.collection("cards").doc(id).delete().catch(fail);
+};
+$("#copy").onclick=async()=>{
+  try{await navigator.clipboard.writeText($("#cd").textContent);toast("Copied")}
+  catch(e){const r=document.createRange();r.selectNodeContents($("#cd"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Press Ctrl+C to copy")}
+};
+
+// ---- live data ----
+async function init(){
+  render();
+  try{db=await(window.claude&&window.claude.use?window.claude.use("db"):null)||null}catch(e){db=null}
+  try{const u=await(window.claude&&window.claude.use?window.claude.use("user"):null);
+    if(u&&u.can){const w=await u.can("data.write");if(w===false)readOnly=true}}catch(e){}
+  if(!db){ready=true;render();return}
+  db.collection("goals").onSnapshot(s=>{
+    goals=s.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(a.order==null?99:a.order)-(b.order==null?99:b.order));
+    if(ready){renderChips();renderGoal()}
+  },e=>{cardsErr=cardsErr||(e&&e.code)||"error"});
+  let first=true;
+  db.collection("cards").onSnapshot(s=>{
+    cards=s.docs.map(d=>{const x=d.data();return Object.assign({},x,{id:d.id,
+      col:COLS.some(c=>c[0]===x.col)?x.col:"avenue",pos:typeof x.pos==="number"?x.pos:0,
+      steps:Array.isArray(x.steps)?x.steps.filter(y=>y&&y.t).map(y=>({t:String(y.t),d:!!y.d})):[]})});
+    if(!first)s.docChanges().forEach(ch=>{
+      if(ch.type==="removed"||ch.doc.metadata.hasPendingWrites||mine.has(ch.doc.id))return;
+      fresh.add(ch.doc.id);setTimeout(()=>fresh.delete(ch.doc.id),2600)});
+    first=false;ready=true;cardsErr="";flip(render);
+  },e=>{ready=true;cardsErr=(e&&e.code)||"error";render()});
+  setInterval(renderStatus,30000);
+}
+init();
 </script>

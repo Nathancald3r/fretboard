@@ -181,7 +181,10 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Where we left off (2026-10-27)
 
-- **Roadmap board (live):** https://claude.ai/artifact/5udvK5nrRMJgcBKCF7SAb1. Source: `roadmap/board.html` (cards are the `T` list at the top of its script). To update it, edit that file and publish with the Artifact tool passing that URL as `url`. The same list, in words, is "Roadmap: what's next" at the top of `TODO.md`. Keep the two in step.
+- **Roadmap board (live, editable Kanban):** https://claude.ai/artifact/6bKMech8PfTJJwNHbYdVf7 (replaces the old 5udvK5… link, which this account can't open). The cards and goals live in the artifact's database (`cards`, `goals`), not in the page. The user edits, drags and ticks steps on the page; the page updates live.
+  - **Keep it current (the user asked, 2026-10-27):** whenever work starts, finishes, fails or turns up a new job, update the board with the ArtifactData tool (`update` a card's `col`, `pos`, `steps`, `why`; `set` a new card; batch for several). Moving a card to done: `col: "done"` and `pos` below the lowest in that column. Tick steps by rewriting the `steps` array. Always set `upd` to `Date.now()`. Read the card first and pass `if_version`.
+  - **Card fields:** `area` (a goal name), `col` (avenue, next, doing, done), `pos` (order in the column, smaller is higher), `title`, `why`, `time`, `cpu` (none, light, heavy, GPU), `wifi`, `crit`, `unlocks`, `how` (commands in backticks), `steps` (`[{t, d}]`).
+  - **Source:** `roadmap/board.html` is the page only. `roadmap/board-seed.json` is the starting content, for rebuilding the database. Republish the page with the Artifact tool and the same URL (keep `capabilities: {db:{}, user:{}}`). The same list, in words, is "Roadmap: what's next" at the top of `TODO.md`. Keep them in step.
 - **PC:** on 2026-10-26 the PC smelled like burning with the CPU near 100%. Nothing heavy (sync ladder, training) until the user says it was checked.
 - **Latest APK:** 1.52 is built (`Fretboard-1.52.apk`); the phone may still have 1.48. `node scripts/apk.mjs --no-bump` installs it.
 - **Sync ladder (latest work, 2026-10-26):** see "Sync ladder: where it stopped" in `TODO.md`. Ho Hey starts ~0.9 s late; `fix_start` exists but its check rejects the move. The 12 recordings are downloaded, so public Wi-Fi is fine.
