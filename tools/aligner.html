@@ -53,8 +53,8 @@
   <div>
     <b>Nudge the video</b> <kbd>←</kbd> <kbd>→</kbd> 10 ms · <kbd>Shift</kbd> 100 ms · <kbd>Ctrl</kbd> 1 ms &nbsp;|&nbsp;
     <b>Zoom</b> <kbd>1</kbd> whole song · <kbd>2</kbd> 45 s · <kbd>3</kbd> 12 s · <kbd>4</kbd> 3 s · <kbd>5</kbd> 0.6 s (number row or numpad) &nbsp;|&nbsp;
-    <b>Move</b> click = marker · <b>drag = move the video</b> · <kbd>Shift</kbd>+drag, wheel or <kbd>,</kbd> <kbd>.</kbd> = scroll the view · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>Home</kbd> <kbd>End</kbd><br>
-    <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>G</kbd> boost quiet parts ·
+    <b>Move</b> click = marker · <b>drag = move the video</b> · <kbd>Shift</kbd>+drag, wheel or <kbd>,</kbd> <kbd>.</kbd> = scroll the view · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>N</kbd> <kbd>Shift+N</kbd> = next / previous note start · <kbd>Home</kbd> <kbd>End</kbd><br>
+    <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>L</kbd> auto level (quiet notes get tall) · <kbd>G</kbd> boost quiet parts ·
     <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save
   </div>
   </details>
@@ -67,11 +67,11 @@ const SPANS = [0, 45, 12, 3, 0.6]; // zoom keys 2-5 (key 1 is the whole song)
 const H = 0.005; // the match works on 5 ms steps
 
 const S = {
-  slug: null, name: '', bars: [], pts: [], notes: [], file: '', total: 0, rate: 22050,
+  slug: null, name: '', bars: [], pts: [], notes: [], noteT: [], file: '', total: 0, rate: 22050,
   tab: null, rec: null, onTab: null, onRec: null,
   bx: [], by: [], sec: [{ i: 0, s: 0 }], sec0: null,
   view: { t0: 0, span: 60 }, level: 1, marker: 0, hover: null,
-  overlay: true, boost: true, split: true, mute: { tab: false, rec: false },
+  overlay: true, boost: true, auto: true, split: true, mute: { tab: false, rec: false },
   play: null, dirty: false, undo: [], lastPush: 0, saved: false,
 };
 let ctx = null, dirty = true;
@@ -257,6 +257,16 @@ function setLevel(k) {
 }
 function panTo(t0) { S.view.t0 = clamp(t0, 0, Math.max(0, S.total - S.view.span)); dirty = true; }
 function showMarker() { if (S.marker < S.view.t0 || S.marker > S.view.t0 + S.view.span) panTo(S.marker - S.view.span / 2); }
+// The marker to the next (d = 1) or previous (d = -1) note start of the tab: the first one is where the guitar begins.
+function moveMarkerNote(d) {
+  const T = S.noteT;
+  if (!T.length) return;
+  const m = S.marker;
+  let i = d > 0 ? T.findIndex((t) => t > m + 0.0005) : T.length - 1 - [...T].reverse().findIndex((t) => t < m - 0.0005);
+  if (i < 0 || i >= T.length) i = d > 0 ? T.length - 1 : 0;
+  S.marker = T[i]; showMarker(); dirty = true;
+  say(`Note start ${i + 1} of ${T.length}: tab ${T[i].toFixed(3)} s.`);
+}
 function moveMarkerBar(d) {
   let b = barAtTime(S.marker + 1e-3);
   if (d < 0 && S.marker - barT(b) > 0.02) d += 1; // back from inside a bar: its own start first
@@ -270,22 +280,33 @@ function resize() {
   const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
   cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); dirty = true;
 }
-function lane(y, h, label, color, p, mapT, alpha, normScale) {
+// One waveform lane. With "auto level" (L) it is scaled to its loudest part on screen, so quiet notes next to
+// loud drums still show a peak; the label says by how much (the guitar at the start is far quieter than the song).
+function lane(y, h, label, color, p, mapT, alpha, row) {
   const W = cv.width, d = window.devicePixelRatio || 1, mid = y + h / 2, amp = h / 2 - 4 * d;
-  g.fillStyle = color; g.globalAlpha = alpha;
   const { t0, span } = S.view, rate = S.rate;
+  const lo = new Float32Array(W), hi = new Float32Array(W);
+  let peak = 1e-4;
   for (let x = 0; x < W; x += 1) {
     const ta = t0 + (x / W) * span, tb = t0 + ((x + 1) / W) * span;
     let ra = mapT(ta), rb = mapT(tb);
     if (rb < ra) { const q = ra; ra = rb; rb = q; }
     if (rb < 0 || ra > p.x.length / rate) continue;
-    const [lo, hi] = query(p, ra * rate, rb * rate + 1);
-    const f = (v) => (S.boost ? Math.sign(v) * Math.sqrt(Math.abs(v)) : v) * normScale;
-    const yh = mid - f(hi) * amp, yl = mid - f(lo) * amp;
+    const [l, h2] = query(p, ra * rate, rb * rate + 1);
+    lo[x] = l; hi[x] = h2;
+    peak = Math.max(peak, -l, h2);
+  }
+  const gain = S.auto ? Math.min(100, 0.95 / peak) : 1;
+  const f = (v) => Math.max(-1, Math.min(1, (S.boost ? Math.sign(v) * Math.sqrt(Math.abs(v * gain)) : v * gain))) * 0.95;
+  g.fillStyle = color; g.globalAlpha = alpha;
+  for (let x = 0; x < W; x += 1) {
+    if (lo[x] === 0 && hi[x] === 0) continue;
+    const yh = mid - f(hi[x]) * amp, yl = mid - f(lo[x]) * amp;
     g.fillRect(x, yh, 1, Math.max(1, yl - yh));
   }
   g.globalAlpha = 1;
-  g.fillStyle = color; g.font = `${12 * d}px system-ui`; g.fillText(label, 8 * d, y + 16 * d);
+  g.fillStyle = color; g.font = `${12 * d}px system-ui`;
+  g.fillText(label + (gain > 1.5 ? `  (louder ×${Math.round(gain)})` : ''), 8 * d, y + (16 + row * 16) * d);
 }
 function draw() {
   dirty = false;
@@ -297,18 +318,23 @@ function draw() {
   // the waveforms
   if (S.overlay) {
     g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, lanesH);
-    lane(lanesTop, lanesH, 'tab (blue) over video (orange)', '#5aa9ff', S.tab, (t) => t, 0.85, 0.95);
-    lane(lanesTop, lanesH, '', '#ffb347', S.rec, rec, 0.6, 0.95);
+    lane(lanesTop, lanesH, 'tab (blue)', '#5aa9ff', S.tab, (t) => t, 0.85, 0);
+    lane(lanesTop, lanesH, 'video (orange)', '#ffb347', S.rec, rec, 0.6, 1);
   } else {
     const h = lanesH / 2;
     g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, h); g.fillStyle = '#1b1e25'; g.fillRect(0, lanesTop + h, W, h);
-    lane(lanesTop, h, 'tab', '#5aa9ff', S.tab, (t) => t, 0.9, 0.95);
-    lane(lanesTop + h, h, 'video', '#ffb347', S.rec, rec, 0.9, 0.95);
+    lane(lanesTop, h, 'tab', '#5aa9ff', S.tab, (t) => t, 0.9, 0);
+    lane(lanesTop + h, h, 'video', '#ffb347', S.rec, rec, 0.9, 0);
   }
   // where the tab's notes start
   if (span <= 15) {
-    g.fillStyle = 'rgba(90,169,255,.9)';
-    for (const t of S.notes) { if (t < t0 || t > t0 + span) continue; const x = X(t); g.fillRect(x - d / 2, Hh - 10 * d, d, 10 * d); }
+    const lines = span <= 3.5; // zoomed in: each note start runs the full height, to compare with the peaks
+    for (const t of S.notes) {
+      if (t < t0 || t > t0 + span) continue;
+      const x = X(t);
+      if (lines) { g.fillStyle = 'rgba(90,169,255,.28)'; g.fillRect(x, ruler, d, Hh); }
+      g.fillStyle = 'rgba(90,169,255,.9)'; g.fillRect(x - d / 2, Hh - 10 * d, d, 10 * d);
+    }
   }
   // bar lines and numbers
   g.font = `${12 * d}px system-ui`;
@@ -421,11 +447,13 @@ async function openSong(slug) {
     hint('Preparing the tab’s sound and the video’s sound. The first time takes up to a minute.');
     S.tab = await loadAudio(slug, 'tab'); S.rec = await loadAudio(slug, 'rec');
     S.total = S.tab.buf.duration;
+    S.rate = S.tab.buf.sampleRate; // the browser resamples to its own rate (48000 here), not the file's 22050
     S.onTab = onsets(S.tab.x, S.rate); S.onRec = onsets(S.rec.x, S.rate);
     S.sec = [{ i: 0, s: 0 }]; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
-    S.marker = S.bars.length > 1 ? barT(Math.min(2, S.bars.length - 1)) : 0;
-    setLevel(1); hint('');
-    say(d.aligned ? `Opened. Last aligned ${d.aligned.at}.` : 'Opened. Press 3, then ← → until the blue and orange peaks line up.');
+    S.noteT = [...new Set(S.notes)].sort((a, b) => a - b);
+    S.marker = S.noteT.length ? S.noteT[0] : 0; // opens on the tab's first note: the start of the guitar
+    setLevel(S.noteT.length ? 4 : 1); hint('');
+    say(d.aligned ? `Opened at the first note. Last aligned ${d.aligned.at}.` : 'Opened at the tab’s first note (blue lines are note starts). Drag or ← → until the orange peaks line up with the blue ones.');
   } catch (e) { hint(''); say(String(e.message || e), 'err'); }
 }
 function savePoints() {
@@ -500,6 +528,7 @@ document.addEventListener('keydown', (e) => {
   else if (digit && !e.ctrlKey) setLevel(Number(digit[2]));
   else if (key === 'ArrowLeft') nudge(-step);
   else if (key === 'ArrowRight') nudge(step);
+  else if (key === 'KeyN') moveMarkerNote(e.shiftKey ? -1 : 1);
   else if (key === 'ArrowUp') moveMarkerBar(e.shiftKey ? -4 : -1);
   else if (key === 'ArrowDown') moveMarkerBar(e.shiftKey ? 4 : 1);
   else if (key === 'Comma' || key === 'PageUp') panTo(S.view.t0 - S.view.span * 0.8);
@@ -511,6 +540,7 @@ document.addEventListener('keydown', (e) => {
   else if (key === 'KeyV') { S.mute.rec = !S.mute.rec; applyGains(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); }
   else if (key === 'KeyE') { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); }
   else if (key === 'KeyO') { S.overlay = !S.overlay; dirty = true; }
+  else if (key === 'KeyL') { S.auto = !S.auto; dirty = true; say(S.auto ? 'Auto level on: each lane is scaled to its loudest part on screen.' : 'Auto level off: true loudness between the lanes.'); }
   else if (key === 'KeyG') { S.boost = !S.boost; dirty = true; say(S.boost ? 'Quiet parts boosted.' : 'True loudness.'); }
   else if (key === 'KeyA') cutHere();
   else if (key === 'Delete' || key === 'Backspace') joinHere();
