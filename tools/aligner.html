@@ -49,7 +49,7 @@
   <div>
     <b>Nudge the video</b> <kbd>←</kbd> <kbd>→</kbd> 10 ms · <kbd>Shift</kbd> 100 ms · <kbd>Ctrl</kbd> 1 ms &nbsp;|&nbsp;
     <b>Zoom</b> <kbd>1</kbd> whole song · <kbd>2</kbd> 45 s · <kbd>3</kbd> 12 s · <kbd>4</kbd> 3 s · <kbd>5</kbd> 0.6 s (number row or numpad) &nbsp;|&nbsp;
-    <b>Move</b> click = marker · drag or <kbd>,</kbd> <kbd>.</kbd> = scroll · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>Home</kbd> <kbd>End</kbd><br>
+    <b>Move</b> click = marker · <b>drag = move the video</b> · <kbd>Shift</kbd>+drag, wheel or <kbd>,</kbd> <kbd>.</kbd> = scroll the view · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>Home</kbd> <kbd>End</kbd><br>
     <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>G</kbd> boost quiet parts ·
     <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save
   </div>
@@ -447,12 +447,25 @@ async function save() {
 /* ---------- input ---------- */
 const timeAtX = (clientX) => { const r = cv.getBoundingClientRect(); return S.view.t0 + ((clientX - r.left) / r.width) * S.view.span; };
 let drag = null;
-cv.addEventListener('mousedown', (e) => { drag = { x: e.clientX, t0: S.view.t0, moved: false }; });
+// A plain drag moves the video (the section under the mouse gets that shift); Shift+drag or the right button scrolls the view.
+cv.addEventListener('mousedown', (e) => {
+  if (!S.tab) return;
+  const pan = e.shiftKey || e.button !== 0, k = secAt(timeAtX(e.clientX));
+  drag = { x: e.clientX, t0: S.view.t0, moved: false, pan, k, s0: S.sec[k].s, pushed: false };
+  if (e.button !== 0) e.preventDefault();
+});
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('mousemove', (e) => {
   if (drag) {
     const r = cv.getBoundingClientRect(), dx = e.clientX - drag.x;
     if (Math.abs(dx) > 4) drag.moved = true;
-    if (drag.moved) panTo(drag.t0 - (dx / r.width) * S.view.span);
+    if (drag.moved && drag.pan) panTo(drag.t0 - (dx / r.width) * S.view.span);
+    else if (drag.moved) {
+      if (!drag.pushed) { drag.pushed = true; pushUndo(true); }
+      S.sec[drag.k].s = Math.round(drag.s0 + (dx / r.width) * S.view.span * 1000);
+      changed();
+      say(`Section ${drag.k + 1}: video moved ${fmtMs(S.sec[drag.k].s)} (right = later)`);
+    }
   }
   const r = cv.getBoundingClientRect();
   S.hover = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom ? clamp(timeAtX(e.clientX), 0, S.total) : null;
