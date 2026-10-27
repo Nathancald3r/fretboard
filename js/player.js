@@ -52,6 +52,11 @@ let song = null;
 let score = null;
 let baseTempo = 120;
 let readyForPlayback = false;
+// Play pressed while the synth still prepares the song's instruments (~15 s for a band song) waits and counts in
+// when they're ready. The fb-* performance marks (song-open, sf-loaded, midi-load, ready, render) show where the time goes.
+let queuedPlay = false;
+let loadingSince = 0;
+let loadingTimer = 0;
 let trackIndex = 0;
 
 const trainer = { on: false, loops: 0, start: 60, target: 100, step: 5, every: 2 };
@@ -106,9 +111,10 @@ function ensureApi() {
     showNeck();
     resetLyrics();
     window.dispatchEvent(new Event('fbscore'));
+    setPlayButton();
   });
   api.renderStarted.on(() => { $('pl-loading').hidden = false; });
-  api.renderFinished.on(() => { $('pl-loading').hidden = true; });
+  api.renderFinished.on(() => { performance.mark('fb-render'); $('pl-loading').hidden = true; updateLoading(); });
   api.postRenderFinished?.on(drawSectionLabels);
   api.postRenderFinished?.on(drawPin);
   api.error.on((e) => {
@@ -116,22 +122,25 @@ function ensureApi() {
     $('pl-loading').textContent = 'Could not load this file: ' + (e?.message || e);
   });
   api.playerReady.on(() => {
+    performance.mark('fb-ready');
     delayPositionEvents(api, recordingOn); // Bluetooth headphones: hold the cursor back by their lag
     readyForPlayback = true;
     api.masterVolume = synthVolume(playAlongState().songVolume);
     setPlayButton();
+    updateLoading();
   });
   api.soundFontLoad.on((e) => {
-    if (!readyForPlayback) $('pl-play').title = `Loading sounds ${Math.round((e.loaded / e.total) * 100)}%`;
+    performance.mark(e.loaded >= e.total ? 'fb-sf-loaded' : 'fb-sf-progress');
   });
   // Guitar chords are strummed, and the click is written into the song's MIDI on a channel of its own.
-  api.midiLoad.on((midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); addClickTrack(midiFile); });
+  api.midiLoad.on((midiFile) => { performance.mark('fb-midi-load'); strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); addClickTrack(midiFile); });
   // The tab rendered to hear along with its video (playalong.js): the same sound, no click.
   api.fbExportMidi = (midiFile) => { strumGuitars(midiFile); padSustain(midiFile); liftCymbals(midiFile.tracks.flatMap((t) => t.events)); };
   // alphaTab 1.8.4's worker player has a self-recursive loadedMidiInfo getter, which
   // midiLoaded.on() reads (patched in scripts/vendor.mjs; the try is a safety net).
   try {
     api.midiLoaded.on(() => {
+      performance.mark('fb-midi-loaded');
       applyMix();
       applyClickVolume();
       playAlongScoreReady();
@@ -195,12 +204,31 @@ let clickResume = null;
 
 function setPlayButton() {
   const btn = $('pl-play');
-  btn.disabled = !readyForPlayback;
-  const playing = api?.playerState === PLAYING || counting;
+  btn.disabled = !api;
+  const playing = api?.playerState === PLAYING || counting || queuedPlay;
   btn.classList.toggle('playing', playing);
   btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   btn.title = playing ? 'Pause (Space)' : 'Play (Space)';
-  if (!readyForPlayback) btn.title = 'Loading sounds…';
+  if (synthBusy()) btn.title = queuedPlay ? 'Cancel. Starts when the instruments are loaded (Space)' : 'Play when the instruments are loaded (Space)';
+}
+
+function synthBusy() {
+  return !!api && (!readyForPlayback || !api.isReadyForPlayback);
+}
+
+// Says how long the instruments have been loading, and starts a queued Play the moment they are ready.
+function updateLoading() {
+  if (!synthBusy()) {
+    if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = 0; $('pl-loading').hidden = true; }
+    if (queuedPlay) { queuedPlay = false; setPlayButton(); setTimeout(startPlayback, 100); }
+    return;
+  }
+  if (!score) return; // still reading the score: "Loading score…" shows
+  const s = Math.round((performance.now() - loadingSince) / 1000);
+  const el = $('pl-loading');
+  el.textContent = `Loading instruments… ${s} s. ` + (queuedPlay ? 'It counts in as soon as they are ready.' : 'Press Play to start when they are ready.');
+  el.hidden = false;
+  if (!loadingTimer) loadingTimer = setInterval(updateLoading, 500);
 }
 
 let endTime = 0;
@@ -1315,6 +1343,9 @@ export async function openPlayer(s) {
   score = null;
   mix = [];
   cancelCountIn();
+  performance.mark('fb-song-open');
+  loadingSince = performance.now();
+  queuedPlay = false;
   readyForPlayback = readyForPlayback && !!api;
   $('pl-title').textContent = s.title;
   describeSong(s.title, s.artist);
@@ -2014,7 +2045,8 @@ function stopTrainer() {
 }
 
 function togglePlay() {
-  if (!api || !readyForPlayback) return;
+  if (!api) return;
+  if (synthBusy()) { queuedPlay = !queuedPlay; setPlayButton(); updateLoading(); return; }
   if (cancelCountIn()) return;
   if (api.playerState === PLAYING) api.pause();
   else startPlayback();
@@ -2229,7 +2261,9 @@ async function useSoundFont(sf) {
   showSoundFontName();
   if (!api) return;
   readyForPlayback = false;
+  loadingSince = performance.now();
   setPlayButton();
+  updateLoading();
   api.resetSoundFonts();
   if (sf) api.loadSoundFont(sf.data, false);
   else api.loadSoundFont(DEFAULT_SF, false);
@@ -2267,7 +2301,9 @@ function initSound() {
 // user's soundfont again.
 function playModeChanged(recording) {
   readyForPlayback = recording;
+  if (!recording) loadingSince = performance.now();
   setPlayButton();
+  updateLoading();
   if (!recording && customSoundFont) api.loadSoundFont(customSoundFont.data, false);
   if (!recording) api.masterVolume = synthVolume(playAlongState().songVolume);
   api.playbackSpeed = speedPct / 100;
