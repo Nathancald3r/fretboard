@@ -145,6 +145,11 @@ fbPatch('direct channel (worker reset)', 'resetSamples() {\n\t\t\tthis._main.pos
   'resetSamples() {\n\t\t\t(this._fbDirect || this._main).postMessage({ cmd: "alphaSynth.output.resetSamples" });');
 fbPatch('direct channel (worker pause)', 'pause() {\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });',
   'pause() {\n\t\t\tthis._fbDirect?.close();\n\t\t\tthis._fbDirect = null;\n\t\t\tthis._main.postMessage({ cmd: "alphaSynth.output.pause" });');
+// Ready for playback again only when the worker has prepared the new song's instruments. The main
+// thread's flag went true once and stayed true, so from the second song on, Play and the count-in
+// started while the worker was still busy with the instruments (~15 s for a band song).
+fbPatch('ready flag per song', 'loadMidiFile(midi) {\n\t\t\tthis._synth.postMessage({\n\t\t\t\tcmd: "alphaSynth.loadMidi",',
+  'loadMidiFile(midi) {\n\t\t\tthis._workerIsReadyForPlayback = false;\n\t\t\tthis._synth.postMessage({\n\t\t\t\tcmd: "alphaSynth.loadMidi",');
 // Drum sounds load only for the keys played on a drum channel, and alphaTab counted only channel 9.
 // A second percussion track moved to its own channel with the drum kit bank (ownDrumChannels in
 // js/humanize.js) had none of its sounds loaded and played nothing (When I Go Down's percussion).

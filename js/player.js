@@ -141,6 +141,9 @@ function ensureApi() {
   try {
     api.midiLoaded.on(() => {
       performance.mark('fb-midi-loaded');
+      if (!loadingTimer) loadingSince = performance.now(); // a reload of the same song (strum, click) counts from here
+      updateLoading();
+      setPlayButton();
       applyMix();
       applyClickVolume();
       playAlongScoreReady();
@@ -212,8 +215,10 @@ function setPlayButton() {
   if (synthBusy()) btn.title = queuedPlay ? 'Cancel. Starts when the instruments are loaded (Space)' : 'Play when the instruments are loaded (Space)';
 }
 
+// The synth is still preparing the instruments. alphaTab's own flag goes false at every song's MIDI
+// load (patched in scripts/vendor.mjs), so the second song and later waits just like the first.
 function synthBusy() {
-  return !!api && (!readyForPlayback || !api.isReadyForPlayback);
+  return !!api && (!readyForPlayback || (!recordingOn() && !api.isReadyForPlayback));
 }
 
 // Says how long the instruments have been loading, and starts a queued Play the moment they are ready.
@@ -351,7 +356,8 @@ function keepPlayheadInView() {
 
 // Starts playback from the current position, with the count-in if it's on.
 function startPlayback() {
-  if (!api || !readyForPlayback || counting) return;
+  if (!api || counting) return;
+  if (synthBusy()) { queuedPlay = true; setPlayButton(); updateLoading(); return; } // starts when the instruments are ready
   if (preview) { stopPreview(); return; } // Play during a track preview just ends the preview
   scrollToPlayhead(); // show the playhead right away, so the count-in happens where the song will start
   if (!countInOn() || usesClassicCountIn(click)) {

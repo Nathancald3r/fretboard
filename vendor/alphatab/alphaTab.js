@@ -33688,6 +33688,7 @@
 			this._synth.postMessage({ cmd: "alphaSynth.resetSoundFonts" });
 		}
 		loadMidiFile(midi) {
+			this._workerIsReadyForPlayback = false;
 			this._synth.postMessage({
 				cmd: "alphaSynth.loadMidi",
 				midi: JsonConverter.midiFileToJsObject(Environment.prepareForPostMessage(midi))
