@@ -21,7 +21,7 @@ import {
   usesClassicCountIn, usesClassicClick, clickEvents, runCountIn, previewSound,
 } from './click.js';
 import { parseSource, sourceLine, facts as tabFacts } from './tabinfo.js';
-import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, videoStartTick, tapSync, tapVideoBeat, setStartHere, toggleRecording, startVideoHere } from './playalong.js';
+import { initPlayAlong, playAlongSongOpened, playAlongScoreReady, playerStateChanged as playAlongState2, recordingOn, minePending, videoStartTick, tapSync, tapVideoBeat, setStartHere, toggleRecording, startVideoHere } from './playalong.js';
 import { setlistContext, leaveSetlist } from './drawer.js';
 import { transposeScore, shiftChordName } from './transpose.js';
 import { lyricsTrack, buildLyrics, lineAt, repeatVerses } from './lyrics.js';
@@ -215,10 +215,11 @@ function setPlayButton() {
   if (synthBusy()) btn.title = queuedPlay ? 'Cancel. Starts when the instruments are loaded (Space)' : 'Play when the instruments are loaded (Space)';
 }
 
-// The synth is still preparing the instruments. alphaTab's own flag goes false at every song's MIDI
-// load (patched in scripts/vendor.mjs), so the second song and later waits just like the first.
+// The synth is still preparing the instruments, or (with the video) your tracks for it are still being
+// made. alphaTab's own flag goes false at every song's MIDI load (patched in scripts/vendor.mjs), so
+// the second song and later waits just like the first.
 function synthBusy() {
-  return !!api && (!readyForPlayback || (!recordingOn() && !api.isReadyForPlayback));
+  return !!api && (!readyForPlayback || (!recordingOn() && !api.isReadyForPlayback) || (minePending() && api.playerState !== PLAYING));
 }
 
 // Says how long the instruments have been loading, and starts a queued Play the moment they are ready.
@@ -231,7 +232,7 @@ function updateLoading() {
   if (!score) return; // still reading the score: "Loading score…" shows
   const s = Math.round((performance.now() - loadingSince) / 1000);
   const el = $('pl-loading');
-  el.textContent = `Loading instruments… ${s} s. ` + (queuedPlay ? 'It counts in as soon as they are ready.' : 'Press Play to start when they are ready.');
+  el.textContent = `${recordingOn() ? 'Getting your tracks ready' : 'Loading instruments'}… ${s} s. ` + (queuedPlay ? 'It counts in as soon as they are ready.' : 'Press Play to start when they are ready.');
   el.hidden = false;
   if (!loadingTimer) loadingTimer = setInterval(updateLoading, 500);
 }
@@ -378,6 +379,7 @@ function startPlayback() {
     onBeat: showCount,
     start: () => {
       counting = null;
+      if (synthBusy()) { showCount(null); queuedPlay = true; setPlayButton(); updateLoading(); return; } // a reload began during the count-in: count in again when ready
       measureLag.arm();
       api.play();
       setTimeout(() => showCount(null), 150);
@@ -2052,10 +2054,10 @@ function stopTrainer() {
 
 function togglePlay() {
   if (!api) return;
-  if (synthBusy()) { queuedPlay = !queuedPlay; setPlayButton(); updateLoading(); return; }
   if (cancelCountIn()) return;
-  if (api.playerState === PLAYING) api.pause();
-  else startPlayback();
+  if (api.playerState === PLAYING) { api.pause(); return; }
+  if (synthBusy()) { queuedPlay = !queuedPlay; setPlayButton(); updateLoading(); return; }
+  startPlayback();
 }
 
 /* ---------- moving around ---------- */

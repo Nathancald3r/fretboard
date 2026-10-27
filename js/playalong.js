@@ -897,6 +897,9 @@ function showMine() {
 
 export const recordingOn = () => on;
 
+/** With the video on, your tracks or the click are still being made: the video waits for them (whenReady). */
+export const minePending = () => on && !!media && layers.some((l) => wanted(l) && l.key !== layerKey(l));
+
 /** Where the song starts: the part of the tab the video begins with (0 = the very start). */
 export function videoStartTick() {
   if (!on || !song?.videoMaster) return 0;
