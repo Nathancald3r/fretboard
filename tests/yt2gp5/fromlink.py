@@ -251,6 +251,8 @@ def main():
     verdict = json.loads((out / "qa.json").read_text(encoding="utf-8")) if (out / "qa.json").exists() else {}
     v_ = str(verdict.get("verdict") or verdict.get("result") or "").upper()
     say(f"\nDone: {fb}\nOpen it in Fretboard (Import files). Sync check: {v_ or '?'}")
+    if v_ in ("LISTEN", "FAIL"):
+        say(f'To line it up by eye: python tools/aligner.py "{name}"')
     sys.exit({"PASS": 0, "LISTEN": 2, "FAIL": 3}.get(v_, 0))
 
 

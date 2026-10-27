@@ -11,7 +11,7 @@ Live, editable board: https://claude.ai/artifact/6bKMech8PfTJJwNHbYdVf7 (page `r
 4. Plain hands-off docs before 2026-11-04: one page per job (song from a link, UG helper, APK, data factory), each with its one command and what PASS / FAIL means.
 
 **Avenues (pick from these after)**
-- Sync: stage 2 guitar+bass; stage 3 guitar+bass+drums; longer songs (needs downloads, home net); Battle Belongs drift (section tempo only where proven); Be My Escape / Stupid Deep: user listens, then commit; a wave overlay aligner (the tab's rendered audio and the video's audio stacked, drag the offset, bar lines, play both) for songs like Ho Hey where the automatic match is unsure.
+- Sync: stage 2 guitar+bass; stage 3 guitar+bass+drums; longer songs (needs downloads, home net); Battle Belongs drift (section tempo only where proven); Be My Escape / Stupid Deep: user listens, then commit; the wave overlay aligner is built (`python tools/aligner.py "Ho Hey"`, see CLAUDE.md): next, use it on Ho Hey bars 1-16 by ear and save.
 - Import: When I Go Down (piano line 3, drums/percussion multi-bar rests); Here I Am To Worship wrong chords; Trust In God leftovers; UG workflow steps 4 (review) and 6 (auto checks); quicker PDF reading (cheap test before each dynamics read).
 - Songbook: live mode with page turns; chord chart as a laid-out PDF; "Open in app" on the helper's Done window; check shares in MusicStand, OnSong, SongbookPro.
 - Practice tab phase 1 (below): clean-speed loop first.

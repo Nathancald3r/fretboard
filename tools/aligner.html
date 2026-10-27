@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fretboard aligner</title>
+<style>
+  :root { --bg: #14161a; --panel: #1d2026; --line: #343a44; --text: #e8eaee; --dim: #9aa3b0; --tab: #5aa9ff; --vid: #ffb347; --mark: #3fe0d0; --cut: #ff6b9a; --play: #fff; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header select, header button { background: #272c35; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  header button:hover { background: #313845; }
+  header button.primary { background: #2b6fd6; border-color: #2b6fd6; font-weight: 600; }
+  header button.on { outline: 2px solid var(--mark); }
+  header .grow { flex: 1; }
+  #status { color: var(--dim); min-width: 12em; }
+  #status.err { color: #ff8a8a; }
+  #status.ok { color: #7be39a; }
+  main { flex: 1; min-height: 0; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  footer { padding: 8px 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; }
+  footer b { color: var(--text); font-weight: 600; }
+  #readout { color: var(--text); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+  #hint { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--dim); font-size: 17px; pointer-events: none; }
+  kbd { background: #2a2f38; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: 12px ui-monospace, Consolas, monospace; color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <select id="song" aria-label="Song"></select>
+  <button id="play" title="Play from the marker (Space)">▶ Play</button>
+  <button id="match" title="Find the shift here by matching the note starts (M)">Match here</button>
+  <button id="cut" title="Start a new section at the nearest bar line (A)">Cut here</button>
+  <button id="uncut" title="Join this section to the one before it (Delete)">Join</button>
+  <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+  <button id="reset" title="Go back to the sync as it was opened">Reset</button>
+  <span class="grow"></span>
+  <span id="status"></span>
+  <button id="save" class="primary" title="Write the sync into the song's .fretboard file (Ctrl+S)">Save</button>
+</header>
+<main>
+  <canvas id="c"></canvas>
+  <div id="hint"></div>
+</main>
+<footer>
+  <div id="readout"></div>
+  <div>
+    <b>Nudge the video</b> <kbd>←</kbd> <kbd>→</kbd> 10 ms · <kbd>Shift</kbd> 100 ms · <kbd>Ctrl</kbd> 1 ms &nbsp;|&nbsp;
+    <b>Zoom</b> <kbd>1</kbd> whole song · <kbd>2</kbd> 45 s · <kbd>3</kbd> 12 s · <kbd>4</kbd> 3 s · <kbd>5</kbd> 0.6 s (number row or numpad) &nbsp;|&nbsp;
+    <b>Move</b> click = marker · drag or <kbd>,</kbd> <kbd>.</kbd> = scroll · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>Home</kbd> <kbd>End</kbd><br>
+    <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>G</kbd> boost quiet parts ·
+    <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save
+  </div>
+</footer>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const cv = $('#c'), g = cv.getContext('2d');
+const SPANS = [0, 45, 12, 3, 0.6]; // zoom keys 2-5 (key 1 is the whole song)
+const H = 0.005; // the match works on 5 ms steps
+
+const S = {
+  slug: null, name: '', bars: [], pts: [], notes: [], file: '', total: 0, rate: 22050,
+  tab: null, rec: null, onTab: null, onRec: null,
+  bx: [], by: [], sec: [{ i: 0, s: 0 }], sec0: null,
+  view: { t0: 0, span: 60 }, level: 1, marker: 0, hover: null,
+  overlay: true, boost: true, split: true, mute: { tab: false, rec: false },
+  play: null, dirty: false, undo: [], lastPush: 0, saved: false,
+};
+let ctx = null, dirty = true;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/* ---------- status ---------- */
+function say(text, kind = '') { const el = $('#status'); el.textContent = text; el.className = kind; }
+function hint(text) { const el = $('#hint'); el.style.display = text ? 'grid' : 'none'; el.textContent = text || ''; }
+
+/* ---------- the sync map ---------- */
+// base(t): where tab time t sits in the video, as the file has it (bar by bar, straight between bars).
+function buildBase() {
+  const X = [], Y = [];
+  for (const [i, ms] of S.pts) {
+    const t = S.bars[i]?.[0], y = ms / 1000;
+    if (t === undefined || (X.length && (t <= X[X.length - 1] || y <= Y[Y.length - 1]))) continue;
+    X.push(t); Y.push(y);
+  }
+  S.bx = X; S.by = Y;
+}
+function seg(xs, v) {
+  const n = xs.length;
+  if (v <= xs[0]) return 0;
+  if (v >= xs[n - 1]) return n - 2;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= v) lo = m; else hi = m; }
+  return lo;
+}
+function lerpMap(xs, ys, v) {
+  const n = xs.length;
+  if (n === 0) return v;
+  if (n === 1) return ys[0] + (v - xs[0]);
+  const k = seg(xs, v);
+  return ys[k] + (v - xs[k]) * (ys[k + 1] - ys[k]) / (xs[k + 1] - xs[k]);
+}
+const base = (t) => lerpMap(S.bx, S.by, t);
+const slopeAt = (t) => { const n = S.bx.length; if (n < 2) return 1; const k = seg(S.bx, t); return (S.by[k + 1] - S.by[k]) / (S.bx[k + 1] - S.bx[k]); };
+const barT = (i) => S.bars[i][0];
+function secAt(t) { let k = 0; for (let j = 1; j < S.sec.length; j++) if (barT(S.sec[j].i) <= t + 1e-6) k = j; return k; }
+const shiftAt = (t) => S.sec[secAt(t)].s; // ms: how far the video picture is moved right
+const rec = (t) => base(t) - shiftAt(t) / 1000; // the video time that plays with tab time t
+function barAtTime(t) { let b = 0; for (let i = 0; i < S.bars.length; i++) if (barT(i) <= t + 1e-6) b = i; return b; }
+function nearestBar(t) { let b = 0, d = 1e9; for (let i = 0; i < S.bars.length; i++) { const x = Math.abs(barT(i) - t); if (x < d) { d = x; b = i; } } return b; }
+
+/* ---------- waveform pyramids ---------- */
+function pyramid(x) {
+  const B0 = 32, levels = [];
+  let n = Math.ceil(x.length / B0), mm = new Float32Array(n * 2);
+  for (let b = 0; b < n; b++) {
+    let lo = 1, hi = -1;
+    for (let i = b * B0, e = Math.min(x.length, i + B0); i < e; i++) { const v = x[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    mm[b * 2] = lo; mm[b * 2 + 1] = hi;
+  }
+  levels.push({ B: B0, mm });
+  while (n > 1) {
+    const prev = levels[levels.length - 1].mm, n2 = Math.ceil(n / 2), next = new Float32Array(n2 * 2);
+    for (let b = 0; b < n2; b++) {
+      const a = b * 2, c = Math.min(n - 1, a + 1);
+      next[b * 2] = Math.min(prev[a * 2], prev[c * 2]);
+      next[b * 2 + 1] = Math.max(prev[a * 2 + 1], prev[c * 2 + 1]);
+    }
+    levels.push({ B: levels[levels.length - 1].B * 2, mm: next });
+    n = n2;
+  }
+  return { x, levels };
+}
+const OUT = [0, 0];
+function query(p, a, b) {
+  const n = p.x.length;
+  a = clamp(Math.floor(a), 0, n - 1); b = clamp(Math.ceil(b), a + 1, n);
+  let lo = 1, hi = -1;
+  if (b - a <= 64) {
+    for (let i = a; i < b; i++) { const v = p.x[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  } else {
+    let L = 0;
+    while (L + 1 < p.levels.length && p.levels[L + 1].B <= (b - a) / 2) L++;
+    const { B, mm } = p.levels[L];
+    for (let k = Math.floor(a / B), e = Math.min(mm.length / 2, Math.ceil(b / B)); k < e; k++) {
+      if (mm[k * 2] < lo) lo = mm[k * 2];
+      if (mm[k * 2 + 1] > hi) hi = mm[k * 2 + 1];
+    }
+  }
+  OUT[0] = lo; OUT[1] = hi;
+  return OUT;
+}
+
+/* ---------- note-start signals, for "match here" ---------- */
+function onsets(x, rate) {
+  const hop = Math.round(rate * H), n = Math.floor(x.length / hop), env = new Float32Array(n), on = new Float32Array(n);
+  for (let k = 0; k < n; k++) { let s = 0; for (let i = k * hop, e = i + hop; i < e; i++) s += x[i] * x[i]; env[k] = Math.sqrt(Math.sqrt(s / hop)); }
+  for (let k = 1; k < n; k++) on[k] = Math.max(0, env[k] - env[k - 1]);
+  const out = new Float32Array(n); // blurred by ±10 ms so a synth note and a real one can agree despite their different attack
+  for (let k = 0; k < n; k++) {
+    let s = 0, w = 0;
+    for (let j = -2; j <= 2; j++) { const v = on[k + j]; if (v !== undefined) { const c = 3 - Math.abs(j); s += v * c; w += c; } }
+    out[k] = s / w;
+  }
+  return out;
+}
+function matchHere() {
+  const half = 3.5, t0 = Math.max(0, S.marker - half), t1 = Math.min(S.total, S.marker + half), K = Math.floor((t1 - t0) / H);
+  if (K < 200) { say('Too close to the end to match here.', 'err'); return; }
+  const tv = new Float32Array(K), tIdx = new Int32Array(K);
+  for (let j = 0; j < K; j++) { tIdx[j] = Math.round((t0 + j * H) / H); tv[j] = S.onTab[tIdx[j]] || 0; }
+  const norm = (v) => { let m = 0; for (const x of v) m += x; m /= v.length; let s = 0; for (const x of v) s += (x - m) * (x - m); s = Math.sqrt(s / v.length) || 1; return [m, s]; };
+  const [mt, st] = norm(tv);
+  const L = 200, scores = new Float32Array(2 * L + 1), rv = new Float32Array(K);
+  for (let l = -L; l <= L; l++) {
+    for (let j = 0; j < K; j++) rv[j] = S.onRec[Math.round(rec(t0 + j * H) / H) + l] || 0;
+    const [mr, sr] = norm(rv);
+    let acc = 0;
+    for (let j = 0; j < K; j++) acc += (tv[j] - mt) * (rv[j] - mr);
+    scores[l + L] = acc / K / (st * sr);
+  }
+  let best = 0;
+  for (let i = 1; i < scores.length; i++) if (scores[i] > scores[best]) best = i;
+  // a steady beat matches at every beat too: among peaks nearly as good as the best, take the one nearest the current shift
+  const top = scores[best];
+  let alias = false;
+  for (let i = 1; i < scores.length - 1; i++) {
+    if (scores[i] >= top * 0.85 && scores[i] >= scores[i - 1] && scores[i] >= scores[i + 1] && Math.abs(i - L) < Math.abs(best - L)) { best = i; alias = true; }
+  }
+  const c = scores[best];
+  if (c < 0.2 || best === 0 || best === scores.length - 1) { say(`No clear match here (${c.toFixed(2)}). Try a part with a clear beat, or nudge closer first (it looks ±1 s).`, 'err'); return; }
+  const a = scores[best - 1], b = scores[best + 1], d = (a - b) / (2 * (a - 2 * c + b) || 1);
+  const delta = (best - L + d) * H; // seconds: the video should be read this much later than now
+  pushUndo(true);
+  S.sec[secAt(S.marker)].s = Math.round(S.sec[secAt(S.marker)].s - delta * 1000);
+  changed();
+  say(`Matched here: section ${secAt(S.marker) + 1} is now ${fmtMs(S.sec[secAt(S.marker)].s)} (confidence ${c.toFixed(2)}${alias ? ', took the nearest of several beat matches' : ''}). Check it by eye and ear.`, 'ok');
+}
+
+/* ---------- undo, sections ---------- */
+const snap = () => JSON.stringify(S.sec);
+function pushUndo(force) {
+  const now = performance.now();
+  if (force || now - S.lastPush > 700) S.undo.push(snap());
+  S.lastPush = now;
+  if (S.undo.length > 200) S.undo.shift();
+}
+function undo() { const s = S.undo.pop(); if (!s) return; S.sec = JSON.parse(s); changed(); say('Undone.'); }
+function changed() { S.dirty = true; dirty = true; S.saved = false; if (S.play) restartSoon(); }
+const fmtMs = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(Math.round(ms)) + ' ms';
+
+function nudge(ms) {
+  pushUndo(false);
+  S.sec[secAt(S.marker)].s += ms;
+  changed();
+  say(`Section ${secAt(S.marker) + 1}: video moved ${fmtMs(S.sec[secAt(S.marker)].s)} (right = later)`);
+}
+function cutHere() {
+  const j = nearestBar(S.marker);
+  if (j === 0 || S.sec.some((x) => x.i === j)) { say(j === 0 ? 'The song starts there already.' : 'There is a cut at this bar already.'); return; }
+  pushUndo(true);
+  const k = secAt(barT(j)), s = S.sec[secAt(barT(j) - 1e-4)].s;
+  S.sec.push({ i: j, s }); S.sec.sort((a, b) => a.i - b.i);
+  S.marker = barT(j);
+  changed();
+  say(`New section from bar ${S.bars[j][1]} (same shift as before: move it with ← →).`);
+  void k;
+}
+function joinHere() {
+  let k = S.sec.findIndex((x) => x.i === nearestBar(S.marker));
+  if (k < 1) k = secAt(S.marker);
+  if (k < 1) { say('Nothing to join: this is the first section.'); return; }
+  pushUndo(true);
+  S.sec.splice(k, 1);
+  changed();
+  say('Joined with the section before it.');
+}
+function reset() {
+  if (!S.sec0) return;
+  pushUndo(true); S.sec = JSON.parse(S.sec0); changed(); say('Back to the sync as it was opened.');
+}
+
+/* ---------- view ---------- */
+function setLevel(k) {
+  S.level = k;
+  const span = k === 1 ? S.total : Math.min(S.total, SPANS[k - 1]);
+  S.view.span = span;
+  S.view.t0 = k === 1 ? 0 : clamp(S.marker - span / 2, 0, S.total - span);
+  dirty = true;
+}
+function panTo(t0) { S.view.t0 = clamp(t0, 0, Math.max(0, S.total - S.view.span)); dirty = true; }
+function showMarker() { if (S.marker < S.view.t0 || S.marker > S.view.t0 + S.view.span) panTo(S.marker - S.view.span / 2); }
+function moveMarkerBar(d) {
+  let b = barAtTime(S.marker + 1e-3);
+  if (d < 0 && S.marker - barT(b) > 0.02) d += 1; // back from inside a bar: its own start first
+  b = clamp(b + d, 0, S.bars.length - 1);
+  S.marker = barT(b); showMarker(); dirty = true;
+}
+
+/* ---------- drawing ---------- */
+const RULER = 60;
+function resize() {
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); dirty = true;
+}
+function lane(y, h, label, color, p, mapT, alpha, normScale) {
+  const W = cv.width, d = window.devicePixelRatio || 1, mid = y + h / 2, amp = h / 2 - 4 * d;
+  g.fillStyle = color; g.globalAlpha = alpha;
+  const { t0, span } = S.view, rate = S.rate;
+  for (let x = 0; x < W; x += 1) {
+    const ta = t0 + (x / W) * span, tb = t0 + ((x + 1) / W) * span;
+    let ra = mapT(ta), rb = mapT(tb);
+    if (rb < ra) { const q = ra; ra = rb; rb = q; }
+    if (rb < 0 || ra > p.x.length / rate) continue;
+    const [lo, hi] = query(p, ra * rate, rb * rate + 1);
+    const f = (v) => (S.boost ? Math.sign(v) * Math.sqrt(Math.abs(v)) : v) * normScale;
+    const yh = mid - f(hi) * amp, yl = mid - f(lo) * amp;
+    g.fillRect(x, yh, 1, Math.max(1, yl - yh));
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = color; g.font = `${12 * d}px system-ui`; g.fillText(label, 8 * d, y + 16 * d);
+}
+function draw() {
+  dirty = false;
+  const W = cv.width, Hh = cv.height, d = window.devicePixelRatio || 1;
+  g.fillStyle = '#14161a'; g.fillRect(0, 0, W, Hh);
+  if (!S.tab || !S.rec) return;
+  const { t0, span } = S.view, X = (t) => ((t - t0) / span) * W, ruler = RULER * d;
+  const lanesTop = ruler, lanesH = Hh - ruler;
+  // the waveforms
+  if (S.overlay) {
+    g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, lanesH);
+    lane(lanesTop, lanesH, 'tab (blue) over video (orange)', '#5aa9ff', S.tab, (t) => t, 0.85, 0.95);
+    lane(lanesTop, lanesH, '', '#ffb347', S.rec, rec, 0.6, 0.95);
+  } else {
+    const h = lanesH / 2;
+    g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, h); g.fillStyle = '#1b1e25'; g.fillRect(0, lanesTop + h, W, h);
+    lane(lanesTop, h, 'tab', '#5aa9ff', S.tab, (t) => t, 0.9, 0.95);
+    lane(lanesTop + h, h, 'video', '#ffb347', S.rec, rec, 0.9, 0.95);
+  }
+  // where the tab's notes start
+  if (span <= 15) {
+    g.fillStyle = 'rgba(90,169,255,.9)';
+    for (const t of S.notes) { if (t < t0 || t > t0 + span) continue; const x = X(t); g.fillRect(x - d / 2, Hh - 10 * d, d, 10 * d); }
+  }
+  // bar lines and numbers
+  g.font = `${12 * d}px system-ui`;
+  let lastLabel = -1e9;
+  for (let i = 0; i < S.bars.length; i++) {
+    const t = barT(i);
+    if (t < t0 - 1 || t > t0 + span + 1) continue;
+    const x = X(t);
+    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, ruler - 18 * d, d, Hh);
+    if (x - lastLabel > 26 * d) { g.fillStyle = '#c9d0da'; g.fillText(String(S.bars[i][1]), x + 3 * d, ruler - 6 * d); lastLabel = x; }
+  }
+  // sections: a band with each one's shift
+  for (let k = 0; k < S.sec.length; k++) {
+    const a = barT(S.sec[k].i), b = k + 1 < S.sec.length ? barT(S.sec[k + 1].i) : S.total;
+    const xa = Math.max(0, X(a)), xb = Math.min(W, X(b));
+    if (xb <= 0 || xa >= W) continue;
+    const here = secAt(S.marker) === k;
+    g.fillStyle = here ? 'rgba(63,224,208,.22)' : k % 2 ? 'rgba(255,107,154,.12)' : 'rgba(255,255,255,.06)';
+    g.fillRect(xa, 0, xb - xa, 22 * d);
+    g.fillStyle = here ? '#3fe0d0' : '#c9d0da'; g.font = `${12 * d}px system-ui`;
+    g.fillText(`section ${k + 1}: ${fmtMs(S.sec[k].s)}`, Math.max(xa, 0) + 8 * d, 15 * d);
+    if (k > 0 && xa >= 0 && xa <= W) { g.fillStyle = '#ff6b9a'; g.fillRect(xa, 0, 2 * d, Hh); }
+  }
+  // the marker, the hover, the playhead
+  const mx = X(S.marker);
+  if (mx >= 0 && mx <= W) { g.fillStyle = '#3fe0d0'; g.fillRect(mx - d, 22 * d, 2 * d, Hh); g.beginPath(); g.moveTo(mx - 6 * d, 22 * d); g.lineTo(mx + 6 * d, 22 * d); g.lineTo(mx, 32 * d); g.fill(); }
+  if (S.hover !== null) { const hx = X(S.hover); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(hx, 22 * d, d, Hh); }
+  if (S.play) { const px = X(S.play.t); if (px >= 0 && px <= W) { g.fillStyle = '#fff'; g.fillRect(px - d, 22 * d, 2 * d, Hh); } }
+  readout();
+}
+function readout() {
+  const t = S.hover ?? S.marker, b = barAtTime(t), k = secAt(t);
+  $('#readout').innerHTML = `<b>${S.name}</b> · view ${S.view.span >= 100 ? Math.round(S.view.span) + ' s' : S.view.span.toFixed(S.view.span < 5 ? 1 : 0) + ' s'} (key ${S.level}) · ` +
+    `${S.hover !== null ? 'pointer' : 'marker'}: bar ${S.bars[b][1]}, tab ${t.toFixed(3)} s, video ${rec(t).toFixed(3)} s · ` +
+    `section ${k + 1} of ${S.sec.length}, shift <b>${fmtMs(S.sec[k].s)}</b>` +
+    (S.dirty ? ' · <b style="color:#ffb347">not saved</b>' : S.saved ? ' · <b style="color:#7be39a">saved</b>' : '');
+}
+function loop() {
+  if (S.play) {
+    const t = S.play.t0 + (ctx.currentTime - S.play.startAt);
+    S.play.t = Math.max(S.play.t0, t);
+    if (S.play.t > S.view.t0 + S.view.span * 0.92 && S.view.span < S.total) panTo(S.play.t - S.view.span * 0.1);
+    if (t > S.total) stopPlay();
+    dirty = true;
+  }
+  if (dirty) draw();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- playing both ---------- */
+let gains = null, restartTimer = 0;
+function ensureCtx() { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); return ctx; }
+function applyGains() {
+  if (!gains) return;
+  gains.tab.gain.value = S.mute.tab ? 0 : 1; gains.rec.gain.value = S.mute.rec ? 0 : 1;
+  gains.tabPan.pan.value = S.split ? 1 : 0; gains.recPan.pan.value = S.split ? -1 : 0;
+}
+function startPlay(from) {
+  ensureCtx(); ctx.resume();
+  stopPlay(true);
+  const t0 = from ?? S.marker, startAt = ctx.currentTime + 0.08, nodes = [];
+  gains = { tab: ctx.createGain(), rec: ctx.createGain(), tabPan: ctx.createStereoPanner(), recPan: ctx.createStereoPanner() };
+  gains.tab.connect(gains.tabPan).connect(ctx.destination); gains.rec.connect(gains.recPan).connect(ctx.destination);
+  applyGains();
+  const tabSrc = ctx.createBufferSource(); tabSrc.buffer = S.tab.buf; tabSrc.connect(gains.tab); tabSrc.start(startAt, t0); nodes.push(tabSrc);
+  // the video in one piece per section, each from its own place
+  let k = secAt(t0), segStart = t0;
+  while (segStart < S.total && k < S.sec.length) {
+    const segEnd = Math.min(S.total, k + 1 < S.sec.length ? barT(S.sec[k + 1].i) : S.total);
+    if (segEnd > segStart + 0.001) {
+      const rate = clamp(slopeAt(segStart + 0.001), 0.5, 2);
+      let r0 = base(segStart) - S.sec[k].s / 1000, when = startAt + (segStart - t0), len = (segEnd - segStart) * rate;
+      if (r0 < 0) { when += -r0 / rate; len += r0; r0 = 0; } // the video begins a little later than this section
+      if (len > 0.001) {
+        const src = ctx.createBufferSource(); src.buffer = S.rec.buf; src.playbackRate.value = rate; src.connect(gains.rec);
+        src.start(when, r0, len); nodes.push(src);
+      }
+    }
+    segStart = segEnd; k++;
+  }
+  S.play = { t0, t: t0, startAt, nodes };
+  $('#play').textContent = '■ Stop'; $('#play').classList.add('on');
+}
+function stopPlay(quiet) {
+  if (!S.play) return;
+  for (const n of S.play.nodes) { try { n.stop(); } catch { /* not started yet */ } n.disconnect(); }
+  S.play = null; dirty = true;
+  if (!quiet) { $('#play').textContent = '▶ Play'; $('#play').classList.remove('on'); }
+}
+function togglePlay() { if (S.play) stopPlay(); else startPlay(); }
+function restartSoon() { clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (S.play) startPlay(S.play.t); }, 160); }
+
+/* ---------- loading ---------- */
+async function loadAudio(slug, which) {
+  const r = await fetch(`/audio/${slug}/${which}.wav`);
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error; } catch { /* plain text */ } throw new Error(m); }
+  const buf = await ensureCtx().decodeAudioData(await r.arrayBuffer());
+  return { buf, ...pyramid(buf.getChannelData(0)) };
+}
+async function openSong(slug) {
+  stopPlay();
+  S.slug = slug; S.tab = S.rec = null; dirty = true; hint('Loading…');
+  try {
+    say('Reading the song…');
+    const d = await (await fetch(`/api/song/${slug}`)).json();
+    if (d.error) throw new Error(d.error);
+    Object.assign(S, { name: d.name, bars: d.bars, pts: d.points, notes: d.notes, file: d.file, rate: d.rate });
+    buildBase();
+    say('Preparing the sound (the first time takes a little while)…');
+    hint('Preparing the tab’s sound and the video’s sound. The first time takes up to a minute.');
+    S.tab = await loadAudio(slug, 'tab'); S.rec = await loadAudio(slug, 'rec');
+    S.total = S.tab.buf.duration;
+    S.onTab = onsets(S.tab.x, S.rate); S.onRec = onsets(S.rec.x, S.rate);
+    S.sec = [{ i: 0, s: 0 }]; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
+    S.marker = S.bars.length > 1 ? barT(Math.min(2, S.bars.length - 1)) : 0;
+    setLevel(1); hint('');
+    say(d.aligned ? `Opened. Last aligned ${d.aligned.at}.` : 'Opened. Press 3, then ← → until the blue and orange peaks line up.');
+  } catch (e) { hint(''); say(String(e.message || e), 'err'); }
+}
+function savePoints() {
+  const pts = []; let last = -1;
+  for (let i = 0; i < S.bars.length; i++) {
+    const t = barT(i), ms = Math.max(0, Math.round(base(t) * 1000 - shiftAt(t)));
+    if (ms > last) { pts.push([i, ms]); last = ms; }
+  }
+  return pts;
+}
+async function save() {
+  if (!S.tab) return;
+  const shifts = S.sec.map((x, k) => `section ${k + 1} from bar ${S.bars[x.i][1]}: ${fmtMs(x.s)}`).join('; ');
+  say('Saving…');
+  const r = await fetch(`/api/save/${S.slug}`, { method: 'POST', body: JSON.stringify({ points: savePoints(), note: shifts }) });
+  const d = await r.json();
+  if (d.error) { say(d.error, 'err'); return; }
+  // the file now holds the new times: they become the starting point, with no shift left
+  S.pts = savePoints(); buildBase(); S.sec = [{ i: 0, s: 0 }]; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = true; dirty = true;
+  $('#status').title = d.file;
+  say(`Saved ${d.file.split(/[\\/]/).pop()}. Import it in Fretboard and choose “Replace it”.`, 'ok');
+}
+
+/* ---------- input ---------- */
+const timeAtX = (clientX) => { const r = cv.getBoundingClientRect(); return S.view.t0 + ((clientX - r.left) / r.width) * S.view.span; };
+let drag = null;
+cv.addEventListener('mousedown', (e) => { drag = { x: e.clientX, t0: S.view.t0, moved: false }; });
+window.addEventListener('mousemove', (e) => {
+  if (drag) {
+    const r = cv.getBoundingClientRect(), dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 4) drag.moved = true;
+    if (drag.moved) panTo(drag.t0 - (dx / r.width) * S.view.span);
+  }
+  const r = cv.getBoundingClientRect();
+  S.hover = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom ? clamp(timeAtX(e.clientX), 0, S.total) : null;
+  dirty = true;
+});
+window.addEventListener('mouseup', (e) => {
+  if (drag && !drag.moved && S.tab) { S.marker = clamp(timeAtX(e.clientX), 0, S.total); dirty = true; }
+  drag = null;
+});
+cv.addEventListener('mouseleave', () => { S.hover = null; dirty = true; });
+cv.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (!S.tab) return;
+  if (e.ctrlKey || e.metaKey) { const at = timeAtX(e.clientX); const lv = clamp(S.level + (e.deltaY < 0 ? 1 : -1), 1, 5); if (lv !== S.level) { S.marker = clamp(at, 0, S.total); setLevel(lv); } return; }
+  panTo(S.view.t0 + ((e.deltaX || e.deltaY) / cv.getBoundingClientRect().width) * S.view.span);
+}, { passive: false });
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches?.('select, input, textarea')) { if (e.code !== 'Space') return; e.target.blur(); }
+  if (!S.tab) return;
+  const key = e.code;
+  const step = e.shiftKey ? 100 : e.ctrlKey || e.altKey ? 1 : 10;
+  let used = true;
+  const digit = /^(Digit|Numpad)([1-5])$/.exec(key);
+  if (e.ctrlKey && key === 'KeyS') save();
+  else if (e.ctrlKey && key === 'KeyZ') undo();
+  else if (digit && !e.ctrlKey) setLevel(Number(digit[2]));
+  else if (key === 'ArrowLeft') nudge(-step);
+  else if (key === 'ArrowRight') nudge(step);
+  else if (key === 'ArrowUp') moveMarkerBar(e.shiftKey ? -4 : -1);
+  else if (key === 'ArrowDown') moveMarkerBar(e.shiftKey ? 4 : 1);
+  else if (key === 'Comma' || key === 'PageUp') panTo(S.view.t0 - S.view.span * 0.8);
+  else if (key === 'Period' || key === 'PageDown') panTo(S.view.t0 + S.view.span * 0.8);
+  else if (key === 'Home') { S.marker = 0; showMarker(); dirty = true; }
+  else if (key === 'End') { S.marker = S.total; showMarker(); dirty = true; }
+  else if (key === 'Space') togglePlay();
+  else if (key === 'KeyT') { S.mute.tab = !S.mute.tab; applyGains(); say(S.mute.tab ? 'Tab sound off.' : 'Tab sound on.'); }
+  else if (key === 'KeyV') { S.mute.rec = !S.mute.rec; applyGains(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); }
+  else if (key === 'KeyE') { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); }
+  else if (key === 'KeyO') { S.overlay = !S.overlay; dirty = true; }
+  else if (key === 'KeyG') { S.boost = !S.boost; dirty = true; say(S.boost ? 'Quiet parts boosted.' : 'True loudness.'); }
+  else if (key === 'KeyA') cutHere();
+  else if (key === 'Delete' || key === 'Backspace') joinHere();
+  else if (key === 'KeyM') matchHere();
+  else used = false;
+  if (used) e.preventDefault();
+});
+$('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = cutHere; $('#uncut').onclick = joinHere;
+$('#undo').onclick = undo; $('#reset').onclick = reset; $('#save').onclick = save;
+$('#song').onchange = (e) => openSong(e.target.value);
+window.addEventListener('resize', resize);
+window.addEventListener('beforeunload', (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+(async () => {
+  resize(); requestAnimationFrame(loop);
+  const list = await (await fetch('/api/songs')).json();
+  if (!list.length) { hint('No song to line up yet. Make one with: python tests/yt2gp5/fromlink.py "<youtube link>"'); return; }
+  for (const s of list) $('#song').add(new Option(s.name, s.slug));
+  const want = new URLSearchParams(location.search).get('song');
+  if (want && list.some((s) => s.slug === want)) $('#song').value = want;
+  openSong($('#song').value);
+})();
+</script>
+</body>
+</html>
