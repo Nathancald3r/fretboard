@@ -512,9 +512,12 @@ def main():
     s = qa.load(aligner.read_json(aligner.LISTEN / slug / "info.json")["name"])
     old = qa.judge(s)
     print(f"  {old['verdict']:6} the file's sync: {len(old['fails'])} fails, {len(old['listen'])} listens, {fixsync.score(old)[2]} bars drift")
+    fb = aligner.fretboard_of(aligner.LISTEN / slug)
+    first = fb.with_name(fb.name + ".before-wavefit")  # a second run starts from the file as it was before wavefit first wrote it, so it gives the same answer
+    start = first if first.exists() else None
     best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
     for name, ending in (("wavefit", False), ("wavefit + ending", True)):
-        r = fit_song(slug, use=use, rng=a.range, ending=ending, say=print if not ending else (lambda *x: None))
+        r = fit_song(slug, base_file=start, use=use, rng=a.range, ending=ending, say=print if not ending else (lambda *x: None))
         if ending and best and list(r["knots"]) == list(best[1]["knots"]):
             continue
         if not ending:
