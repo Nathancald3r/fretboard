@@ -166,6 +166,30 @@
    }
   },
   {
+   "name": "Bruno Mars - Count On Me (official)",
+   "title": "Count On Me",
+   "artist": "Bruno Mars",
+   "gp": "tests\\yt2gp5\\cache\\ug\\Bruno Mars - Count On Me.gp",
+   "sha1": "89be0067adb33afc",
+   "seconds": 189,
+   "instruments": [
+    "drums",
+    "guitar",
+    "piano",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/bruno-mars/count-on-me-official-2158857",
+   "youtube": "https://www.youtube.com/watch?v=6k8cpUkKK4c",
+   "video": {
+    "title": "Bruno Mars - Count on Me (Official Lyric Video)",
+    "channel": "Bruno Mars",
+    "seconds": 193
+   },
+   "confidence": null
+  },
+  {
    "name": "Chris Tomlin - Here I Am To Worship",
    "title": "Here I Am To Worship",
    "artist": "Chris Tomlin",
@@ -1329,6 +1353,30 @@
     }
    ],
    "lineup": 0.079
+  },
+  {
+   "name": "The Lumineers - Ho Hey (official)",
+   "title": "Ho Hey",
+   "artist": "The Lumineers",
+   "gp": "tests\\yt2gp5\\cache\\ug\\The Lumineers - Ho Hey.gp",
+   "sha1": "e314314e3dbf0367",
+   "seconds": 153,
+   "instruments": [
+    "bass",
+    "drums",
+    "guitar",
+    "vocals"
+   ],
+   "status": "confirmed",
+   "official": true,
+   "ug": "https://tabs.ultimate-guitar.com/tab/the-lumineers/ho-hey-official-2422311",
+   "youtube": "https://www.youtube.com/watch?v=EJN-rzytlYI",
+   "video": {
+    "title": "The Lumineers - Ho Hey",
+    "channel": "The Lumineers",
+    "seconds": 162
+   },
+   "confidence": null
   }
  ]
 }

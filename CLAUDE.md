@@ -179,21 +179,12 @@ Open bugs and to-dos live in `TODO.md`, not here.
   - acoustic guitar (track 0) 0.0347
   - piano (track 4) 0.0146
 
-## Where we left off (2026-10-24)
+## Where we left off (2026-10-27)
 
-- **Latest APK:** Android 1.48 (versionCode 49), installed on the user's phone. It has everything pushed up to `92facfb`; nothing is waiting for an APK.
-- **Done and pushed 2026-10-23/24:**
-  - Songs page redesign: the last song opens straight away, ☰ holds the library, bulk edit (delete, setlist, folder, share, key), "You already have this song".
-  - Sharing to MusicStand / OnSong / SongbookPro (ChordPro, PDF with the song attached, setlist .zip).
-  - ChordPro and chord-chart PDF import.
-  - Chord sheets: chord shapes on hover/tap with saved favourite shapes, ChordPro editing, two columns, sticky controls, search box clears after a search.
-  - Power Tab (.ptb) import; mixer ▶ preview and instrument picker; drums in When I Go Down; dynamics from the sheet music.
-  - Round-trip import test: 7 of 7 songs pass, mean 99.6% (2026-10-24).
-  - Library fix: a song tapped in the ☰ drawer opens again (`92facfb`). Checked on the website.
-  - Android 1.48 built and installed on the user's Pixel 8a (`8fed129`).
-- **Video sync (latest work, 2026-10-24 evening):** see the "Save point … one steady tempo" section in `tests/yt2gp5/PLAN.md`. Uncommitted work is waiting for the user to confirm Be My Escape and Stupid Deep sound right.
-- **Open (details in `TODO.md`):**
-  - When I Go Down PDF import: piano line 3 lost (37 bars), drums 71 and percussion 33 bars (multi-bar rests).
-  - Songbook plan: live mode with page turns, a chord chart as a laid-out PDF, Open in app on the helper's Done window, checking shares in the real apps.
-  - UG workflow plan: review step (4) and automatic checks (6).
-  - Trust In God leftovers and the wrong-chords bug on Here I Am To Worship.
+- **Roadmap board (live):** https://claude.ai/artifact/5udvK5nrRMJgcBKCF7SAb1. Source: `roadmap/board.html` (cards are the `T` list at the top of its script). To update it, edit that file and publish with the Artifact tool passing that URL as `url`. The same list, in words, is "Roadmap: what's next" at the top of `TODO.md`. Keep the two in step.
+- **PC:** on 2026-10-26 the PC smelled like burning with the CPU near 100%. Nothing heavy (sync ladder, training) until the user says it was checked.
+- **Latest APK:** 1.52 is built (`Fretboard-1.52.apk`); the phone may still have 1.48. `node scripts/apk.mjs --no-bump` installs it.
+- **Sync ladder (latest work, 2026-10-26):** see "Sync ladder: where it stopped" in `TODO.md`. Ho Hey starts ~0.9 s late; `fix_start` exists but its check rejects the move. The 12 recordings are downloaded, so public Wi-Fi is fine.
+- **Be My Escape and Stupid Deep:** sync waits for the user to listen and confirm.
+- **Done and pushed 2026-10-23/26:** songs page redesign, sharing to MusicStand / OnSong / SongbookPro, ChordPro and chord-chart PDF import, chord sheets, Power Tab import, round-trip test 7 of 7 (99.6%), library fix (`92facfb`), helper claim lock, ladder on official audio, fake-recording sync test 5 of 5, data factory 300 of 300.
+- **Open:** the full list, in order, is "Roadmap: what's next" in `TODO.md`.

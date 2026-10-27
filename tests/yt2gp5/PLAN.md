@@ -240,6 +240,8 @@ Tested:
 
 ## Next steps
 
+**Now (2026-10-27):** the sync ladder comes first: Ho Hey's start, then 10 of 12 PASS per stage (guitar; guitar+bass; guitar+bass+drums). Details: "Sync ladder: where it stopped" and "Roadmap: what's next" in `TODO.md`. The list below is older.
+
 1. More songs. Each song needs a `.gp` plus the YouTube video of the same recording. More songs make the scores more trustworthy; aim for 15–20 of different styles (acoustic, distorted, 6/8, fast).
 2. Improve guitar notes, the weakest part:
    - basic-pitch thresholds (`onset_threshold`, `frame_threshold`, minimum note length) tuned on the song set, synth and real both

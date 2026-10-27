@@ -1,5 +1,23 @@
 # Fretboard: open work (moved out of CLAUDE.md)
 
+## Roadmap: what's next (2026-10-27)
+
+Live board: https://claude.ai/artifact/5udvK5nrRMJgcBKCF7SAb1 (source `roadmap/board.html`). Wi-Fi OK = nothing to download.
+
+**Next up, in order**
+1. Get the PC checked (burning smell, 2026-10-26). No long CPU/GPU runs before that.
+2. Fix Ho Hey's start on the studio audio (SuZytYa71lk): bars 1-16 against the drum stem and by ear, then fix `fix_start`'s check. Light CPU, Wi-Fi OK.
+3. Sync ladder stage 1: 10 of 12 songs PASS, guitar only (`python tests/yt2gp5/ladder.py --tracks guitar`). Heavy CPU, Wi-Fi OK.
+4. Plain hands-off docs before 2026-11-04: one page per job (song from a link, UG helper, APK, data factory), each with its one command and what PASS / FAIL means.
+
+**Avenues (pick from these after)**
+- Sync: stage 2 guitar+bass; stage 3 guitar+bass+drums; longer songs (needs downloads, home net); Battle Belongs drift (section tempo only where proven); Be My Escape / Stupid Deep: user listens, then commit.
+- Import: When I Go Down (piano line 3, drums/percussion multi-bar rests); Here I Am To Worship wrong chords; Trust In God leftovers; UG workflow steps 4 (review) and 6 (auto checks); quicker PDF reading (cheap test before each dynamics read).
+- Songbook: live mode with page turns; chord chart as a laid-out PDF; "Open in app" on the helper's Done window; check shares in MusicStand, OnSong, SongbookPro.
+- Practice tab phase 1 (below): clean-speed loop first.
+- App: install APK 1.52 on the phone; banjo tuning.
+- TabMaker: train on the 300 factory examples, on free Colab (T4) so the PC stays cool (needs home net).
+
 ## YouTube → GP5 (Colab notebook + test loop, 2026-10-24)
 
 The plan, the file list, where it stands and the next steps are all in `tests/yt2gp5/PLAN.md`. Start there.

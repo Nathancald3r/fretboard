@@ -1,0 +1,221 @@
+<title>Fretboard Roadmap Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: status strip, filter row, four columns (Avenues → Next → Doing → Done) that wrap to 2 then 1; tap a card to move it right, tap i for details */
+:root{
+  --bg:#f2f4f3;--panel:#e6e9e7;--card:#ffffff;--fg:#1c2421;--muted:#5b6762;--line:#d0d6d2;
+  --accent:#2c4a6b;--accent-bg:#e2e9f2;
+  --doing:#c9442e;--doing-bg:#fbe8e3;--done:#2e7a4d;--done-bg:#e1f0e6;--next:#8a5a00;--next-bg:#fbefd6;
+  --crit:#b3261e;--crit-bg:#fde3e1;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#131715;--panel:#1b201d;--card:#242a26;--fg:#e8ece9;--muted:#99a49e;--line:#343c37;
+  --accent:#a9c3e0;--accent-bg:#22303f;
+  --doing:#f07a63;--doing-bg:#3a221d;--done:#6cc28f;--done-bg:#1c3325;--next:#e9b75a;--next-bg:#352a14;
+  --crit:#ff8a80;--crit-bg:#3d1c1a;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#131715;--panel:#1b201d;--card:#242a26;--fg:#e8ece9;--muted:#99a49e;--line:#343c37;
+  --accent:#a9c3e0;--accent-bg:#22303f;
+  --doing:#f07a63;--doing-bg:#3a221d;--done:#6cc28f;--done-bg:#1c3325;--next:#e9b75a;--next-bg:#352a14;
+  --crit:#ff8a80;--crit-bg:#3d1c1a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,4vw,36px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;max-width:62ch}
+.pct{font-family:var(--mono);font-size:32px;font-variant-numeric:tabular-nums;text-align:right}
+.pct small{display:block;font-size:12px;color:var(--muted)}
+.bar{height:10px;background:var(--panel);border-radius:6px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--done);transition:width .4s ease}
+.alert{display:flex;gap:10px;align-items:flex-start;background:var(--crit-bg);color:var(--crit);border-radius:10px;padding:10px 14px;font-weight:700}
+.alert span{font-weight:400;color:var(--fg)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+.f{font:inherit;font-size:13px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;transition:background .15s,color .15s}
+.f[aria-pressed="true"]{background:var(--accent);color:var(--card);border-color:var(--accent)}
+.f:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+@media (max-width:1040px){.cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){.cols{grid-template-columns:minmax(0,1fr)}}
+.col{background:var(--panel);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:120px;transition:outline-color .15s}
+.col.over{outline:2px dashed var(--muted);outline-offset:-4px}
+.col h2{font-family:var(--display);font-weight:500;font-size:17px;margin:2px 4px 0;display:flex;justify-content:space-between;align-items:center}
+.col h2 b{font-family:var(--mono);font-weight:500;font-size:13px;color:var(--muted)}
+.col p.hint{margin:0 4px 4px;font-size:12.5px;color:var(--muted)}
+.col[data-s="next"] h2{color:var(--next)}.col[data-s="doing"] h2{color:var(--doing)}.col[data-s="done"] h2{color:var(--done)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:grab;
+  transition:box-shadow .15s,border-color .15s;will-change:transform}
+.card:hover{border-color:var(--muted)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card[data-s="next"]{border-left:4px solid var(--next);border-radius:0 8px 8px 0}
+.card[data-s="doing"]{border-left:4px solid var(--doing);border-radius:0 8px 8px 0;background:var(--doing-bg)}
+.card[data-s="done"] .tt{text-decoration:line-through;color:var(--muted)}
+.card.crit{border-color:var(--crit);background:var(--crit-bg)}
+.row{display:flex;gap:10px;align-items:flex-start}
+.tag{flex:none;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;background:var(--accent-bg);color:var(--accent);margin-top:2px}
+.t{flex:1;min-width:0}
+.tt{display:block}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.pill{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--done);border-color:transparent;background:var(--done-bg)}
+.pill.warn{color:var(--next);border-color:transparent;background:var(--next-bg)}
+.pill.bad{color:var(--crit);border-color:transparent;background:var(--crit-bg)}
+.info{flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--accent);
+  font-family:var(--mono);font-size:13px;cursor:pointer;display:grid;place-items:center;padding:0;transition:background .2s,color .2s,transform .25s}
+.info:hover,.info.on{background:var(--accent);color:var(--card);border-color:var(--accent)}
+.info.on{transform:rotate(180deg)}
+.info:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.back{flex:none;border:0;background:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px}
+.back:hover{color:var(--fg)}
+/* Smooth drop-down: rows animate from 0fr to 1fr */
+.drop{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s ease,opacity .25s ease;opacity:0}
+.drop.open{grid-template-rows:1fr;opacity:1}
+.drop>div{overflow:hidden;min-height:0}
+.dl{margin:10px 0 0;padding-top:10px;border-top:1px dashed var(--line);display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:13.5px}
+.dl dt{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding-top:2px}
+.dl dd{margin:0}
+.dl code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:1px 4px;border-radius:3px;word-break:break-all}
+.empty{color:var(--muted);font-size:13px;padding:8px 4px}
+.foot{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px}
+.foot button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:6px 12px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.bar>i,.drop,.info,.card{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Fretboard roadmap</h1>
+      <p class="sub">Every open avenue for Fretboard, with what's next. Tap a card to move it right, ↩ to move it back, or drag it. Tap <b>i</b> to see why, the cost and what it unlocks.</p>
+    </div>
+    <div class="pct" id="pct">0%<small>of cards done</small></div>
+  </header>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="alert" role="note">PC first.<span>It smelled like burning on 2026-10-26. Get it checked before any long CPU or GPU run (sync ladder, TabMaker training).</span></div>
+  <div class="filters" id="filters"><span class="lbl">Show</span></div>
+  <div class="cols">
+    <section class="col" data-s="avenue"><h2>Avenues <b id="n-avenue">0</b></h2><p class="hint">Possible routes. Pick one to move up.</p></section>
+    <section class="col" data-s="next"><h2>Next up <b id="n-next">0</b></h2><p class="hint">In order. Top card first.</p></section>
+    <section class="col" data-s="doing"><h2>Doing <b id="n-doing">0</b></h2><p class="hint">One or two at a time.</p></section>
+    <section class="col" data-s="done"><h2>Done <b id="n-done">0</b></h2><p class="hint">Shipped and pushed.</p></section>
+  </div>
+  <div class="foot">
+    <span>Cost key: CPU light/heavy (cap 60%), GPU (cap 85%), Wi-Fi OK = nothing to download. Hands-off date: 2026-11-04.</span>
+    <button id="reset" type="button">Reset board</button>
+  </div>
+</div>
+
+<script>
+// [id, column, area, title, why, time, cpu, wifiOk, unlocks, how, crit]
+const T=[
+ ["pc","next","PC","Get the PC checked (burning smell)","Smelled like burning while the CPU was near 100%. Long runs could damage it or start a fire.","1 visit","none",true,"Every heavy run below","Check fans, dust, thermal paste and the power supply. Until then keep runs short.",true],
+ ["hohey","next","Sync","Fix Ho Hey's start on the studio audio","The beginning sync is crucial: bar 1 lands ~0.9 s late. The intro runs ~2% slower, and one steady tempo gives up bars 1-16. fix_start moves them, but its onset check rejects the move.","1-2 h","light",true,"The ladder rerun","Rerun on SuZytYa71lk, then check bars 1-16 against the drum stem and by ear. Then fix fix_start's acceptance check.<br><code>python tests/yt2gp5/fromlink.py \"https://youtu.be/SuZytYa71lk\" --again</code>"],
+ ["ladder1","next","Sync","Sync ladder, stage 1: 10 of 12 songs PASS (guitar)","The goal you set: simple songs synced perfectly 100% of the time, one track first. All 12 recordings are downloaded already.","2-3 h","heavy",true,"Stage 2","<code>python tests/yt2gp5/ladder.py --tracks guitar</code><br>Fix each FAIL one at a time; rerun only that song."],
+ ["docs","next","Hands-off","Plain docs so it runs by itself","You stop using Claude on 2026-11-04. Everything has to run from one command with a plain guide.","2 h","none",true,"Everything after Nov 4","One page per job: add a song from a link, the UG helper, the APK, the data factory. Each with its one command and what PASS / FAIL means."],
+ ["ladder2","avenue","Sync","Sync ladder, stage 2: guitar + bass","Two tracks must line up together. Bass shows tempo drift that guitar alone hides.","2 h","heavy",true,"Stage 3","<code>python tests/yt2gp5/ladder.py --tracks guitar,bass</code>"],
+ ["ladder3","avenue","Sync","Sync ladder, stage 3: guitar + bass + drums","Drums give the clearest beat; if all three line up, the whole song is right.","2 h","heavy",true,"Longer songs","<code>python tests/yt2gp5/ladder.py --tracks guitar,bass,drums</code>"],
+ ["longer","avenue","Sync","Longer songs on the ladder","After short songs pass: longer songs with tempo changes and bridges.","3 h + downloads","heavy",false,"Any song from a link","Pick 10 longer songs with official audio. Downloads are needed, so do it at home."],
+ ["battle","avenue","Sync","Battle Belongs: a band tempo that drifts","One tempo can't fit a live-feel recording. One tempo per section is allowed only when drift is proven.","1-2 h","light",true,"Worship songs from links","Prove the drift with the per-4-bar check, then let section_tempo take only those sections."],
+ ["escape","avenue","Sync","Be My Escape and Stupid Deep: confirm and commit","The sync work is done but uncommitted. It's waiting for you to listen and say it sounds right.","15 min","none",true,"A clean main branch","Open both songs, play with the video, tell Claude yes or what's off."],
+ ["widi","avenue","Import","When I Go Down: finish the PDF import","Piano line 3 is lost (37 bars), drums read 71 and percussion 33 of 114 bars (multi-bar rests).","2-3 h","light",true,"Correct imports for rest-heavy parts","Compare bars per line with the printed bar numbers; fix thickRest / readRestCount for the drum staves."],
+ ["chords","avenue","Import","Here I Am To Worship: wrong chords","Some chords import wrong, and the sound is off on imported songs.","1-2 h","light",true,"Chord sheets you can trust","Compare Chords.txt with the chords on the tab; find where they part."],
+ ["trust","avenue","Import","Trust In God: the leftovers","The rest of your Notion list for this song.","1 h","light",true,"A finished reference song","See the Trust In God section in TODO.md."],
+ ["ugflow","avenue","Import","UG workflow: review step and automatic checks","Steps 4 and 6 of your plan: review a saved song before import, then check bar counts by itself.","3 h","light",true,"Fewer bad imports","Review dialog shows bars per part; auto-check flags parts that don't match the song's bar count."],
+ ["fastpdf","avenue","Import","Quicker PDF reading","~200 of ~240 reads per part are dynamics guesses that never pay off (~50 ms each).","2 h","light",true,"Imports in under a minute","A cheap test before reading each candidate."],
+ ["live","avenue","Songbook","Live mode with page turns","Play a set on stage: big chords, hands-free page turns.","4 h","light",true,"Using it at church","Full-screen chart, page turn by tap or pedal (keyboard keys)."],
+ ["chartpdf","avenue","Songbook","Chord chart as a laid-out PDF","Print or share a clean chart, like MusicStand's.","2 h","light",true,"Sharing to bands","Two columns, sections, chords above words."],
+ ["openapp","avenue","Songbook","\"Open in app\" on the helper's Done window","After a UG save, one button opens the song in Fretboard.","1 h","light",true,"Faster song adding","Button links to the song in the app."],
+ ["shares","avenue","Songbook","Check shares in MusicStand, OnSong, SongbookPro","Shares are built but not checked in the real apps.","1 h","none",true,"Confidence in sharing","Share one song and one setlist to each app on the phone."],
+ ["practice","avenue","Practice","Practice tab, phase 1: guitar hands","Your plan: clean-speed loop, strum timing, scales, chord changes, fret notes, 30 minutes a day. All checked by the phone's mic.","1-2 days","light",true,"Actually getting better at guitar","Start with the clean-speed loop: loop bars, +5% after 3 clean passes."],
+ ["apk","avenue","App","Install the newest APK on the phone","Fretboard-1.52.apk is built; the phone may still have an older one.","5 min","none",true,"Latest fixes on Android","Plug in the Pixel 8a, then:<br><code>node scripts/apk.mjs --no-bump</code>"],
+ ["banjo","avenue","App","Banjo tuning","Add banjo to the tuning menu.","30 min","none",true,"Banjo songs","Add the tuning; check the fretboard draws 5 strings."],
+ ["tabmaker","avenue","TabMaker","Train TabMaker on the factory data","300 of 300 training examples are ready. Next: train the model that turns audio into tab.","days","GPU",false,"Tabs for songs with no UG tab","Use free Colab (T4) so your PC stays cool. Cap 85% GPU if local."],
+ ["d-factory","done","TabMaker","Data factory: 300 of 300 examples","Every AAM mix split into stems with labels; no failures.","","",true,"",""],
+ ["d-claim","done","Sync","Helper claim lock","Scripts and the UG helper no longer save the same song at once.","","",true,"",""],
+ ["d-links","done","Sync","Ladder on official audio only","12 songs moved to official studio audio / lyric videos; the .gp step bug fixed.","","",true,"",""],
+ ["d-synctest","done","Sync","Fake-recording test: 5 of 5","The sync math itself is right to 17 ms on known answers.","","",true,"",""],
+ ["d-round","done","Import","Round-trip import: 7 of 7, 99.6%","","","",true,"",""],
+ ["d-lib","done","App","Library songs open again","","","",true,"",""]
+];
+const COLS=["avenue","next","doing","done"];
+const AREAS=["All","Wi-Fi OK","Sync","Import","Songbook","Practice","App","TabMaker","Hands-off"];
+const KEY="fretboard-board-v1";
+let state={};try{state=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){state={}}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
+const byId=Object.fromEntries(T.map(t=>[t[0],t]));
+const st=id=>(state.c&&state.c[id])||byId[id][1];
+const order=()=>state.o||T.map(t=>t[0]);
+let filter="All";const open=new Set();
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function setCol(id,s,toTop){state.c=state.c||{};state.c[id]=s;
+  const o=order().filter(x=>x!==id);
+  if(toTop){const first=o.findIndex(x=>st(x)===s);o.splice(first<0?o.length:first,0,id)}else o.push(id);
+  state.o=o;save();}
+function move(id,dir){const i=COLS.indexOf(st(id))+dir;if(i<0||i>3)return;flip(()=>setCol(id,COLS[i],dir<0));
+  const el=document.querySelector(`[data-id="${id}"]`);if(el)el.focus({preventScroll:true});}
+function toggle(id){const card=document.querySelector(`[data-id="${id}"]`);if(!card)return;
+  const on=!open.has(id);on?open.add(id):open.delete(id);
+  card.querySelector(".drop").classList.toggle("open",on);
+  const b=card.querySelector(".info");b.classList.toggle("on",on);b.setAttribute("aria-expanded",on);}
+
+// FLIP: cards glide to their new place
+function flip(change){const before=new Map();document.querySelectorAll(".card").forEach(c=>before.set(c.dataset.id,c.getBoundingClientRect()));
+  change();render();if(reduce)return;
+  document.querySelectorAll(".card").forEach(c=>{const b=before.get(c.dataset.id);if(!b)return;const a=c.getBoundingClientRect();
+    const dx=b.left-a.left,dy=b.top-a.top;if(!dx&&!dy)return;
+    c.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:"none"}],{duration:320,easing:"cubic-bezier(.2,.8,.2,1)"});});}
+
+function visible(t){if(filter==="All")return true;if(filter==="Wi-Fi OK")return t[7]&&st(t[0])!=="done";return t[2]===filter;}
+function cpuPill(c){if(!c)return"";const cls=c==="none"?"ok":c==="light"?"":c==="GPU"?"bad":"warn";return`<span class="pill ${cls}">CPU ${c==="GPU"?"+ GPU":c}</span>`;}
+
+function card(t){const[id,,area,title,why,time,cpu,wifi,unlocks,how,crit]=t;const s=st(id);
+  const d=document.createElement("div");d.className="card"+(crit&&s!=="done"?" crit":"");d.dataset.id=id;d.dataset.s=s;d.tabIndex=0;d.draggable=true;
+  d.setAttribute("role","button");d.setAttribute("aria-label",title+(s==="done"?" (done)":", activate to move right"));
+  const isOpen=open.has(id);
+  const rows=[["Why",esc(why)],time&&["Time",esc(time)],unlocks&&["Unlocks",esc(unlocks)],how&&["How",how]].filter(Boolean);
+  d.innerHTML=`<div class="row"><span class="tag">${area}</span><span class="t"><span class="tt">${esc(title)}</span>
+    <span class="meta">${time?`<span class="pill">${esc(time)}</span>`:""}${cpuPill(cpu)}${s!=="done"?(wifi?'<span class="pill ok">Wi-Fi OK</span>':'<span class="pill warn">needs home net</span>'):""}</span></span>
+    <button class="info${isOpen?" on":""}" type="button" aria-label="Show details" aria-expanded="${isOpen}" aria-controls="dd-${id}">i</button>
+    ${s!=="avenue"?'<button class="back" type="button" title="Move back" aria-label="Move back">↩</button>':""}</div>
+    <div class="drop${isOpen?" open":""}" id="dd-${id}"><div><dl class="dl">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div></div>`;
+  d.querySelector(".info").onclick=e=>{e.stopPropagation();toggle(id)};
+  const bk=d.querySelector(".back");if(bk)bk.onclick=e=>{e.stopPropagation();move(id,-1)};
+  d.querySelector(".drop").onclick=e=>e.stopPropagation();
+  d.onclick=()=>move(id,1);
+  d.oncontextmenu=e=>{e.preventDefault();toggle(id)};
+  d.onkeydown=e=>{if(e.target!==d)return;if(e.key==="Enter"||e.key===" "){e.preventDefault();move(id,1)}
+    if(e.key==="Backspace"){e.preventDefault();move(id,-1)}if(e.key==="i"){e.preventDefault();toggle(id)}};
+  d.ondragstart=e=>{e.dataTransfer.setData("text/plain",id)};
+  return d;}
+
+function render(){
+  document.querySelectorAll(".col").forEach(c=>c.querySelectorAll(".card,.empty").forEach(n=>n.remove()));
+  const counts={avenue:0,next:0,doing:0,done:0};
+  order().forEach(id=>{const t=byId[id];if(!t)return;const s=st(id);counts[s]++;
+    if(visible(t))document.querySelector(`.col[data-s="${s}"]`).appendChild(card(t));});
+  COLS.forEach(s=>{document.getElementById("n-"+s).textContent=counts[s];
+    const col=document.querySelector(`.col[data-s="${s}"]`);
+    if(!col.querySelector(".card")){const e=document.createElement("div");e.className="empty";
+      e.textContent=s==="doing"?"Tap a Next up card to start it.":s==="done"?"Finished cards land here.":"Nothing here for this filter.";col.appendChild(e);}});
+  const pct=Math.round(counts.done/T.length*100);
+  document.getElementById("pct").firstChild.textContent=pct+"%";document.getElementById("bar").style.width=pct+"%";}
+
+const fb=document.getElementById("filters");
+AREAS.forEach(a=>{const b=document.createElement("button");b.className="f";b.type="button";b.textContent=a;b.setAttribute("aria-pressed",a===filter);
+  b.onclick=()=>{filter=a;fb.querySelectorAll(".f").forEach(x=>x.setAttribute("aria-pressed",x===b));flip(()=>{})};fb.appendChild(b);});
+
+document.querySelectorAll(".col").forEach(c=>{
+  c.ondragover=e=>{e.preventDefault();c.classList.add("over")};
+  c.ondragleave=()=>c.classList.remove("over");
+  c.ondrop=e=>{e.preventDefault();c.classList.remove("over");const id=e.dataTransfer.getData("text/plain");if(id&&byId[id])flip(()=>setCol(id,c.dataset.s,false));};});
+let armed=false;const r=document.getElementById("reset");
+r.onclick=()=>{if(!armed){armed=true;r.textContent="Tap again to reset";setTimeout(()=>{armed=false;r.textContent="Reset board"},3000);return}
+  state={};save();armed=false;r.textContent="Reset board";flip(()=>{});};
+render();
+</script>
