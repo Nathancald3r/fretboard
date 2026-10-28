@@ -80,6 +80,8 @@ LAG_COST = 0.4             # z per second of lag away from the file's sync (a on
 POOLED_Z = 6.0             # a lag every window agrees on (chance gives ~3)
 FLOOR_Z = 1.5              # below this a window has no say in the line
 REFINE_S = 0.10            # s: the whole-song tuning moves a knot at most this far from where the windows put it
+HARM = 0.8                 # weight of the harmony's z next to the note starts' z in each window (harmony try only)
+CHROMA_HOP = 512           # the harmony's frames (qa.py's cache): 23 ms
 
 
 class Sync:
@@ -185,6 +187,38 @@ def load_sounds(info, vid, use):
     if "mix" in want or not out:  # all the tab against the whole recording
         out["mix"] = (tab["mix"], read_wav(wav))
     return out
+
+
+# ---------- harmony: what chord is playing, to tell look-alike note starts apart ----------
+
+def load_harmony(info, seconds):
+    """(tab, recording): 12 pitch classes per 23 ms frame, each frame of length 1, the tab moved into the recording's
+    key. qa.py keeps them beside the song (qa_env.npz); None when they are missing or are of another tab or video."""
+    f = aligner.LISTEN / info["slug"] / "qa_env.npz"
+    if not f.exists():
+        return None
+    d = np.load(f)
+    if "rec_c" not in d or str(d["sha"]) != info["gp_sha"] or abs(float(d["length"]) - seconds) > 0.5:
+        return None
+    unit = lambda c: (c / (np.linalg.norm(c, axis=0) + 1e-9)).astype(np.float32)
+    return np.roll(unit(d["tab_c"]), int(info.get("shift") or 0), axis=0), unit(d["rec_c"])
+
+
+def harmony_matrix(harm, base, edges, lags):
+    """[window, lag]: how alike the tab's and the recording's chords are (mean cosine over the window's frames that
+    have notes), the recording read at the base sync + lag. Broad where the note starts are sharp: it says which
+    of the look-alike peaks (the 8th notes of a strum, a beat away) is the right one."""
+    tab, rec = harm
+    tt = np.arange(tab.shape[1]) * CHROMA_HOP / RATE
+    v0 = base(tt)
+    idx = np.minimum(np.searchsorted(tt, edges[:-1]), len(tt) - 1)
+    notes = (np.linalg.norm(tab, axis=0) > 0.5).astype(float)
+    count = np.maximum(np.add.reduceat(notes, idx), 1)
+    H = np.zeros((len(idx), len(lags)))
+    for gi, g in enumerate(lags):
+        r = rec[:, np.clip(np.rint((v0 + g) * RATE / CHROMA_HOP).astype(int), 0, rec.shape[1] - 1)]
+        H[:, gi] = np.add.reduceat(np.sum(tab * r, axis=0) * notes, idx) / count
+    return H
 
 
 # ---------- windows, scores, the path ----------
@@ -387,7 +421,7 @@ def get_curves(info, vid, use):
     return _CACHE[key]
 
 
-def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print, ending=False):
+def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print, ending=False, harmony=False):
     """The song's bar times lined up on the recording, starting from the points given (or the file's own)."""
     d = aligner.LISTEN / slug
     info = aligner.read_json(d / "info.json")
@@ -400,12 +434,17 @@ def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=
     t0 = time.time()
     layers = get_curves(info, vid, use)
     say(f"  layers: {', '.join(layers)} (video {vid}); curves {time.time() - t0:.1f} s")
+    harm = load_harmony(info, len(next(iter(layers.values()))[1]) * DT) if harmony else None
+    if harmony and harm is None:
+        raise RuntimeError("The harmony isn't saved for this song (qa.py makes it).")
     edges = windows(bars_t)
     lags = np.arange(-rng, rng + 1e-9, DT)
     base0 = base
     for attempt in range(4):
         S, wsum, centre = score_matrix(layers, base, edges, lags)
         Z = zscore(S, wsum)
+        if harm is not None:  # the chords too: a window whose note starts have look-alike peaks, or too few, still has a clear place
+            Z = Z + HARM * zscore(harmony_matrix(harm, base, edges, lags), wsum)
         mid = (edges[:-1] + edges[1:]) / 2
         reach = np.r_[0, np.ceil(LAG_STEP_PCT / 100 * np.diff(mid) / DT)]  # bins the lag may move from one window to the next
         Zp = Z - LAG_COST * np.abs(lags)[None, :] * (wsum > 1e-6)[:, None]  # a strummed song looks the same one beat away: when two lags score alike, the one nearer the file's sync wins
@@ -477,16 +516,21 @@ def selftest(use=None):
         if not before:
             print(f"{case}: no fake song yet (run: python tests/yt2gp5/synctest.py)")
             continue
-        for label, worse in (("from the line-up", False), ("from a bad start", True)):
+        for label, worse, harmony in (("from the line-up", False, False), ("from a bad start", True, False),
+                                      ("from the line-up + harmony", False, True), ("from a bad start + harmony", True, True)):
             pts = aligner.read_json(before)["songs"][0]["syncPoints"]
             if worse:
                 pts = [[p, int(round(ms * 1.005 + 400))] for p, ms in pts]
-            r = fit_song(slug, base_file=before, base_points=pts, use=use, say=lambda *a: None)
+            try:
+                r = fit_song(slug, base_file=before, base_points=pts, use=use, harmony=harmony, say=lambda *a: None)
+            except RuntimeError as e:
+                print(f"  skipped {case:9} {label}: {e}")
+                continue
             truth = delay + factor * r["bars_t"]
             err = np.array([ms / 1000 - truth[p] for p, ms in r["points"]]) * 1000
             good = bool(np.abs(err).max() <= PASS_MS)
             ok, total = ok + good, total + 1
-            print(f"  {'PASS' if good else 'FAIL'} {case:9} {label:16}: median {np.median(err):+.1f} ms, worst {np.abs(err).max():.1f} ms "
+            print(f"  {'PASS' if good else 'FAIL'} {case:9} {label:27}: median {np.median(err):+.1f} ms, worst {np.abs(err).max():.1f} ms "
                   f"({len(r['knots']) - 2} tempo changes, {r['seconds']} s)")
     print(f"{ok} of {total} right (every bar within {PASS_MS} ms)")
     return ok == total
@@ -503,16 +547,19 @@ def run(slug, use=None, rng=RANGE_S, check=False, verbose=False):
     fb = aligner.fretboard_of(aligner.LISTEN / slug)
     first = fb.with_name(fb.name + ".before-wavefit")  # a second run starts from the file as it was before wavefit first wrote it, so it gives the same answer
     start = first if first.exists() else None
+    tried = []
     best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
-    for name, ending in (("wavefit", False), ("wavefit + ending", True)):
+    for name, ending, harmony in (("wavefit", False, False), ("wavefit + ending", True, False),
+                                  ("wavefit + harmony", False, True), ("wavefit + harmony + ending", True, True)):
         try:
-            r = fit_song(slug, base_file=start, use=use, rng=rng, ending=ending, say=print if not ending else (lambda *x: None))
-        except RuntimeError as e:  # too few note starts to go on: the file's own sync stays
-            print(f"  wavefit left out: {e}")
-            break
-        if ending and best and list(r["knots"]) == list(best[1]["knots"]):
+            r = fit_song(slug, base_file=start, use=use, rng=rng, ending=ending, harmony=harmony, say=print if not (ending or harmony) else (lambda *x: None))
+        except RuntimeError as e:  # too few note starts to go on: the file's own sync stays (the harmony tries may still find a place)
+            print(f"  {name} left out: {e}")
             continue
-        if not ending:
+        if ending and best and any(list(r["knots"]) == list(b["knots"]) for b in tried if b["harmony"] == harmony):
+            continue
+        tried.append({"knots": r["knots"], "harmony": harmony})
+        if not (ending or harmony):
             show(r, verbose)
         else:
             print("  with an ending knot: " + ", ".join(f"{k0:.0f}-{k1:.0f}s {100 / sl:.2f}%" for k0, k1, sl in zip(r["knots"][:-1], r["knots"][1:], r["slopes"])))
