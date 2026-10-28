@@ -15,6 +15,7 @@ import { playStrum, stopStrum } from './strumplay.js';
 import { CHORD, TAB_LINE, chordTokens, cleanTabText, readSections, foldRepeats, viewHtml, capoPlan, chordsOf } from './chordsheetview.js';
 import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords } from './sheettools.js';
 import { startClick, stopClick, setClickBpm, clicking, countIn, cancelCount, counting } from './sheetclick.js';
+import { initVideoBar } from './sheetvideo.js';
 import { backingTex, STYLES } from './backing.js';
 
 export { cleanTabText };
@@ -26,6 +27,7 @@ let scrolling = false;
 let performing = false;
 let tempo = 100;
 let sizeStep = () => {}; // set by initText: the magnifier's step (1 bigger, -1 smaller)
+let vbar = null; // the video panel's player and bar (js/sheetvideo.js), made by initText
 let lastFrame = 0;
 let carry = 0;
 
@@ -251,7 +253,7 @@ function fit() {
   const cs = getComputedStyle(body);
   const inner = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const vid = $('tx-vid');
-  const docked = !vid.hidden && getComputedStyle(vid).position === 'sticky';
+  const docked = !vid.hidden && getComputedStyle(vid).bottom !== 'auto'; // the strip under the song; beside it takes no height
   const room = innerHeight - (body.getBoundingClientRect().top + window.scrollY) - (docked ? vid.offsetHeight : 0) - 14;
   const apply = (size, cols) => {
     body.style.fontSize = `${size}px`;
@@ -489,11 +491,8 @@ function videoLabel(note = '') {
 function showVideo(on) {
   const id = videoId();
   if (on && !id) { findVideo(); return; }
-  $('tx-vid').hidden = !on;
   $('view-text').classList.toggle('has-vid', on); // docked beside the song (wide) or under it (narrow), never over the chords
-  $('tx-vid-frame').innerHTML = on
-    ? `<iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1" title="Video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
-    : '';
+  if (on) vbar.open(id); else vbar.close();
   videoLabel();
   fit();
 }
@@ -570,6 +569,18 @@ function setScrolling(on) {
 const speedNow = () => clampSpeed($('tx-speed').value);
 const drawSpeed = () => { $('tx-t-speed').textContent = String(speedNow()); };
 const drawBpm = () => { $('tx-t-bpm').textContent = String(tempo); };
+
+// the column folds to a handle; the choice is kept
+let toolsFolded = false;
+try { toolsFolded = localStorage.getItem('fretboard-tx-tools-fold') === '1'; } catch { /* ignore */ }
+function paintToolsFold() {
+  $('tx-tools').classList.toggle('folded', toolsFolded);
+  const b = $('tx-t-fold');
+  b.setAttribute('aria-expanded', String(!toolsFolded));
+  b.setAttribute('aria-label', toolsFolded ? 'Show the tools' : 'Fold the tools');
+  b.title = toolsFolded ? 'Show the tools' : 'Fold the tools away';
+  layoutTools();
+}
 
 // room for the column beside the song, and the top of it just under the bar
 function layoutTools() {
@@ -695,6 +706,13 @@ async function saveNote(remove = false) {
 
 function initTools() {
   const tap = (id, fn) => $(id).addEventListener('click', fn);
+  paintToolsFold();
+  tap('tx-t-fold', () => {
+    toolsFolded = !toolsFolded;
+    try { localStorage.setItem('fretboard-tx-tools-fold', toolsFolded ? '1' : '0'); } catch { /* ignore */ }
+    paintToolsFold();
+    fit();
+  });
   tap('tx-t-quick', quickStart);
   tap('tx-t-video', () => {
     if (!$('tx-vid').hidden) { showVideo(false); return; }
@@ -780,6 +798,7 @@ export function closeText() {
 export function initText({ onEdit }) {
   initShapes();
   initTools();
+  vbar = initVideoBar({ onFold: fit });
   $('tx-strum').addEventListener('click', (e) => {
     const b = e.target.closest('[data-strum]');
     if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);

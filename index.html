@@ -745,6 +745,9 @@
       <div class="tx-foot"><span id="tx-time" class="mono muted"></span><span class="tx-nav"><a href="#library">Songs</a><a href="#practice">Practice</a><a href="#log">Log</a></span></div>
     </div>
     <div id="tx-tools" class="tx-tools" role="toolbar" aria-label="Song tools">
+      <button id="tx-t-fold" class="tx-tile tx-fold" title="Fold the tools away" aria-label="Fold the tools" aria-expanded="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <button id="tx-t-quick" class="tx-tile" title="Quick start: a one-bar count-in, then the song scrolls" aria-label="Quick start">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.8z" fill="currentColor"/></svg><small id="tx-t-quick-txt"></small>
       </button>
@@ -790,8 +793,21 @@
     <div class="tx-main">
       <div id="tx-body" class="text-tab chordview"></div>
       <div id="tx-vid" class="tx-vid" hidden>
-        <div class="tx-vid-head"><span>Video</span><button id="tx-vid-close" class="ghost small" aria-label="Close the video">✕</button></div>
         <div id="tx-vid-frame" class="tx-vid-frame"></div>
+        <div class="tx-vid-bar">
+          <input id="tx-vid-seek" class="tx-vid-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position in the video">
+          <button id="tx-vid-play" class="tx-vbtn go" aria-label="Play">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="ic-play" d="M7 4.5v15l12.5-7.5z" fill="currentColor"/><path class="ic-pause" d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z" fill="currentColor"/></svg>
+          </button>
+          <span id="tx-vid-time" class="tx-vid-time mono">0:00 / 0:00</span>
+          <button id="tx-vid-rate" class="tx-vbtn txt" title="Playback speed" aria-label="Playback speed">1×</button>
+          <button id="tx-vid-fold" class="tx-vbtn" aria-expanded="true" aria-label="Fold the video" title="Fold the video away (it keeps playing)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9l7 7 7-7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button id="tx-vid-close" class="tx-vbtn" aria-label="Close the video" title="Close the video">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </main>

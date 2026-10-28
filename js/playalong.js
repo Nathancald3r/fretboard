@@ -8,6 +8,7 @@ import { findRecording, youTubeSearchUrl, pickConfident, explainPick, tabEvidenc
 import { parseSource } from './tabinfo.js';
 import { btDelay, onBtChange, bindBtControls } from './btdelay.js';
 import { clickTrackBuffer } from './click.js';
+import { loadYouTubeApi } from './ytapi.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
@@ -83,19 +84,6 @@ function fileHandler(rec) {
     hold() { dead = true; held = true; },
     destroy() { dead = true; held = false; el.pause(); URL.revokeObjectURL(el.src); cancelAnimationFrame(raf); clearInterval(timer); },
   };
-}
-
-let ytReady = null;
-function loadYouTubeApi() {
-  ytReady ??= new Promise((resolve, reject) => {
-    if (window.YT?.Player) { resolve(); return; }
-    window.onYouTubeIframeAPIReady = resolve;
-    const s = document.createElement('script');
-    s.src = 'https://www.youtube.com/iframe_api';
-    s.onerror = () => { ytReady = null; reject(new Error('Could not reach YouTube.')); };
-    document.head.append(s);
-  });
-  return ytReady;
 }
 
 export function youTubeId(text) {
