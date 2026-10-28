@@ -162,7 +162,10 @@ def to_gp(folder, again):
         return gp
     say("  turning the PDFs into one .gp...")
     for i in range(3):  # again when it fails (right after a UG save it has failed without a word)
-        r = subprocess.run([sys.executable, "-u", str(HERE / "ug_to_gp.py"), str(folder.parent), "-k", folder.name], cwd=ROOT)
+        r = subprocess.run([sys.executable, "-u", str(HERE / "ug_to_gp.py"), str(folder.parent), "-k", folder.name], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        for line in (r.stdout or "").splitlines() + (r.stderr or "").splitlines()[-8:]:  # what it said, so a silent failure isn't silent
+            say("    " + line)
         if gp.exists():
             break
         say(f"  the .gp wasn't made (exit code {r.returncode}); trying again")
