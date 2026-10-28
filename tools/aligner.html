@@ -284,7 +284,7 @@ function pushUndo(force) {
   if (S.undo.length > 200) S.undo.shift();
 }
 function undo() { const s = S.undo.pop(); if (!s) return; S.sec = JSON.parse(s); changed(); say('Undone.'); }
-function changed() { S.dirty = true; dirty = true; S.saved = false; if (S.play) restartSoon(); }
+function changed() { S.dirty = true; dirty = true; S.saved = false; if (S.play) restartSoon(); else warmSoon(); }
 const fmtMs = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(Math.round(ms)) + ' ms';
 
 // The section the keys and buttons act on: the one picked by clicking its name, else the one under the marker.
@@ -512,10 +512,10 @@ function readout() {
 }
 function loop() {
   if (S.play) {
-    const t = S.play.t0 + (ctx.currentTime - S.play.startAt);
-    S.play.t = Math.max(S.play.t0, t);
+    const v = S.play.v0 + Math.max(0, ctx.currentTime - S.play.startAt), t = tabAtVideo(S.play.c.pieces, v); // the video is the clock
+    if (t !== null) S.play.t = Math.max(S.play.t0, t); // in a gap of the map the playhead waits
     if (S.follow) keepInView(S.play.t); // only with Follow on: otherwise the view stays where it is, even if the playhead leaves it
-    if (t > S.total) stopPlay();
+    if (v > S.play.c.plan.vEnd + 0.05 || S.play.t >= S.total) stopPlay();
     dirty = true;
   }
   if (dirty) draw();
@@ -535,43 +535,146 @@ function applyGains() {
   gains.tabPan.pan.value = S.split ? 1 : 0; gains.recPan.pan.value = S.split ? -1 : 0;
   for (const side of ['tab', 'rec']) for (const r of S.mix[side].rows) { const gn = gains.rows[side][r.id]; if (gn) gn.gain.value = eff(side, r); }
 }
-function startPlay(from) {
+/* ---------- the tab follows the video ---------- */
+// The video always plays at its own speed (1×, its natural pitch). The tab is what moves: where the map says the video runs
+// slower or faster than the tab, the tab's sound is stretched to fit and keeps its pitch (WSOLA: overlapping grains, each
+// taken where it carries on from the one before best). Its time stays on the map to within a few ms.
+const ST = { hop: 0.015, tol: 0.006, dec: 6 };
+// The map cut into straight pieces at every section start and every one of the file's sync points: { a, b } tab seconds
+// that play at video seconds { vs, ve }, speed = video seconds per tab second. A piece that would run past the next one's
+// start in the video is cut short (the video is the clock).
+function buildPieces() {
+  const cuts = [0, S.total];
+  for (const x of S.bx) if (x > 1e-3 && x < S.total) cuts.push(x);
+  for (let k = 1; k < S.sec.length; k++) { const x = barT(S.sec[k].i); if (x > 1e-3 && x < S.total) cuts.push(x); }
+  cuts.sort((p, q) => p - q);
+  const E = 1e-4, out = []; // read each piece just inside its ends, so a section's own shift applies
+  for (let j = 0; j + 1 < cuts.length; j++) {
+    const a = cuts[j], b = cuts[j + 1];
+    if (b - a < 4 * E) continue;
+    const ra = rec(a + E), rb = rec(b - E), speed = (rb - ra) / (b - a - 2 * E);
+    if (!(speed > 0.05 && speed < 20)) continue;
+    const p = { a, b, vs: ra - speed * E, ve: rb + speed * E, speed };
+    while (out.length && out[out.length - 1].vs >= p.vs) out.pop();
+    const q = out[out.length - 1];
+    if (q && q.ve > p.vs) { q.b = q.a + (p.vs - q.vs) / q.speed; q.ve = p.vs; }
+    out.push(p);
+  }
+  return out;
+}
+function videoAtTab(pieces, t) { // where the video is when the tab is at t
+  for (const p of pieces) if (t < p.b) return Math.max(p.vs, p.vs + (t - p.a) * p.speed);
+  return pieces.length ? pieces[pieces.length - 1].ve : t;
+}
+function tabAtVideo(pieces, v) { // the tab time heard at video time v, or null where the map has a gap
+  let lo = 0, hi = pieces.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (pieces[m].vs <= v) lo = m; else hi = m - 1; }
+  const p = pieces[lo];
+  return p && v >= p.vs && v <= p.ve ? p.a + (v - p.vs) / p.speed : null;
+}
+// Which stretch each grain makes: grain k starts at video time vOrigin + k·hop and its middle should hold the tab where the
+// map puts it; the start is moved by up to ±tol to where the grain best continues the last one. Worked out once on the whole mix,
+// then applied to any buffer with the same length (the tab's separate tracks), so every track is cut at the same places.
+function planStretch(buf, pieces) {
+  const sr = buf.sampleRate, D = ST.dec, Hs = Math.round(ST.hop * sr / D) * D, N = 2 * Hs, tolD = Math.round(ST.tol * sr / D), L = Hs / D;
+  const vOrigin = Math.min(0, pieces[0].vs), vEnd = pieces[pieces.length - 1].ve;
+  const Lout = Math.ceil((vEnd - vOrigin) * sr) + N, K = Math.ceil((vEnd - vOrigin) * sr / Hs) + 1;
+  // a mono copy at 1/D the rate to compare grains on, with silence around it so a search at an end needs no checks
+  const padD = L * 2 + tolD + 2, m = Math.ceil(buf.length / D), xd = new Float32Array(m + 2 * padD), chs = buf.numberOfChannels;
+  for (let c = 0; c < chs; c++) { const x = buf.getChannelData(c); for (let j = 0; j < m; j++) { let s = 0; for (let i = j * D, e = Math.min(buf.length, i + D); i < e; i++) s += x[i]; xd[padD + j] += s / (D * chs); } }
+  const q = new Int32Array(K), live = new Uint8Array(K), first = new Uint8Array(K);
+  let prev = -1;
+  for (let k = 0; k < K; k++) {
+    const t = tabAtVideo(pieces, vOrigin + (k + 1) * Hs / sr); // the tab time at the grain's centre, where the map has it
+    if (t === null) { prev = -1; continue; }
+    const j0 = Math.round((t * sr - Hs) / D); // so the grain starts half a grain earlier
+    live[k] = 1;
+    if (prev < 0) { q[k] = j0 * D; first[k] = 1; prev = k; continue; }
+    const nat = q[prev] / D + L; // where the last grain's own sound goes on
+    if (Math.abs(j0 - nat) > 4 * tolD) { q[k] = j0 * D; prev = k; continue; } // the map jumps here: splice, no search
+    let tn = 0; for (let i = 0; i < L; i++) { const y = xd[padD + nat + i]; tn += y * y; }
+    tn = Math.sqrt(tn);
+    let best = j0, bs = -2;
+    if (tn > 1e-6) for (let j = j0 - tolD; j <= j0 + tolD; j++) {
+      let dot = 0, en = 0; const o = padD + j, to = padD + nat;
+      for (let i = 0; i < L; i++) { const y = xd[o + i]; dot += y * xd[to + i]; en += y * y; }
+      const sc = dot / (Math.sqrt(en) * tn + 1e-12) - 0.002 * Math.abs(j - j0) / tolD; // a tie goes to the place the map asks for
+      if (sc > bs) { bs = sc; best = j; }
+    }
+    q[k] = best * D; prev = k;
+  }
+  const win = new Float32Array(N), winFirst = new Float32Array(N);
+  for (let i = 0; i < N; i++) { win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N); winFirst[i] = i < Hs ? 1 : win[i]; }
+  return { Hs, N, q, live, first, win, winFirst, Lout, vOrigin, vEnd, sr };
+}
+function applyStretch(buf, plan) {
+  const { Hs, N, q, live, first, win, winFirst, Lout } = plan, out = ctx.createBuffer(buf.numberOfChannels, Lout, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const x = buf.getChannelData(c), y = out.getChannelData(c);
+    for (let k = 0; k < q.length; k++) {
+      if (!live[k]) continue;
+      const s = q[k], o = k * Hs, w = first[k] ? winFirst : win, i0 = Math.max(0, -s), i1 = Math.min(N, x.length - s);
+      for (let i = i0; i < i1; i++) y[o + i] += w[i] * x[s + i];
+    }
+  }
+  return out;
+}
+// The plan and the stretched buffers are kept until the map changes (a volume change keeps them).
+let stretchCache = null;
+const mapSig = () => JSON.stringify([S.pts, S.sec, S.total]);
+function stretchReady(quiet) {
+  const sig = mapSig();
+  if (stretchCache?.sig === sig) return stretchCache.ready;
+  const c = stretchCache = { sig, bufs: {} };
+  c.ready = (async () => {
+    if (!quiet) say('Stretching the tab to the video’s clock…');
+    await new Promise((r) => setTimeout(r, 30)); // let the message show before the work
+    c.pieces = buildPieces();
+    if (!c.pieces.length) throw new Error('The sync map has no usable piece.');
+    c.plan = planStretch(S.tab.buf, c.pieces);
+    if (!quiet) say('Tab stretched to the video.');
+    return c;
+  })();
+  c.ready.catch((e) => { if (stretchCache === c) stretchCache = null; say(String(e.message || e), 'err'); });
+  return c.ready;
+}
+const stretched = (c, key, buf) => (c.bufs[key] ??= applyStretch(buf, c.plan));
+// Ahead of the first Play (and after each edit), so Play starts at once: the stretch is worked out when the map settles.
+let warmTimer = 0;
+function warmSoon() { clearTimeout(warmTimer); warmTimer = setTimeout(() => { if (S.tab) stretchReady(true).catch(() => {}); }, 400); }
+
+let playToken = 0;
+async function startPlay(from) {
   ensureCtx(); ctx.resume();
   stopPlay(true);
-  const t0 = from ?? S.marker, startAt = ctx.currentTime + 0.08, nodes = [];
+  const token = ++playToken, t0 = from ?? S.marker;
+  let c;
+  try { c = await stretchReady(); } catch { return; }
+  if (token !== playToken) return; // stopped, or started again, while the tab was being stretched
+  if (c.sig !== mapSig()) { startPlay(t0); return; } // the map changed meanwhile
+  const v0 = videoAtTab(c.pieces, t0), startAt = ctx.currentTime + 0.08, nodes = [];
   gains = { tab: ctx.createGain(), rec: ctx.createGain(), tabPan: ctx.createStereoPanner(), recPan: ctx.createStereoPanner(), rows: { tab: {}, rec: {} } };
   gains.tab.connect(gains.tabPan).connect(ctx.destination); gains.rec.connect(gains.recPan).connect(ctx.destination);
-  // the tab: its whole mix, or each track through its own volume
+  // the tab (stretched): its whole mix, or each track through its own volume
   const tabIns = [];
-  if (rowsOn('tab')) for (const r of S.mix.tab.rows) { const gn = ctx.createGain(); gn.connect(gains.tab); gains.rows.tab[r.id] = gn; tabIns.push([gn, S.mix.tab.bufs[r.id].buf]); }
-  else tabIns.push([gains.tab, S.tab.buf]);
-  for (const [out, buf] of tabIns) { const s = ctx.createBufferSource(); s.buffer = buf; s.connect(out); s.start(startAt, t0); nodes.push(s); }
-  // the video: its whole mix, or each stem (drums, bass, other, vocals) through its own volume
+  if (rowsOn('tab')) for (const r of S.mix.tab.rows) { const gn = ctx.createGain(); gn.connect(gains.tab); gains.rows.tab[r.id] = gn; tabIns.push([gn, stretched(c, 'tab-' + r.id, S.mix.tab.bufs[r.id].buf)]); }
+  else tabIns.push([gains.tab, stretched(c, 'mix', S.tab.buf)]);
+  for (const [out, buf] of tabIns) { const s = ctx.createBufferSource(); s.buffer = buf; s.connect(out); s.start(startAt, Math.max(0, v0 - c.plan.vOrigin)); nodes.push(s); }
+  // the video at 1×: its whole mix, or each stem (drums, bass, other, vocals) through its own volume
   const recIns = [];
   if (rowsOn('rec')) for (const r of S.mix.rec.rows) { const gn = ctx.createGain(); gn.connect(gains.rec); gains.rows.rec[r.id] = gn; recIns.push([gn, S.mix.rec.bufs[r.id].buf]); }
   else recIns.push([gains.rec, S.rec.buf]);
   applyGains();
-  // the video in one straight piece wherever the map bends: at each section start and each of the file's sync points
-  const cuts = [t0, S.total];
-  for (const x of S.bx) if (x > t0 + 1e-3 && x < S.total) cuts.push(x);
-  for (let k = 1; k < S.sec.length; k++) { const x = barT(S.sec[k].i); if (x > t0 + 1e-3) cuts.push(x); }
-  cuts.sort((p, q) => p - q);
-  const E = 1e-4; // read each piece just inside its ends, so a section's own shift applies
-  for (let j = 0; j + 1 < cuts.length; j++) {
-    const a = cuts[j], b = cuts[j + 1];
-    if (b - a < 4 * E) continue;
-    const ra = rec(a + E), rb = rec(b - E), speed = (rb - ra) / (b - a - 2 * E), rate = clamp(speed, 0.5, 2);
-    let r0 = ra - speed * E, when = startAt + (a - t0), len = (b - a) * rate;
-    if (r0 < 0) { when += -r0 / rate; len += r0; r0 = 0; } // the video begins a little later than this piece
-    if (len > 0.001) for (const [out, buf] of recIns) {
-      const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate; src.connect(out);
-      src.start(when, r0, len); nodes.push(src);
-    }
+  for (const [out, buf] of recIns) {
+    const s = ctx.createBufferSource(); s.buffer = buf; s.connect(out);
+    if (v0 >= 0) s.start(startAt, v0); else s.start(startAt - v0, 0); // the video has not begun yet at the start of the tab
+    nodes.push(s);
   }
-  S.play = { t0, t: t0, startAt, nodes };
+  S.play = { t0, t: t0, v0, startAt, nodes, c };
   $('#play .lbl').textContent = '■ Stop'; $('#play').classList.add('on');
 }
 function stopPlay(quiet) {
+  playToken++;
   if (!S.play) return;
   for (const n of S.play.nodes) { try { n.stop(); } catch { /* not started yet */ } n.disconnect(); }
   S.play = null; dirty = true;
@@ -688,7 +791,7 @@ async function openSong(slug) {
     S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
     S.noteT = [...new Set(S.notes)].sort((a, b) => a - b);
     S.marker = S.noteT.length ? S.noteT[0] : 0; // opens on the tab's first note: the start of the guitar
-    setLevel(S.noteT.length ? 4 : 1, S.marker); hint('');
+    setLevel(S.noteT.length ? 4 : 1, S.marker); hint(''); warmSoon();
     say(d.aligned ? `Opened at the first note. Last aligned ${d.aligned.at}.` : 'Opened at the tab’s first note (blue lines are note starts). Drag or ← → until the orange peaks line up with the blue ones.');
   } catch (e) { hint(''); say(String(e.message || e), 'err'); }
 }

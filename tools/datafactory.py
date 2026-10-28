@@ -17,7 +17,8 @@ Output: fretboard-data\\factory\\<source>\\<example>\\ with mono FLAC stems and 
   messy stems with AAM's exact labels. AAM has no singing, so "vocals" has no notes (it holds what Spleeter leaked there).
   Times are seconds from the start of the audio. Guitar-TECHS strings: 1 = high e ... 6 = low E, standard tuning.
 
-Resource caps (the user's rule): CPU at most 60% (the job is pinned to 60% of the cores, low priority);
+Resource caps (the user's rule, 2026-10-28): CPU at most 85%, GPU at most 80 C. The job is pinned to 70% of the cores
+(FRETBOARD_CPU_CAP overrides), low priority; tools/heatguard.py pauses it above the limits;
 GPU only with --gpu, held to 85% of its memory. Only commercially cleared tools: Spleeter (MIT), not Demucs.
 Spleeter needs Python <= 3.11, so the script makes its own environment (fretboard-data\\.spleeter-env, via uv) and
 restarts itself in it.
@@ -33,7 +34,7 @@ OUT = DATA / "factory"
 ENV = DATA / ".spleeter-env"
 ENV_PY = ENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 DEPS = ["spleeter==2.4.0", "numpy<2", "soundfile", "mido", "psutil"]
-CPU_CAP, GPU_CAP = 0.60, 0.85
+CPU_CAP, GPU_CAP = float(os.environ.get("FRETBOARD_CPU_CAP", "0.70")), 0.85  # tools/heatguard.py pauses it above 85% CPU or 80 C GPU
 SR = 22050  # output sample rate: plenty for transcription, keeps 3,000 songs near 75 GB
 STEMS = ["vocals", "drums", "bass", "piano", "other"]
 PIANOS = {"Piano", "BrightPiano", "ElectricPiano"}
