@@ -345,7 +345,10 @@ export async function showStatus(status) {
   const dir = await grantedFolder();
   el.replaceChildren();
   if (helperPossible()) {
-    if (s) el.append(chip(s.busy ? '◌ UG helper saving' : '✓ UG helper', 'on', 'The UG helper is running: Quick finds songs in its Chrome window and adds them here', showCollector));
+    if (s) { // on: pressing it turns it off (an old helper can't quit, so there it brings up its window)
+      const canStop = s.version >= 4;
+      el.append(chip(s.busy ? '◌ UG helper saving' : '✓ UG helper', 'on', canStop ? 'The UG helper is running: Quick finds songs in its Chrome window and adds them here. Press to turn it off (⋯ has Show UG window)' : 'The UG helper is running: Quick finds songs in its Chrome window and adds them here. Press to show its window', canStop ? stopHelper : showCollector));
+    }
     else if (helperState === 'starting') el.append(chip('◌ Starting…', 'busy', 'If Chrome asks to open it, tick Always allow and press Open', () => {}));
     else if (helperState === 'failed') el.append(chip('⚠ UG helper didn’t start', 'bad', 'First time on this computer? Set it up once', () => setupUG(true)));
     else el.append(chip('○ UG helper', 'off', helperKnown() ? 'Start the UG helper' : 'Set up the UG helper (once per computer)', () => (helperKnown() ? startHelper() : setupUG(true))));
@@ -403,15 +406,18 @@ function helperMenu(anchor) {
         ctx.toast(on ? 'Standard + Tab pages on: dynamics and lyrics, about 15 s slower per song.' : 'Standard + Tab pages off: quicker saves.', 5000);
       } catch { ctx.toast('The UG helper didn’t answer.'); }
       showStatus();
-    } else if (k === 'stop') {
-      try {
-        const r = await (await fetch(HELPER + '/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })).json();
-        if (r.busy) { ctx.toast('It’s saving a song: wait, or Cancel it in UG downloads.', 6000); return; }
-      } catch { /* gone already */ }
-      await new Promise((r) => setTimeout(r, 800));
-      showStatus();
-    }
+    } else if (k === 'stop') stopHelper();
   });
+}
+
+/** Turns the helper off: closes it and its Chrome window (it won't while a song is saving). */
+async function stopHelper() {
+  try {
+    const r = await (await fetch(HELPER + '/quit', { method: 'POST', signal: AbortSignal.timeout(3000) })).json();
+    if (r.busy) { ctx.toast('It’s saving a song: wait, or Cancel it in UG downloads.', 6000); return; }
+  } catch { /* gone already */ }
+  await new Promise((r) => setTimeout(r, 800));
+  showStatus();
 }
 
 /** The + menu next to the search: every other way to add a song, and sync. */
