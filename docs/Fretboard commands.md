@@ -26,6 +26,29 @@ cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; 
 - How it fits: The importer, the player and the chord sheet all run from here. Never start a second server on 8420, you may be using it.
 - Opens: http://localhost:8420
 
+### Keep your copy running and up to date
+
+```
+cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; node scriptsserve.mjs
+```
+
+- Run from: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song star`
+- Script: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song starscriptsserve.mjs`
+- What it does: Starts the server, starts it again if it stops, pulls new code from GitHub every hour, and restarts it when its code changes.
+- How it fits: A restart waits until no video line-up is running. Log: %USERPROFILE%\.fretboard\server.log. Does nothing if 8420 is already served.
+- Opens: http://localhost:8420
+
+### Start your copy when Windows starts
+
+```
+cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; node scriptsautostart.mjs install
+```
+
+- Run from: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song star`
+- Script: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song starscriptsautostart.mjs`
+- What it does: Puts a hidden launcher in your Startup folder that runs the line above. "remove" takes it out, "status" shows whether it is there.
+- How it fits: Takes effect at the next log-in. Stop a copy started a different way first (a second server on 8420 just exits).
+
 ### Preview copy for checking changes
 
 ```

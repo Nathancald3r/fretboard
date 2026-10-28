@@ -131,6 +131,12 @@ const T = 'tests\\yt2gp5\\';
 c('app-own','run','Your own copy of the app','node server.mjs',R+'\\server.mjs',
   'Serves the app at http://localhost:8420 from the project files.',
   'The importer, the player and the chord sheet all run from here. Never start a second server on 8420, you may be using it.',{open:'http://localhost:8420'});
+c('app-keep','run','Keep your copy running and up to date','node scripts\serve.mjs',R+'\scripts\serve.mjs',
+  'Starts the server, starts it again if it stops, pulls new code from GitHub every hour, and restarts it when its code changes.',
+  'A restart waits until no video line-up is running. Log: %USERPROFILE%\\.fretboard\\server.log. Does nothing if 8420 is already served.',{open:'http://localhost:8420'});
+c('app-autostart','run','Start your copy when Windows starts','node scripts\autostart.mjs install',R+'\scripts\autostart.mjs',
+  'Puts a hidden launcher in your Startup folder that runs the line above. "remove" takes it out, "status" shows whether it is there.',
+  'Takes effect at the next log-in. Stop a copy started a different way first (a second server on 8420 just exits).');
 c('app-preview','run','Preview copy for checking changes','$env:PORT=8421; node server.mjs',R+'\\server.mjs',
   'The same server on port 8421.',
   'Test a change here without touching your own copy. The UG helper accepts pages from 8420, 8421 and GitHub Pages only. Claude\'s preview uses the "fretboard" entry in .claude\\launch.json.',{open:'http://localhost:8421'});
