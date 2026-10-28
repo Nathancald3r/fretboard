@@ -129,6 +129,24 @@ const squash = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 const lineKey = (l) => (l.t === 'w' ? l.words.map((w) => w.map((p) => `${p.c || ''}|${squash(p.t)}`).join('')).join(' ')
   : l.t === 'c' ? l.items.map((x) => x.c || x.x).join(' ') : squash(l.s));
 const blockKey = (b) => b.lines.map(lineKey).join('\n');
+
+/* ---------- notes: tied to a line (or a section's name) by what it says, so they stay put when the sheet is edited elsewhere ---------- */
+
+export const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink'];
+export const keyHash = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+};
+/** The id a note holds for a line (the same line written twice has the same id), or a section's name. */
+export const lineHash = (l) => keyHash(lineKey(l));
+export const sectionHash = (name) => keyHash(`§${squash(name)}`);
+/** The line as plain words (what a note says it was about). */
+export const lineLabel = (l) => {
+  const s = l.t === 'w' ? l.words.map((w) => w.map((p) => p.t).join('')).join(' ') : l.t === 'c' ? l.items.map((x) => x.c || x.x).join(' ') : l.s || '';
+  const t = s.replace(/\s+/g, ' ').trim() || (l.t === 'w' ? l.words.flatMap((w) => w.filter((p) => p.c).map((p) => p.c)).join(' ') : '');
+  return t.length > 40 ? `${t.slice(0, 38).trim()}…` : t;
+};
 const lyricPeek = (b) => {
   const l = b.lines.find((x) => x.t === 'w' || x.t === 'text');
   const s = l ? (l.t === 'w' ? l.words.map((w) => w.map((p) => p.t).join('')).join(' ') : l.s) : '';
@@ -198,20 +216,32 @@ const wordHtml = (word, rename, played) => {
     : `<span class="ly">${esc(p.t)}</span>`)).join('')}</span>`;
 };
 
-const lineHtml = (l, rename, played) => {
+const noteColor = (n) => (NOTE_COLORS.includes(n?.color) ? n.color : 'yellow');
+const noteHtml = (n) => (n.text ? `<div class="an c-${noteColor(n)}" data-an="${esc(n.k)}"><span class="ai">✎</span> ${esc(n.text)}</div>` : '');
+
+// notes: Map of line id → { k, text, color }; a line with one is tinted, and its words sit under it
+const lineHtml = (l, rename, played, notes) => {
+  if (l.t === 'note') return `<div class="ln note">${esc(l.s)}</div>`;
+  const k = lineHash(l);
+  const n = notes?.get(k);
+  const at = ` data-k="${k}"${n ? ` data-an="${esc(n.k)}"` : ''}`;
+  const hl = n ? ` hl c-${noteColor(n)}` : '';
+  let html;
   if (l.t === 'w') {
     const hasChord = l.words.some((w) => w.some((p) => p.c));
-    return `<div class="ln${hasChord ? ' hc' : ''}">${l.words.map((w) => wordHtml(w, rename, played)).join(' ')}</div>`;
-  }
-  if (l.t === 'c') return `<div class="ln co">${l.items.map((x) => (x.c ? chordHtml(x.c, rename, played) : `<span class="x">${esc(x.x)}</span>`)).join(' ')}</div>`;
-  if (l.t === 'tab') return `<div class="pre tab-line">${esc(l.s)}</div>`;
-  if (l.t === 'pre') return `<div class="pre">${esc(l.s)}</div>`;
-  if (l.t === 'note') return `<div class="ln note">${esc(l.s)}</div>`;
-  return `<div class="ln">${esc(l.s)}</div>`;
+    html = `<div class="ln${hasChord ? ' hc' : ''}${hl}"${at}>${l.words.map((w) => wordHtml(w, rename, played)).join(' ')}</div>`;
+  } else if (l.t === 'c') html = `<div class="ln co${hl}"${at}>${l.items.map((x) => (x.c ? chordHtml(x.c, rename, played) : `<span class="x">${esc(x.x)}</span>`)).join(' ')}</div>`;
+  else if (l.t === 'tab') html = `<div class="pre tab-line${hl}"${at}>${esc(l.s)}</div>`;
+  else if (l.t === 'pre') html = `<div class="pre${hl}"${at}>${esc(l.s)}</div>`;
+  else html = `<div class="ln${hl}"${at}>${esc(l.s)}</div>`;
+  return n ? html + noteHtml(n) : html;
 };
 
-/** Sections and markers as HTML. rename: chord name → name to show; played: → name for its shapes. */
-export function viewHtml(items, { rename = null, played = null } = {}) {
+/**
+ * Sections and markers as HTML. rename: chord name → name to show; played: → name for its shapes;
+ * notes: Map of id → note (see lineHash); orphans: notes whose line is gone, listed at the end.
+ */
+export function viewHtml(items, { rename = null, played = null, notes = null, orphans = [] } = {}) {
   return items.map((it) => {
     if (it.marker) {
       const label = it.name || (it.of ? `Repeat of ${it.of}` : 'Repeat');
@@ -219,8 +249,11 @@ export function viewHtml(items, { rename = null, played = null } = {}) {
         : it.peek ? ` <span class="of">“${esc(it.peek)}”</span>` : '';
       return `<div class="tx-rep"><span class="ic">↻</span> ${esc(label)}${it.times > 1 ? ` <span class="rep">×${it.times}</span>` : ''}${note}</div>`;
     }
+    const sk = it.name ? sectionHash(it.name) : '';
+    const sn = sk && notes?.get(sk);
     const head = it.name || it.times > 1
-      ? `<div class="sh">${esc(it.name)}${it.times > 1 ? `${it.name ? ' ' : ''}<span class="rep">×${it.times}</span>` : ''}</div>` : '';
-    return `<section class="tx-sec">${head}${it.lines.map((l) => lineHtml(l, rename, played)).join('')}</section>`;
-  }).join('');
+      ? `<div class="sh${sn ? ` hl c-${noteColor(sn)}` : ''}"${sk ? ` data-k="${sk}"${sn ? ` data-an="${esc(sn.k)}"` : ''}` : ''}>${esc(it.name)}${it.times > 1 ? `${it.name ? ' ' : ''}<span class="rep">×${it.times}</span>` : ''}</div>${sn ? noteHtml(sn) : ''}` : '';
+    return `<section class="tx-sec">${head}${it.lines.map((l) => lineHtml(l, rename, played, notes)).join('')}</section>`;
+  }).join('') + (orphans.length
+    ? `<section class="tx-sec tx-orphans"><div class="sh">Notes on lines you changed</div>${orphans.map((n) => `<div class="an c-${noteColor(n)}" data-an="${esc(n.k)}"><span class="ai">✎</span> ${n.label ? `<i>${esc(n.label)}</i> · ` : ''}${esc(n.text) || 'highlight'}</div>`).join('')}</section>` : '');
 }

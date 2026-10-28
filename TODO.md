@@ -142,6 +142,7 @@ Done: one-row bar, fit to the screen, capo, ChordPro editor, folded repeats (see
 - Android Back doesn't close the ⋯ menu first (it isn't a layer in `js/layers.js`); a tap outside closes it.
 - A chord wider than its word hangs over the plain words after it; when the next word has its own chord, the line gets a small gap instead.
 - Not checked on the phone itself (only the preview at 375 wide); the APK is held.
+- Floating tools (2026-10-28): the metronome's BPM is only editable in ⋯ (a tap on the tile only starts/stops); notes show on every identical line and aren't in the ChordPro/PDF export; the backing track is Pop style only (the Backing page has more); the quick start can't start the YouTube video (the embed has no play API loaded).
 
 ## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 

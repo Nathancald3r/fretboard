@@ -110,8 +110,8 @@ assert.equal(shiftChordName('C#m7/G#', -2, false), 'Bm7/F#');
 
 /* ---------- html: chords stay over their words, moved chords keep the name the shapes need ---------- */
 const html = viewHtml(foldRepeats(readSections('[Verse 1]\nG        D\nSeven thoughts\n\n[Chorus]\nC\nHey\n\n[Chorus]\nC\nHey')), { rename: (c) => shiftChordName(c, -2, false) });
-assert.ok(html.includes('<div class="sh">Verse 1</div>'));
-assert.ok(html.includes('<div class="sh">Chorus <span class="rep">×2</span></div>'), 'two in a row: one block, ×2');
+assert.match(html, /<div class="sh" data-k="\w+">Verse 1<\/div>/);
+assert.match(html, /<div class="sh" data-k="\w+">Chorus <span class="rep">×2<\/span><\/div>/, 'two in a row: one block, ×2');
 assert.ok(html.includes('<span class="chord" data-chord="G">F</span>'), 'moved down two: shown F');
 assert.ok(html.includes('<span class="cs">'));
 const marker = viewHtml(foldRepeats(readSections('[Chorus]\nC\nHey\n\n[Verse]\nG\nHo\n\n[Chorus]\nC\nHey')));

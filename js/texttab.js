@@ -1,6 +1,6 @@
 // Viewer for pasted plain-text tabs and chord sheets: highlighting, text size, auto-scroll,
 // transpose, the strumming pattern, the song's video, and Perform (just the song, big).
-import { updateSong, getValue, setValue } from './db.js';
+import { updateSong, getValue, setValue, putSong, listSongs } from './db.js';
 import { shapesFor } from './chordshapes.js';
 import { chordDiagram } from './keys.js';
 import { strum } from './pluck.js';
@@ -13,6 +13,9 @@ import { shiftChordName } from './transpose.js';
 import { findRecording } from './ytsearch.js';
 import { playStrum, stopStrum } from './strumplay.js';
 import { CHORD, TAB_LINE, chordTokens, cleanTabText, readSections, foldRepeats, viewHtml, capoPlan, chordsOf } from './chordsheetview.js';
+import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords } from './sheettools.js';
+import { startClick, stopClick, setClickBpm, clicking, countIn, cancelCount, counting } from './sheetclick.js';
+import { backingTex, STYLES } from './backing.js';
 
 export { cleanTabText };
 
@@ -22,6 +25,7 @@ let song = null;
 let scrolling = false;
 let performing = false;
 let tempo = 100;
+let sizeStep = () => {}; // set by initText: the magnifier's step (1 bigger, -1 smaller)
 let lastFrame = 0;
 let carry = 0;
 
@@ -145,6 +149,7 @@ export function strumHtml(p, i = 0) {
 let sheetCapo = 0; // the capo the sheet was written for
 let shown = { size: 15, cols: 1 }; // what fit() picked
 let items = [];
+let lastSections = []; // the sheet as read, whole (no repeats folded)
 
 function render() {
   const head = sheetHead(song.data);
@@ -180,7 +185,8 @@ function render() {
   const rename = numbers && key ? (c) => numbers(c, key) : played;
   const fold = song.fold !== false;
   items = foldRepeats(sections, fold);
-  $('tx-body').innerHTML = viewHtml(items, { rename, played });
+  lastSections = sections;
+  $('tx-body').innerHTML = viewHtml(items, { rename, played, notes: notesMap(song.annotations), orphans: orphanNotes(song.annotations, sections) });
   $('tx-fold').checked = fold;
   hidePop();
   drawShapes();
@@ -240,6 +246,7 @@ const AUTO = [24, 22, 20, 19, 18, 17, 16, 15, 14, 13, 12]; // tried in turn, big
 function fit() {
   const body = $('tx-body');
   if (!song || $('view-text').hidden) return;
+  layoutTools();
   const manual = song.textSize > 0 ? song.textSize : 0;
   const cs = getComputedStyle(body);
   const inner = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
@@ -472,8 +479,11 @@ async function toggleStrum(i, mode) {
 /* ---------- video: the song's recording, beside the sheet ---------- */
 
 const videoId = () => (song?.recording?.kind === 'youtube' && /^[\w-]{11}$/.test(song.recording.id) ? song.recording.id : '');
-function videoLabel() {
-  $('tx-video').textContent = !$('tx-vid').hidden ? 'Hide video' : videoId() ? '▶ Video' : 'Find video';
+function videoLabel(note = '') {
+  const tile = $('tx-t-video');
+  const open = !$('tx-vid').hidden;
+  tile.setAttribute('aria-pressed', String(open));
+  tile.title = note || (open ? 'Hide the video' : videoId() ? 'Play along: the song’s video, or a backing track from its chords' : 'Find the song’s video, or make a backing track from its chords');
 }
 
 function showVideo(on) {
@@ -491,9 +501,9 @@ function showVideo(on) {
 // No video from UG: the best match on YouTube, kept as the song's recording.
 async function findVideo() {
   const s = song;
-  const btn = $('tx-video');
+  const btn = $('tx-t-video');
   btn.disabled = true;
-  btn.textContent = 'Finding video…';
+  videoLabel('Finding the video…');
   try {
     const list = await findRecording({ ...s, title: s.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '') });
     const r = list.find((x) => x.id);
@@ -503,7 +513,7 @@ async function findVideo() {
     song = saved;
     showVideo(true);
   } catch {
-    if (song?.id === s.id) btn.textContent = 'No video found';
+    if (song?.id === s.id) videoLabel('No video found');
     setTimeout(videoLabel, 3000);
   } finally {
     btn.disabled = false;
@@ -537,7 +547,7 @@ function frame(now) {
   if (!scrolling) return;
   const dt = lastFrame ? (now - lastFrame) / 1000 : 0;
   lastFrame = now;
-  carry += dt * Number($('tx-speed').value) * 6; // px per second
+  carry += dt * pxPerSecond($('tx-speed').value);
   const step = Math.floor(carry);
   if (step) {
     carry -= step;
@@ -551,22 +561,196 @@ function setScrolling(on) {
   scrolling = on;
   lastFrame = 0;
   carry = 0;
-  $('tx-scroll').textContent = on ? '■' : '▶';
-  $('tx-scroll').setAttribute('aria-pressed', String(on));
+  $('tx-t-scroll').setAttribute('aria-pressed', String(on));
   if (on) { menu(false); requestAnimationFrame(frame); }
+}
+
+/* ---------- the floating tools: quick start, video, zoom, notes, metronome, scroll ---------- */
+
+const speedNow = () => clampSpeed($('tx-speed').value);
+const drawSpeed = () => { $('tx-t-speed').textContent = String(speedNow()); };
+const drawBpm = () => { $('tx-t-bpm').textContent = String(tempo); };
+
+// room for the column beside the song, and the top of it just under the bar
+function layoutTools() {
+  const v = $('view-text');
+  v.style.setProperty('--tools-w', `${$('tx-tools').offsetWidth + 12}px`);
+  v.style.setProperty('--tx-top-h', `${$('tx-top').offsetHeight}px`);
+}
+
+async function bumpSpeed(d) {
+  if (!song) return;
+  $('tx-speed').value = clampSpeed(speedNow() + d);
+  drawSpeed();
+  song = await updateSong(song.id, { scrollSpeed: speedNow() });
+}
+
+function toggleClick() {
+  if (clicking()) stopClick(); else startClick(tempo);
+  $('tx-t-click').setAttribute('aria-pressed', String(clicking()));
+}
+
+// one tap: back to the top, a bar of count-in at the song's tempo, then the song scrolls (and the click goes on if it was on)
+async function quickStart() {
+  const tile = $('tx-t-quick');
+  if (counting()) { cancelCount(); return; }
+  setScrolling(false);
+  hideNote();
+  window.scrollTo(0, 0);
+  const wasClicking = clicking();
+  stopClick();
+  tile.setAttribute('aria-pressed', 'true');
+  const done = await countIn(tempo, 4, (n) => { $('tx-t-quick-txt').textContent = String(n); });
+  tile.setAttribute('aria-pressed', 'false');
+  $('tx-t-quick-txt').textContent = '';
+  if (wasClicking) startClick(tempo);
+  if (done && song) setScrolling(true);
+  $('tx-t-click').setAttribute('aria-pressed', String(clicking()));
+}
+
+// a backing track from the sheet's chords (in the key it sounds in), opened in the player
+async function openBacking() {
+  if (!song) return;
+  const move = (song.transpose || 0) + sheetCapo;
+  const names = chordsOf(lastSections).map((c) => (move ? shiftChordName(c, move, false) : c));
+  const chords = backingChords(names, shapesFor);
+  if (!chords.length) return;
+  const style = 'pop';
+  const clean = song.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '');
+  const title = `${clean} – backing (${STYLES[style].label})`;
+  const data = backingTex({ title, chords, style, tempo, repeats: 1 });
+  const old = (await listSongs()).find((x) => x.kind === 'tex' && x.title === title);
+  const id = old ? old.id : await putSong({ kind: 'tex', title, artist: 'Backing track', data, added: Date.now() });
+  if (old) await updateSong(id, { data });
+  location.hash = `song/${id}`;
+}
+
+function pickVideo(on) {
+  const box = $('tx-vidpick');
+  box.hidden = !on;
+  if (!on) return;
+  const r = $('tx-t-video').getBoundingClientRect();
+  box.style.top = `${r.top}px`;
+  box.style.right = `${innerWidth - r.left + 6}px`;
+  $('tx-pick-backing').disabled = !chordsOf(lastSections).length;
+}
+
+/* notes: tap a line (with ✎ on) to write on it or colour it; a note's words sit under its line */
+
+let annotating = false;
+let noteFor = null; // { k, label }
+let noteColor = 'yellow';
+
+function setAnnotating(on) {
+  annotating = on;
+  document.body.classList.toggle('annotating', on);
+  $('tx-t-notes').setAttribute('aria-pressed', String(on));
+  $('tx-hint').hidden = !on;
+  if (!on) hideNote();
+}
+
+function labelOf(el) {
+  const copy = el.cloneNode(true);
+  copy.querySelectorAll('.chord, .rep').forEach((c) => c.remove());
+  const t = copy.textContent.replace(/\s+/g, ' ').trim();
+  return t.length > 40 ? `${t.slice(0, 38).trim()}…` : t;
+}
+
+function paintColor(c) {
+  noteColor = c;
+  for (const b of $('tx-note-colors').children) b.classList.toggle('on', b.dataset.c === c);
+}
+
+function hideNote() {
+  noteFor = null;
+  $('tx-note').hidden = true;
+}
+
+function openNote(k, label, anchor) {
+  if (!song) return;
+  const cur = notesMap(song.annotations).get(k);
+  noteFor = { k, label: label || cur?.label || '' };
+  $('tx-note-for').textContent = noteFor.label ? `“${noteFor.label}”` : 'Note';
+  $('tx-note-text').value = cur?.text || '';
+  paintColor(cur?.color || noteColor);
+  $('tx-note-del').hidden = !cur;
+  const box = $('tx-note');
+  box.hidden = false;
+  const r = (anchor || $('tx-body')).getBoundingClientRect();
+  const h = box.offsetHeight;
+  const top = r.bottom + 8 + h > innerHeight - 8 ? Math.max(8, r.top - h - 8) : r.bottom + 8;
+  box.style.top = `${top}px`;
+  box.style.left = `${Math.max(8, Math.min(innerWidth - box.offsetWidth - 8, r.left))}px`;
+  $('tx-note-text').focus({ preventScroll: true });
+}
+
+async function saveNote(remove = false) {
+  if (!song || !noteFor) return;
+  const { k, label } = noteFor;
+  const list = remove ? dropNote(song.annotations, k) : setNote(song.annotations, { k, text: $('tx-note-text').value, color: noteColor, label });
+  hideNote();
+  song = await updateSong(song.id, { annotations: list });
+  render();
+}
+
+function initTools() {
+  const tap = (id, fn) => $(id).addEventListener('click', fn);
+  tap('tx-t-quick', quickStart);
+  tap('tx-t-video', () => {
+    if (!$('tx-vid').hidden) { showVideo(false); return; }
+    pickVideo($('tx-vidpick').hidden);
+  });
+  tap('tx-pick-video', () => { pickVideo(false); showVideo(true); });
+  tap('tx-pick-backing', () => { pickVideo(false); openBacking(); });
+  tap('tx-t-zin', () => sizeStep(1));
+  tap('tx-t-zout', () => sizeStep(-1));
+  tap('tx-t-notes', () => setAnnotating(!annotating));
+  tap('tx-t-click', toggleClick);
+  tap('tx-t-scroll', () => setScrolling(!scrolling));
+  tap('tx-t-fast', () => bumpSpeed(1));
+  tap('tx-t-slow', () => bumpSpeed(-1));
+  tap('tx-note-ok', () => saveNote());
+  tap('tx-note-del', () => saveNote(true));
+  tap('tx-note-close', hideNote);
+  $('tx-note-colors').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (b) paintColor(b.dataset.c); });
+  $('tx-note-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNote(); }
+    if (e.key === 'Escape') { e.stopPropagation(); hideNote(); }
+  });
+  document.addEventListener('pointerdown', (e) => { if (!$('tx-vidpick').hidden && !e.target.closest('#tx-vidpick, #tx-t-video')) pickVideo(false); });
+  // capture: with ✎ on, a tap on a line is for writing on it, not for the chord pop-up under it
+  $('tx-body').addEventListener('click', (e) => {
+    const callout = e.target.closest('.an');
+    const line = e.target.closest('[data-k]');
+    if (callout) {
+      const n = notesMap(song?.annotations).get(callout.dataset.an);
+      const owner = $('tx-body').querySelector(`[data-k="${callout.dataset.an}"]`);
+      if (n) { e.stopPropagation(); openNote(n.k, n.label, owner || callout); }
+    } else if (line && (annotating || (line.dataset.an && !e.target.closest('.chord')))) {
+      e.stopPropagation();
+      openNote(line.dataset.k, labelOf(line), line);
+    }
+  }, true);
 }
 
 export function openText(s) {
   song = s;
   $('tx-title').textContent = s.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '');
   $('tx-artist').textContent = s.artist || '';
-  $('tx-speed').value = s.scrollSpeed || 5;
+  $('tx-speed').value = clampSpeed(s.scrollSpeed || 5);
   $('tx-time').textContent = '';
   const playable = asciiTabToAlphaTex(s.data);
   // the tempo you set, else the strumming pattern's bpm, else the tab's own "Tempo:" line
   tempo = s.tempo || s.strum?.find((p) => p.bpm)?.bpm || playable?.tempo || 100;
   $('tx-tempo').value = tempo;
   menu(false);
+  stopClick();
+  cancelCount();
+  $('tx-t-click').setAttribute('aria-pressed', 'false');
+  setAnnotating(false);
+  pickVideo(false);
+  drawSpeed();
+  drawBpm();
   render();
   $('tx-play').disabled = !playable;
   $('tx-play').title = playable
@@ -583,6 +767,10 @@ export function closeText() {
   hidePop();
   menu(false);
   stopStrumPlay();
+  stopClick();
+  cancelCount();
+  setAnnotating(false);
+  pickVideo(false);
   setScrolling(false);
   showVideo(false);
   if (performing) setPerform(false);
@@ -591,21 +779,20 @@ export function closeText() {
 
 export function initText({ onEdit }) {
   initShapes();
+  initTools();
   $('tx-strum').addEventListener('click', (e) => {
     const b = e.target.closest('[data-strum]');
     if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);
   });
-  $('tx-scroll').addEventListener('click', () => setScrolling(!scrolling));
-  // A− / A+ pick a size and keep it; "Fit text to screen" (the ⋯ menu) goes back to the biggest that fits
-  const size = async (d) => {
+  // the magnifier picks a size and keeps it; "Fit text to screen" (the ⋯ menu) goes back to the biggest that fits
+  sizeStep = async (d) => {
     if (!song) return;
     const next = d > 0 ? SIZES.find((n) => n > shown.size) : [...SIZES].reverse().find((n) => n < shown.size);
     if (!next) return;
+    shown = { ...shown, size: next }; // at once: a quick second tap steps on from here
     song = await updateSong(song.id, { textSize: next });
     fit();
   };
-  $('tx-bigger').addEventListener('click', () => size(1));
-  $('tx-smaller').addEventListener('click', () => size(-1));
   $('tx-fit').addEventListener('click', async () => {
     if (!song) return;
     song = await updateSong(song.id, { textSize: null });
@@ -631,10 +818,12 @@ export function initText({ onEdit }) {
   $('tx-leave').addEventListener('click', () => setPerform(false));
   document.addEventListener('pointerdown', (e) => { if (!$('tx-menu').hidden && !e.target.closest('#tx-menu, #tx-more')) menu(false); });
   $('tx-menu').addEventListener('click', (e) => { if (e.target.closest('.tx-btns button, .tx-nav a')) menu(false); });
-  $('tx-speed').addEventListener('change', (e) => { if (song) updateSong(song.id, { scrollSpeed: Number(e.target.value) }); });
+  $('tx-speed').addEventListener('change', (e) => { if (song) updateSong(song.id, { scrollSpeed: speedNow() }); drawSpeed(); });
   $('tx-edit').addEventListener('click', () => song && onEdit(song));
   $('tx-tempo').addEventListener('change', async (e) => {
     tempo = Math.max(30, Math.min(260, Number(e.target.value) || 100));
+    setClickBpm(tempo);
+    drawBpm();
     if (!song) return;
     song = await updateSong(song.id, { tempo });
     render();
@@ -647,7 +836,6 @@ export function initText({ onEdit }) {
   };
   $('tx-down').addEventListener('click', () => transpose(-1));
   $('tx-up').addEventListener('click', () => transpose(1));
-  $('tx-video').addEventListener('click', () => { showVideo($('tx-vid').hidden); menu(false); });
   $('tx-vid-close').addEventListener('click', () => showVideo(false));
   $('tx-perform').addEventListener('click', () => setPerform(!performing));
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && performing) setPerform(false); });
@@ -663,6 +851,7 @@ export function initText({ onEdit }) {
   });
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('tx-note').hidden) { hideNote(); return; }
     if (e.key === 'Escape' && pop) { hidePop(); return; }
     if (e.key === 'Escape' && !$('tx-menu').hidden) { menu(false); return; }
     if (e.key === 'Escape' && performing) { setPerform(false); return; }

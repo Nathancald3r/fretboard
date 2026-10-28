@@ -718,11 +718,6 @@
           <span id="tx-capo" class="tx-val">Capo 0</span>
           <button id="tx-capo-up" class="ghost small" aria-label="Capo up">+</button>
         </span>
-        <span class="tx-grp" title="Text size">
-          <button id="tx-smaller" class="ghost small" aria-label="Smaller text">A−</button>
-          <button id="tx-bigger" class="ghost small" aria-label="Bigger text">A+</button>
-        </span>
-        <button id="tx-scroll" class="primary small tx-go" aria-label="Auto-scroll" title="Auto-scroll (Space)">▶</button>
       </div>
       <button id="tx-edit" class="ghost small" title="Edit the chords and words as ChordPro">Edit</button>
       <button id="tx-more" class="ghost small" aria-haspopup="true" aria-expanded="false" aria-label="More" title="More">⋯</button>
@@ -744,11 +739,51 @@
       <div class="tx-btns">
         <button id="tx-fit" class="ghost small" title="Pick the biggest text that fits the screen">Fit text to screen</button>
         <button id="tx-shapes-btn" class="ghost small" aria-pressed="false" title="The song's chords as diagrams. Tap one (or any chord in the song) for other ways to play it">Chord shapes</button>
-        <button id="tx-video" class="ghost small" title="Play along with the song's video">▶ Video</button>
         <button id="tx-play" class="ghost small" title="Turn the tab lines into a playable score (rhythm is guessed from spacing)">Play as tab</button>
         <button id="tx-perform" class="ghost small" title="Just the song, big: key, transpose, auto-scroll and video (Esc to leave)">Perform</button>
       </div>
       <div class="tx-foot"><span id="tx-time" class="mono muted"></span><span class="tx-nav"><a href="#library">Songs</a><a href="#practice">Practice</a><a href="#log">Log</a></span></div>
+    </div>
+    <div id="tx-tools" class="tx-tools" role="toolbar" aria-label="Song tools">
+      <button id="tx-t-quick" class="tx-tile" title="Quick start: a one-bar count-in, then the song scrolls" aria-label="Quick start">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.8z" fill="currentColor"/></svg><small id="tx-t-quick-txt"></small>
+      </button>
+      <button id="tx-t-video" class="tx-tile" title="Play along: the song's video, or a backing track from its chords" aria-label="Video or backing track" aria-haspopup="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg>
+      </button>
+      <button id="tx-t-zin" class="tx-tile" title="Zoom in: bigger text" aria-label="Zoom in">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.6 14.6 20.5 20.5M7.2 10h5.6M10 7.2v5.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="tx-t-zout" class="tx-tile" title="Zoom out: smaller text" aria-label="Zoom out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.6 14.6 20.5 20.5M7.2 10h5.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="tx-t-notes" class="tx-tile" title="Notes: tap a line to write on it or colour it" aria-label="Notes" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16.6 4.2a1.6 1.6 0 0 1 2.3 0l.9.9a1.6 1.6 0 0 1 0 2.3L8.4 18.8z M14.5 6.4l3.1 3.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="tx-tgrp">
+        <button id="tx-t-click" class="tx-tile" title="Metronome at the song's tempo (change the tempo in ⋯)" aria-label="Metronome" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3h7l3 18h-13z M12 16.5 15.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="12.6" cy="14" r="1.4" fill="currentColor"/></svg><small id="tx-t-bpm"></small>
+        </button>
+        <button id="tx-t-fast" class="tx-tile mini" title="Scroll faster" aria-label="Scroll faster">+</button>
+        <button id="tx-t-scroll" class="tx-tile" title="Auto-scroll (Space)" aria-label="Auto-scroll" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="ic-go" d="M12 4v14M6 12.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect class="ic-stop" x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg><small id="tx-t-speed"></small>
+        </button>
+        <button id="tx-t-slow" class="tx-tile mini" title="Scroll slower" aria-label="Scroll slower">−</button>
+      </div>
+    </div>
+    <div id="tx-vidpick" class="tx-pick" hidden>
+      <button id="tx-pick-video" class="ghost small">▶ Video</button>
+      <button id="tx-pick-backing" class="ghost small" title="Drums, bass and guitar playing this song's chords, one bar each, in the player">♫ Backing track</button>
+    </div>
+    <div id="tx-hint" class="tx-hint" hidden>Tap a line to write on it · ✎ again to finish</div>
+    <div id="tx-note" class="tx-note" hidden>
+      <div class="tx-note-head"><b id="tx-note-for"></b><button id="tx-note-close" class="ghost small" aria-label="Close">✕</button></div>
+      <textarea id="tx-note-text" rows="3" maxlength="400" placeholder="Your note (leave it empty to just colour the line)"></textarea>
+      <div class="tx-note-row">
+        <span class="tx-sw" id="tx-note-colors"><button data-c="yellow" class="c-yellow" aria-label="Yellow"></button><button data-c="blue" class="c-blue" aria-label="Blue"></button><button data-c="green" class="c-green" aria-label="Green"></button><button data-c="pink" class="c-pink" aria-label="Pink"></button></span>
+        <button id="tx-note-del" class="ghost small">Remove</button>
+        <button id="tx-note-ok" class="small">Save</button>
+      </div>
     </div>
     <div id="tx-strum" class="tx-strum" hidden></div>
     <div id="tx-shapes" class="tx-shapes" hidden></div>

@@ -2564,8 +2564,6 @@ body.in-text .topbar { display: none; }
 .tx-grp { display: inline-flex; align-items: center; gap: .1rem; flex: none; }
 .tx-grp button.small { padding: .2rem .5rem; }
 .tx-val { min-width: 4.4em; text-align: center; font-variant-numeric: tabular-nums; font-size: .88rem; white-space: nowrap; }
-.tx-go { min-width: 2.3rem; }
-#tx-scroll[aria-pressed=true] { background: var(--warn); border-color: var(--warn); color: #fff; }
 .tx-menu { position: fixed; right: .5rem; top: 48px; z-index: 40; width: min(340px, calc(100vw - 1rem)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); overflow: auto; display: grid; gap: .55rem; padding: .7rem .8rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; }
 .tx-menu[hidden] { display: none; }
 .tx-menu .tx-facts:empty { display: none; }
@@ -2631,3 +2629,48 @@ body.performing #tx-lib, body.performing #tx-edit, body.performing #tx-more { di
   #tab-dialog.has-preview .tf-split { grid-template-columns: 1fr; }
   .tf-preview.text-tab.chordview { max-height: 28vh; }
 }
+/* the floating tools beside the song: quick start, video, zoom, notes, metronome and scroll speed */
+.tx-main { padding-right: var(--tools-w, 0px); }
+#view-text > .tx-strum, #view-text > .tx-shapes { margin-right: calc(.6rem + var(--tools-w, 0px)); }
+.tx-tools { position: fixed; right: .4rem; top: calc(var(--tx-top-h, 3rem) + .5rem); z-index: 20; display: flex; flex-direction: column; flex-wrap: wrap-reverse; align-content: flex-start; gap: .4rem; max-height: calc(100vh - var(--tx-top-h, 3rem) - 1rem); max-height: calc(100dvh - var(--tx-top-h, 3rem) - 1rem); }
+.tx-tile { position: relative; flex: none; width: 2.9rem; height: 2.9rem; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: #1a1d24; color: #aab3c5; cursor: pointer; transition: background .15s var(--ease), color .15s var(--ease); }
+.tx-tile svg { width: 1.45rem; height: 1.45rem; display: block; }
+.tx-tile small { position: absolute; left: 0; right: 0; bottom: 2px; text-align: center; font-size: .62rem; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+.tx-tile:hover { color: #fff; background: #232733; }
+.tx-tile:disabled { opacity: .5; }
+.tx-tile[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tx-tile[aria-pressed=true] small { color: #fff; }
+.tx-tile.mini { height: 2rem; font-size: 1.2rem; font-weight: 700; line-height: 1; }
+.tx-tile .ic-stop { display: none; }
+#tx-t-scroll[aria-pressed=true] { background: var(--warn); border-color: var(--warn); }
+#tx-t-scroll[aria-pressed=true] .ic-go { display: none; }
+#tx-t-scroll[aria-pressed=true] .ic-stop { display: inline; }
+#tx-t-quick:not([aria-pressed=true]) svg { color: #f5d65a; }
+.tx-tgrp { display: flex; flex-direction: column; gap: .35rem; padding: .3rem; margin: 0 -.3rem; border-radius: 16px; background: #ffffff0a; border: 1px solid var(--line); flex: none; }
+@media (max-width: 700px) { .tx-tile { width: 2.75rem; height: 2.75rem; } .tx-tile.mini { height: 1.9rem; } }
+body.in-text.performing .tx-tools { top: .5rem; }
+.tx-pick { position: fixed; z-index: 45; display: grid; gap: .3rem; padding: .35rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; }
+.tx-pick[hidden], .tx-note[hidden], .tx-hint[hidden] { display: none; }
+.tx-hint { position: fixed; z-index: 19; left: 50%; transform: translateX(-50%); top: calc(var(--tx-top-h, 3rem) + .4rem); padding: .25rem .8rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .85rem; pointer-events: none; white-space: nowrap; max-width: calc(100vw - 1rem); overflow: hidden; text-overflow: ellipsis; }
+/* notes: a colour on the line, the words under it */
+.c-yellow { --hlc: #f5d65a2e; --hlb: #f5d65a; }
+.c-blue { --hlc: #5aa9f52e; --hlb: #5aa9f5; }
+.c-green { --hlc: #6fd08c2e; --hlb: #6fd08c; }
+.c-pink { --hlc: #f58fb82e; --hlb: #f58fb8; }
+.chordview .hl { background: var(--hlc); box-shadow: -.35em 0 0 var(--hlc), .35em 0 0 var(--hlc); border-radius: 3px; }
+.chordview .an { margin: .1em 0 .35em 1.4em; padding: .15em .55em; border-left: 3px solid var(--hlb); background: var(--hlc); border-radius: 0 6px 6px 0; font-size: .82em; font-style: italic; line-height: 1.3; cursor: pointer; overflow-wrap: anywhere; }
+.chordview .an .ai { color: var(--hlb); font-style: normal; }
+.chordview .tx-orphans .an { margin-left: 0; }
+body.annotating .chordview [data-k] { cursor: pointer; outline: 1px dashed #ffffff26; outline-offset: 1px; }
+body.annotating .chordview [data-k]:hover { outline-color: var(--accent); background-color: #ffffff0d; }
+body.annotating .chordview .hl:hover { background-color: var(--hlc); }
+.tx-note { position: fixed; z-index: 45; width: min(320px, calc(100vw - 1rem)); display: grid; gap: .45rem; padding: .6rem .7rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; }
+.tx-note-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.tx-note-head b { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-note textarea { width: 100%; resize: vertical; font: inherit; }
+.tx-note-row { display: flex; align-items: center; gap: .4rem; }
+.tx-note-row .small:last-child { margin-left: auto; }
+.tx-sw { display: inline-flex; gap: .3rem; }
+.tx-sw button { width: 1.5rem; height: 1.5rem; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; background: var(--hlb); cursor: pointer; }
+.tx-sw button.on { border-color: #fff; }
+@media (max-width: 700px) { .tx-note { top: calc(var(--tx-top-h, 3rem) + .4rem) !important; left: .5rem !important; right: .5rem; width: auto; } }
