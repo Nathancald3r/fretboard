@@ -234,6 +234,9 @@ def tab_only(a):
     gp = to_gp(folder, a.again)
     entry = {"kind": "gp", "title": title, "artist": artist, "fileName": gp.name,
              "data": {"$bytes": base64.b64encode(gp.read_bytes()).decode()}, "version": {"type": "official"}, "sourceUrl": ug}
+    sheet = songdb.ug_chord_sheet(title, artist)
+    if sheet:  # the official chord chart comes with the tab
+        entry["chordSheet"] = sheet
     out = HERE / "out" / "tabs" / run.slug(f"{artist} - {title}")
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{run.slug(title)}.fretboard"

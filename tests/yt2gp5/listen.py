@@ -320,6 +320,9 @@ def fretboard_file(song, info, out):
         "version": {"type": "official"},
         **({"sourceUrl": song["ug"]} if song.get("ug") else {}),
     }
+    sheet = songdb.ug_chord_sheet(title, song.get("artist", "")) if song.get("official") else ""
+    if sheet:  # an official song always brings its chord chart, for the Chord chart view beside the tab
+        entry["chordSheet"] = sheet
     path = out / f"{run.slug(title)}.fretboard"
     path.write_text(json.dumps({"format": "fretboard-songs", "version": 1, "created": datetime.datetime.now().isoformat(),
                                 "songs": [entry]}), encoding="utf-8")

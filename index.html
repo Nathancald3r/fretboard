@@ -132,6 +132,16 @@
       <span class="head-tools">
         <button id="pl-more" class="icon-btn phone-only" title="More settings: tracks, linked video, tab info, view, sound, amp and more" aria-label="More settings" aria-expanded="false">⚙</button>
       </span>
+      <span id="pl-head-ctl" class="head-ctl">
+        <span class="fb-grp qk-key" role="group" aria-label="Key" title="Transpose the whole song up or down (synth, tab and chord names)">
+          <span class="fb-lbl">Key</span>
+          <button id="qk-down" class="fb-btn sq" aria-label="Transpose down">−</button>
+          <b id="qk-val" class="fb-val mono">0</b>
+          <button id="qk-up" class="fb-btn sq" aria-label="Transpose up">+</button>
+        </span>
+        <button id="qk-stave" class="fb-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="What the music shows: tablature, standard notation or both"><span class="fb-lbl">Notation</span><b id="qk-stave-txt">Tablature</b><svg class="fb-caret" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="qk-chords" class="fb-btn" type="button" aria-pressed="false" title="The song's chord chart: chords over the words"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg><span>Chord chart</span></button>
+      </span>
       <span id="pl-info" class="muted small-text"></span>
       <span class="seg mode-seg" role="group" aria-label="Mode" title="Practice: every tool (loops, speed, trainer, note check). Live: for rehearsals and gigs, songs at full tempo, one after another.">
         <button data-mode="practice">Practice</button><button data-mode="live">Live</button>
@@ -161,14 +171,17 @@
     <div id="count-overlay" class="count-overlay" hidden aria-live="polite"></div>
     <div id="pa-video" class="pa-video" hidden>
       <div class="pa-video-bar">
-        <button id="pa-video-prev" class="ghost small" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
-        <span id="pa-video-title" class="small-text">Linked video</span>
-        <button id="pa-video-next" class="ghost small" title="Try the next match" aria-label="Next match" hidden>›</button>
-        <button id="pa-mine-btn" class="ghost small" type="button">🎸 Mine: off</button>
-        <button id="pa-video-sync" class="ghost small" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙ Settings</button>
-        <button id="pa-video-close" class="ghost small phone-only" title="Minimize the video (it keeps playing)" aria-label="Minimize the video"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button id="pa-video-size" class="ghost small" title="Smaller / bigger" aria-label="Smaller or bigger">⤡</button>
-        <button id="pa-video-hide" class="ghost small" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video">–</button>
+        <button id="pa-video-prev" class="fb-btn sq" title="Try the previous match" aria-label="Previous match" hidden>‹</button>
+        <span class="pa-vt">
+          <span class="pa-vt-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></span>
+          <span class="pa-vt-text"><span id="pa-video-title" class="pa-vt-title">Linked video</span><span id="pa-video-sub" class="pa-vt-sub"></span></span>
+        </span>
+        <button id="pa-video-next" class="fb-btn sq" title="Try the next match" aria-label="Next match" hidden>›</button>
+        <button id="pa-mine-btn" class="fb-btn" type="button"></button>
+        <button id="pa-video-sync" class="fb-btn sq" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm8.6-2.1l1.9 1.5-2 3.4-2.3-.9a7.5 7.5 0 0 1-2.1 1.2l-.4 2.4h-3.9l-.4-2.4a7.5 7.5 0 0 1-2.1-1.2l-2.3.9-2-3.4 1.9-1.5a7.6 7.6 0 0 1 0-2.8L1.6 9.1l2-3.4 2.3.9a7.5 7.5 0 0 1 2.1-1.2L8.4 3h3.9l.4 2.4a7.5 7.5 0 0 1 2.1 1.2l2.3-.9 2 3.4-1.9 1.5a7.6 7.6 0 0 1 0 2.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+        <button id="pa-video-close" class="fb-btn sq phone-only" title="Minimize the video (it keeps playing)" aria-label="Minimize the video"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="pa-video-size" class="fb-btn sq" title="Smaller / bigger" aria-label="Smaller or bigger"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></button>
+        <button id="pa-video-hide" class="fb-btn sq" title="Hide the picture (the sound keeps playing)" aria-label="Hide the video"></button>
       </div>
       <div class="pa-video-frame"></div>
       <div class="pa-video-ctl">
@@ -643,27 +656,24 @@
             <b id="sg-note" class="mono">–</b><span id="sg-state"></span><span id="sg-last" class="pill" hidden title="Score of the last song or loop"></span>
           </div>
           <button id="pl-tempo-open" class="pill-btn phone-only" title="Tempo and speed" aria-expanded="false"><span id="pl-tempo-open-txt">♩ –</span></button>
-          <div class="speed" title="Tempo. Type a BPM, tap it, or − / + ( [ ] ) for 5 BPM steps. Pitch never changes.">
-            <button id="pl-slower" class="icon-btn small practice-only" aria-label="Slower">−</button>
-            <label class="bpm"><input id="pl-bpm-input" type="number" min="10" max="400" step="1" inputmode="numeric" aria-label="Tempo in BPM"><span>BPM</span></label>
-            <button id="pl-faster" class="icon-btn small practice-only" aria-label="Faster">+</button>
-            <button id="pl-tap" class="pill-btn practice-only" title="Tap tempo: tap the beat 3 or 4 times (or press the Y key)">Tap</button>
+          <div class="speed" title="Tempo. Type a BPM or drag the number sideways; − / + step 1 (hold to run, [ ] step 5). Pitch never changes.">
+            <div class="spd-bpm">
+              <button id="pl-slower" class="icon-btn small fb-btn sq practice-only" aria-label="Slower" title="1 BPM slower (hold to run)">−</button>
+              <label class="bpm"><input id="pl-bpm-input" type="number" min="10" max="400" step="1" inputmode="numeric" aria-label="Tempo in BPM"><span>BPM</span></label>
+              <button id="pl-faster" class="icon-btn small fb-btn sq practice-only" aria-label="Faster" title="1 BPM faster (hold to run)">+</button>
+              <button id="pl-tap" class="pill-btn fb-btn practice-only" title="Tap tempo: tap the beat 3 or 4 times (or press the Y key)">Tap</button>
+            </div>
             <div class="speed-slide practice-only" title="Speed: drag; it clicks to 10, 25, 50, 75 and 100%">
               <input id="pl-speed-slide" type="range" min="10" max="100" step="1" value="100" aria-label="Speed">
-              <div class="speed-stops" aria-hidden="true"><span style="left:0%">10</span><span style="left:16.67%">25</span><span style="left:44.44%">50</span><span style="left:72.22%">75</span><span style="left:100%">100</span></div>
+              <div class="speed-stops" aria-hidden="true"><i style="--f:0"></i><i style="--f:.1667"></i><i style="--f:.4444"></i><i style="--f:.7222"></i><i style="--f:1"></i></div>
             </div>
-            <button id="pl-speed-pct" class="pill-btn practice-only" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
-            <span id="pl-tempo-now" class="muted small-text"></span>
-            <button id="pl-tempo-adv" class="pill-btn phone-only" data-sheet-btn="speed">Advanced…</button>
+            <button id="pl-speed-pct" class="pill-btn fb-btn practice-only" data-sheet-btn="speed" title="Speed presets and trainer">100%</button>
+            <span id="pl-tempo-now" class="spd-here" title="The tempo where the cursor is"></span>
+            <button id="pl-tempo-adv" class="pill-btn fb-btn phone-only" data-sheet-btn="speed">Advanced…</button>
           </div>
           <div class="toggles">
             <button id="pl-loop" class="tog practice-only" title="Loop the selected bars (L). Drag across the tab to select.">Loop</button>
             <button id="pl-clear-sel" class="icon-btn small practice-only" title="Clear the bar selection (Esc)" aria-label="Clear selection">✕</button>
-            <span id="qk-stave" class="seg" role="group" aria-label="Notation" title="What to show: the tab, the music notation, or both">
-              <button data-stave="tab">Tab</button><button data-stave="default">Both</button><button data-stave="score">Notes</button><button data-stave="chords" title="The song's chord sheet: chords over the words" hidden>Chords</button>
-            </span>
-            <span class="stepper qk-key" title="Transpose the whole song up or down (synth, tab and chord names)">Key
-              <button id="qk-down" class="icon-btn small" aria-label="Transpose down">−</button><b id="qk-val" class="mono">0</b><button id="qk-up" class="icon-btn small" aria-label="Transpose up">+</button></span>
             <span class="tog-group"><button id="pl-howto" class="tog" title="How to play: the neck, keys or drums for this track, under the music (F)">Neck</button><button id="pl-lyr-btn" class="tog" title="The lyrics across the screen">Lyrics</button></span>
             <span class="tog-group"><button id="pl-metro"class="tog" title="Click track (B). Sound, volume and rhythm: ⚙">Click</button><button class="tog gear" data-sheet-btn="click" title="Click and count-in settings" aria-label="Click and count-in settings">⚙</button></span>
             <span class="tog-group vid-group"><button id="pa-toggle" class="tog rec" title="Linked video (R): on = this song plays with its linked YouTube video; off = the built-in guitar sound. The first press lets you find a video.">Video</button><button id="pa-gear" class="tog gear" data-sheet-btn="playalong" title="Video settings: start point, tempo match, sync, skips" aria-label="Video settings">⚙</button></span>

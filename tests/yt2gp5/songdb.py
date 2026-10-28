@@ -32,6 +32,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DB = HERE / "songs.json"
+UG_FOLDERS = (Path.home() / "Downloads" / "UG Songs", HERE / "cache" / "ug-pdf")  # where the UG helper saves a song's folder
 GP_EXT = {".gp", ".gpx", ".gp3", ".gp4", ".gp5"}
 BAD = {"live": 25, "cover": 30, "lesson": 40, "tutorial": 40, "karaoke": 40, "instrumental": 25, "remix": 30,
        "slowed": 40, "reverb": 15, "sped": 40, "8d": 40, "reaction": 40, "drum cam": 40, "how to play": 40,
@@ -179,6 +180,25 @@ def official_url(title):
             if f"/{want}-official-" in url:
                 return url
     return None
+
+
+def ug_chord_sheet(title, artist, roots=UG_FOLDERS):
+    """The official song's chord chart (the UG helper's "<Song> - <Artist> - Chords.txt") as text, or "" when the
+    song's folder has none. Fretboard shows it beside the tab (song.chordSheet)."""
+    def key(s):
+        return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+    best = None
+    for root in roots:
+        if not root.exists():
+            continue
+        for d in root.iterdir():
+            m = re.match(r"(.+?) - (.+?)(?: \(Key [^)]+\))?$", d.name)
+            if not (d.is_dir() and m and key(m.group(1)) == key(title) and key(m.group(2)) == key(artist)):
+                continue
+            for f in d.glob("*Chords*.txt"):
+                if f.stat().st_size > 20 and (best is None or f.stat().st_mtime > best.stat().st_mtime):
+                    best = f
+    return best.read_text(encoding="utf-8", errors="replace").strip("\r\n") if best else ""
 
 
 def cmd_scan(db, folders, official=False):

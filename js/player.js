@@ -35,6 +35,7 @@ import { initModes, isLive, liveAutoPlay, LIVE_GAP_MS } from './livemode.js';
 import { keepScreenOn, initMediaSession, describeSong } from './stand.js';
 import { humanize, liftCymbals, sustainPads, ownDrumChannels } from './humanize.js';
 import { highlight } from './texttab.js';
+import { popMenu } from './menu.js';
 import { autoLevels } from './mixlevels.js';
 import { SOUNDS, TYPICAL, soundFor, soundName } from './sounds.js';
 
@@ -613,14 +614,22 @@ function showChordView() {
   $('score-scroll').hidden = on;
   $('pl-chordsheet').hidden = !on;
   if (on) $('pl-loading').hidden = true; // the tab is drawn when it's shown again
-  document.querySelector('#qk-stave [data-stave=chords]').hidden = !has;
   if (on) $('pl-chordsheet').innerHTML = highlight(song.chordSheet, sheetMove % 12 ? (c) => shiftChordName(c, sheetMove, shiftFlats) : null);
   showStave();
 }
 
+// The header's Notation button says what the music shows; Chord chart is lit while the chart is on screen.
+const STAVE_NAMES = { tab: 'Tablature', score: 'Standard', default: 'Both' };
 function showStave() {
-  const shown = chordView && song?.chordSheet ? 'chords' : $('pl-stave').value;
-  document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.classList.toggle('on', b.dataset.stave === shown));
+  const has = !!song?.chordSheet;
+  const on = chordView && has;
+  $('qk-stave-txt').textContent = STAVE_NAMES[$('pl-stave').value] || 'Tablature';
+  const b = $('qk-chords');
+  b.classList.toggle('on', on);
+  b.classList.toggle('empty', !has);
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Back to the music' : has ? 'The song’s chord chart: chords over the words'
+    : song && !['tex', 'sheet', 'text'].includes(song.kind) ? 'No chord chart for this song yet. Tap to paste one.' : 'No chord chart for this song.';
 }
 
 function showChordSettings() {
@@ -794,6 +803,28 @@ function scrubBpm(input) {
   input.addEventListener('focus', () => { if (moved) input.blur(); });
 }
 
+// A button that repeats while it is held: one step at once, then every 90 ms (step(n): n counts the repeats).
+function holdStep(btn, step) {
+  let wait = 0, run = 0, n = 0;
+  const stop = () => { clearTimeout(wait); clearInterval(run); wait = run = 0; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button) return;
+    stop();
+    n = 0;
+    step(n);
+    wait = setTimeout(() => { run = setInterval(() => step(++n), 90); }, 450);
+  });
+  for (const t of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(t, stop);
+  btn.addEventListener('click', (e) => { if (e.detail === 0) step(0); }); // the keyboard
+  btn.addEventListener('contextmenu', (e) => e.preventDefault()); // a long press on a phone
+}
+
+// The speed slider's filled part follows the thumb (--p).
+function paintSpeedSlide() {
+  const sl = $('pl-speed-slide');
+  sl.style.setProperty('--p', `${((Number(sl.value) - Number(sl.min)) / (Number(sl.max) - Number(sl.min))) * 100}%`);
+}
+
 function updateBpm() {
   const bpm = Math.round((baseTempo * speedPct) / 100);
   if (document.activeElement !== $('pl-bpm-input')) $('pl-bpm-input').value = bpm;
@@ -804,6 +835,7 @@ function updateBpm() {
   $('pl-speed-pct').classList.toggle('changed', speedPct !== 100);
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === speedPct));
   if (document.activeElement !== $('pl-speed-slide')) $('pl-speed-slide').value = Math.min(100, speedPct);
+  paintSpeedSlide();
 }
 
 // The speed slider clicks to these.
@@ -811,6 +843,7 @@ const SPEED_STOPS = [10, 25, 50, 75, 100];
 function slideSpeed(v) {
   const stop = SPEED_STOPS.find((s) => Math.abs(s - v) <= 3);
   if (stop !== undefined && stop !== v) $('pl-speed-slide').value = stop;
+  paintSpeedSlide();
   setSpeed(stop ?? v);
 }
 
@@ -2606,8 +2639,8 @@ export function initPlayer() {
   $('pl-tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tapTempo(); });
   $('pl-tap').addEventListener('keydown', (e) => { if (e.key === 'Enter') tapTempo(); });
   initModes({ enter: enterLive, leave: leaveLive });
-  $('pl-slower').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) - 5));
-  $('pl-faster').addEventListener('click', () => setBpm(Math.round((baseTempo * speedPct) / 100) + 5));
+  holdStep($('pl-slower'), (n) => setBpm(Math.round((baseTempo * speedPct) / 100) - (n > 14 ? 5 : 1)));
+  holdStep($('pl-faster'), (n) => setBpm(Math.round((baseTempo * speedPct) / 100) + (n > 14 ? 5 : 1)));
   $('pl-bpm-input').addEventListener('change', (e) => { const v = Number(e.target.value); if (v > 0 && !isLive()) setBpm(v); e.target.blur(); updateBpm(); });
   $('pl-bpm-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
   $('pl-bpm-input').addEventListener('blur', updateBpm);
@@ -2657,13 +2690,34 @@ export function initPlayer() {
   $('pl-countin').addEventListener('click', () => toggleButton('pl-countin', !countInOn()));
   $('pl-metro').addEventListener('click', toggleClick);
   // Quick switches on the play bar: notation (tab / both / notes) and transpose
-  document.querySelectorAll('#qk-stave [data-stave]').forEach((b) => b.addEventListener('click', () => {
-    chordView = b.dataset.stave === 'chords';
-    showChordView();
-    if (chordView) return;
-    $('pl-stave').value = b.dataset.stave;
-    $('pl-stave').dispatchEvent(new Event('change'));
-  }));
+  $('qk-stave').addEventListener('click', () => {
+    const now = chordView && song?.chordSheet ? '' : $('pl-stave').value;
+    popMenu($('qk-stave'), [
+      { k: 'tab', label: 'Tablature', hint: 'Fret numbers on the strings', check: now === 'tab' },
+      { k: 'score', label: 'Standard notation', hint: 'Notes on a music staff', check: now === 'score' },
+      { k: 'default', label: 'Both', hint: 'The staff with the tab under it', check: now === 'default' },
+    ], (k) => {
+      chordView = false;
+      showChordView();
+      $('pl-stave').value = k;
+      $('pl-stave').dispatchEvent(new Event('change'));
+    });
+  });
+  $('qk-chords').addEventListener('click', () => {
+    if (song?.chordSheet) {
+      chordView = !chordView;
+      showChordView();
+      return;
+    }
+    if (song && !['tex', 'sheet', 'text'].includes(song.kind)) { // the tab editor has the box where a chart is pasted
+      const find = () => setTimeout(() => $('ed-chords')?.scrollIntoView({ block: 'center' }), 400);
+      window.addEventListener('fbeditmode', find, { once: true });
+      setTimeout(() => window.removeEventListener('fbeditmode', find), 4000);
+      location.hash = `edit/${song.id}`;
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('fbtoast', { detail: 'No chord chart for this song yet. Official songs bring theirs when the UG helper saves them.' }));
+  });
   try { const keep = localStorage.getItem('fb-stave'); if (keep) $('pl-stave').value = keep; } catch { /* no storage */ }
   $('pl-stave').addEventListener('change', () => { showStave(); try { localStorage.setItem('fb-stave', $('pl-stave').value); } catch { /* no storage */ } });
   showStave();

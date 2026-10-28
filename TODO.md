@@ -20,6 +20,14 @@ Live, editable board: https://claude.ai/artifact/6bKMech8PfTJJwNHbYdVf7 (page `r
 - App: install APK 1.52 on the phone; banjo tuning; instrument load time (measured 2026-10-27: a 6-track song is ready ~16 s after it opens, of which the 40 MB soundfont download is ~0.15 s locally, so the wait is the synth preparing the instruments; "Loading instruments" line and queued Play are done; per-track loading only if still too slow).
 - TabMaker: train on the 300 factory examples, on free Colab (T4) so the PC stays cool (needs home net).
 
+## Player header, tempo and video bar (2026-10-28): what's left
+
+Done: Key, Notation menu and Chord chart button beside the title; tempo box redone; video bar with icons and info; official songs' chord chart in the `.fretboard` the pipeline makes (see CLAUDE.md "Player header, tempo box and video bar").
+- Champion (Bethel Music) and When I Go Down Power have no Chords.txt in their UG folders: find out why the helper's `official_chords` / `search_chords` found nothing.
+- Songs already in the library that came in as a `.fretboard` before this have no chart; re-import them with "Replace it" after `fromlink.py` is run again, or paste the chart in the editor.
+- A design kit (colours, sizes, fonts, button / slider / knob classes in one place, a live style page) is not built; it needs the user's reference screenshots. The `.fb-*` classes are the seed. The chord sheet bar and tools column, the library and the Practice page still have their own button rules.
+- Not checked on the phone itself, only the preview at 375 px; the APK is held.
+
 ## YouTube → GP5 (Colab notebook + test loop, 2026-10-24)
 
 The plan, the file list, where it stands and the next steps are all in `tests/yt2gp5/PLAN.md`. Start there.

@@ -868,13 +868,19 @@ function setMine(mode = mine.mode, level = mine.level) {
   showMine();
 }
 
+const svgIcon = (d, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON_NOTE = svgIcon('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', 17);
+const ICON_HIDE = svgIcon('<path d="M6 9l6 6 6-6"/>', 19);
+const ICON_SHOW = svgIcon('<path d="M6 15l6-6 6 6"/>', 19);
+
 function showMine() {
   $('pa-mine').value = mine.mode;
   $('pa-mine-vol').value = mine.level;
   const b = $('pa-mine-btn');
   const yt = media?.kind === 'youtube';
   b.classList.toggle('on', mine.mode !== 'off');
-  b.textContent = { off: '🎸 Mine: off', both: '🎸 Mine: on', right: '🎸 Mine: R ear' }[mine.mode];
+  b.setAttribute('aria-pressed', String(mine.mode !== 'off'));
+  b.innerHTML = `${ICON_NOTE}<span>${{ off: 'Mine', both: 'Mine on', right: 'Mine R' }[mine.mode]}</span>`;
   b.title = `Hear this tab's own instruments with the video, to check it (now: ${MINE_MODES[mine.mode]}). Click to switch.`
     + (mine.mode === 'right' && yt ? ' YouTube’s sound can’t be moved, so the video stays in both ears.' : '');
   if (layers[0].busy) return; // the render shows its progress
@@ -980,6 +986,10 @@ function paintSyncStatus() {
   pill.hidden = false;
   pill.className = `pill sync-pill ${state}`;
   pill.textContent = state === 'synced' ? '✓ Synced' : state === 'none' ? '○ No video' : `◐ ${label}`;
+  const rec = song.recording;
+  const sub = $('pa-video-sub'); // the video bar's second line: who uploaded it and how far the sync is
+  sub.className = `pa-vt-sub ${state}`;
+  sub.textContent = [rec?.kind === 'youtube' ? rec.author : '', state === 'synced' ? '✓ Synced' : state === 'none' ? '' : `◐ ${label}`].filter(Boolean).join(' · ');
   const box = $('pa-sync-status');
   box.className = `sync-status ${state}`;
   box.innerHTML = `<b>${state === 'synced' ? 'Synced with the video' : state === 'none' ? 'No video yet' : 'Sync in progress'}</b>
@@ -996,6 +1006,7 @@ function paintLast() {
 }
 
 function showState() {
+  showMine();
   paintSyncStatus();
   paintLast();
   $('pa-on').checked = on;
@@ -1505,7 +1516,7 @@ export function initPlayAlong(h) {
   const save = (key, v) => { try { localStorage.setItem(key, v); } catch { /* ignore */ } };
   const showLook = () => {
     const hidden = box.classList.contains('collapsed');
-    $('pa-video-hide').textContent = hidden ? '▢' : '–';
+    $('pa-video-hide').innerHTML = hidden ? ICON_SHOW : ICON_HIDE;
     $('pa-video-hide').title = hidden ? 'Show the video again' : 'Hide the picture (the sound keeps playing)';
     $('pa-video-hide').setAttribute('aria-label', $('pa-video-hide').title);
     dock();
@@ -1546,7 +1557,7 @@ export function initPlayAlong(h) {
   showLook();
   $('pa-video-size').addEventListener('click', () => { save('fretboard-video-mini', box.classList.toggle('mini') ? '1' : '0'); });
   $('pa-video-hide').addEventListener('click', () => { save('fretboard-video-hidden', box.classList.toggle('collapsed') ? '1' : '0'); showLook(); });
-  $('pa-video-title').addEventListener('click', () => { if (box.classList.contains('collapsed')) $('pa-video-hide').click(); });
+  box.querySelector('.pa-vt').addEventListener('click', () => { if (box.classList.contains('collapsed')) $('pa-video-hide').click(); });
   $('pa-video-prev').addEventListener('click', () => stepMatch(-1));
   $('pa-video-next').addEventListener('click', () => stepMatch(1));
 }
