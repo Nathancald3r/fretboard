@@ -82,7 +82,7 @@
   <div class="grp"><span class="gl">Play</span>
     <button id="play" title="Play from the marker (Space)"><span class="lbl">▶ Play</span><kbd>Space</kbd></button>
     <button id="head" title="Centre the view on the playhead (P)">To playhead<kbd>P</kbd></button>
-    <button id="follow" title="Keep the playhead in the middle while playing (F)">Follow<kbd>F</kbd></button>
+    <button id="follow" title="Keep the playhead in view while playing: the view moves only when it would leave (F)">Follow<kbd>F</kbd></button>
   </div>
   <div class="grp"><span class="gl">Zoom</span><div class="seg" id="zoom"></div></div>
   <div class="grp" title="Cut the song into sections that each get their own shift"><span class="gl">Sections</span>
@@ -357,6 +357,8 @@ function panTo(t0) { S.view.t0 = clamp(t0, 0, Math.max(0, S.total - S.view.span)
 const headT = () => (S.play ? S.play.t : S.marker); // the playhead: where the sound is, or the marker when stopped
 function zoomBy(d) { setLevel(clamp(S.level + d, 1, 5)); }
 function toPlayhead() { panTo(headT() - S.view.span / 2); }
+// Follow: the view stays still until the playhead would leave it, then jumps so the playhead sits near the left edge.
+function keepInView(t) { const { t0, span } = S.view; if (span < S.total && (t < t0 || t > t0 + span * 0.92)) panTo(t - span * 0.1); }
 
 /* ---------- scrubbing: the playhead line at the top ---------- */
 let scrubAt = 0, scrubStop = 0, snippet = false;
@@ -509,7 +511,7 @@ function loop() {
   if (S.play) {
     const t = S.play.t0 + (ctx.currentTime - S.play.startAt);
     S.play.t = Math.max(S.play.t0, t);
-    if (S.follow) panTo(S.play.t - S.view.span / 2); // only with Follow on: otherwise the view stays where it is, even if the playhead leaves it
+    if (S.follow) keepInView(S.play.t); // only with Follow on: otherwise the view stays where it is, even if the playhead leaves it
     if (t > S.total) stopPlay();
     dirty = true;
   }
@@ -721,7 +723,7 @@ const TOGGLES = [
 const ZOOMS = [['Song', 1], ['45 s', 2], ['12 s', 3], ['3 s', 4], ['0.6 s', 5]];
 // A leading "@" marks a mouse action (shown in orange), everything else is a key.
 const HELP = [
-  ['Play and scrub', [['Space', 'Play or stop both'], ['@Song strip (top)', 'Click or drag: scrub, you hear it'], ['@Marker’s tab', 'Drag it to scrub'], ['P', 'Centre the view on the playhead'], ['F', 'Follow the playhead while playing'], ['↑ / ↓', 'Marker to the previous / next bar (Shift: 4 bars)'], ['N / Shift N', 'Marker to the next / previous note start'], ['Home / End', 'Marker to the start / end']]],
+  ['Play and scrub', [['Space', 'Play or stop both'], ['@Song strip (top)', 'Click or drag: scrub, you hear it'], ['@Marker’s tab', 'Drag it to scrub'], ['P', 'Centre the view on the playhead'], ['F', 'Follow: keep the playhead in view while playing'], ['↑ / ↓', 'Marker to the previous / next bar (Shift: 4 bars)'], ['N / Shift N', 'Marker to the next / previous note start'], ['Home / End', 'Marker to the start / end']]],
   ['Zoom and scroll', [['1 2 3 4 5', 'Whole song, 45 s, 12 s, 3 s, 0.6 s'], ['+ / −', 'Zoom in / out around the playhead'], ['@Ctrl + wheel', 'Zoom at the pointer'], ['@Wheel, Shift + drag', 'Scroll the view'], [', / .', 'Scroll back / forward']]],
   ['Move the video', [['@Drag the waveform', 'Moves the section under the pointer'], ['← / →', 'Nudge 10 ms (Shift 100 ms, Ctrl 1 ms)'], ['M', 'Match here by the note starts (±1 s)']]],
   ['Sections and squeeze', [['A', 'Cut at the bar nearest the marker'], ['@Double-click', 'Cut at the bar nearest the pointer'], ['Delete', 'Join with the section before'], ['@Section’s name', 'Click to pick that section'], ['[ / ]', 'Squeeze / stretch the picked section (Shift 100 ms, Ctrl 1 ms)'], ['K', 'Lock it back to the tab’s tempo'], ['@Pink cut line', 'Drag: moves the boundary, squeezing both sides']]],
@@ -885,8 +887,8 @@ document.addEventListener('keydown', (e) => {
 });
 function toggleFollow() {
   S.follow = !S.follow; $('#follow').classList.toggle('on', S.follow);
-  say(S.follow ? 'Follow on: the playhead stays in the middle while playing.' : 'Follow off.');
-  if (S.follow) toPlayhead();
+  say(S.follow ? 'Follow on: the view moves only when the playhead would leave it.' : 'Follow off: the view stays where it is.');
+  if (S.follow) keepInView(headT());
 }
 $('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = () => cutHere(); $('#uncut').onclick = joinHere;
 $('#head').onclick = toPlayhead; $('#follow').onclick = toggleFollow;
