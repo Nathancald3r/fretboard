@@ -509,8 +509,7 @@ function loop() {
   if (S.play) {
     const t = S.play.t0 + (ctx.currentTime - S.play.startAt);
     S.play.t = Math.max(S.play.t0, t);
-    if (S.follow) panTo(S.play.t - S.view.span / 2);
-    else if (S.play.t > S.view.t0 + S.view.span * 0.92 && S.view.span < S.total) panTo(S.play.t - S.view.span * 0.1);
+    if (S.follow) panTo(S.play.t - S.view.span / 2); // only with Follow on: otherwise the view stays where it is, even if the playhead leaves it
     if (t > S.total) stopPlay();
     dirty = true;
   }
