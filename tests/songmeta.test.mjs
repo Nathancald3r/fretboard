@@ -21,6 +21,13 @@ assert.deepEqual(filterSongs(songs, { folder: '' }).map((s) => s.id), [2]);
 assert.deepEqual(filterSongs(songs, { text: 'y' }).map((s) => s.id), [2]);
 assert.deepEqual([...songs].sort(SORTS.rating).map((s) => s.id), [2, 1, 3]);
 assert.deepEqual(folderNames(songs, ['Empty']), ['Empty', 'Worship']);
+// archived songs leave the library (and its folders and search) until you open the archive; restoring clears the mark
+const shelf = [...songs, { id: 4, kind: 'gp', title: 'Z', artist: 'z', archived: 99 }, { id: 5, kind: 'text', title: 'Y', data: 'G D', archived: null }];
+assert.deepEqual(filterSongs(shelf).map((s) => s.id), [1, 2, 5]);
+assert.deepEqual(filterSongs(shelf, { archived: true }).map((s) => s.id), [4]);
+assert.deepEqual(filterSongs(shelf, { archived: true, text: 'z' }).map((s) => s.id), [4]);
+assert.deepEqual(filterSongs(shelf, { text: 'z' }).map((s) => s.id), [], 'a search of the library does not find archived songs');
+assert.deepEqual(filterSongs(shelf, { folder: '' }).map((s) => s.id), [2, 5]);
 // official tab + its video + synced
 import { officialGaps } from '../js/songmeta.js';
 const good = { kind: 'gp', sourceUrl: 'https://tabs.ultimate-guitar.com/tab/the-lumineers/ho-hey-official-2422311', recording: { kind: 'youtube', id: 'SuZytYa71lk' }, autoSync: {}, syncPoints: [[0, 2467], [4, 9000]], syncDone: true };

@@ -18,12 +18,16 @@ export const SORTS = {
   practiced: (a, b) => (b.practiceSeconds || 0) - (a.practiceSeconds || 0) || SORTS.recent(a, b),
 };
 
-/** Songs for the library page (exercises live on the Practice page). chart: 'all' | 'pro' | 'tab' | 'chords'. */
-export function filterSongs(songs, { text = '', chart = 'all', folder = 'all' } = {}) {
+/**
+ * Songs for the library page (exercises live on the Practice page). chart: 'all' | 'pro' | 'tab' | 'chords'.
+ * Archived songs (song.archived set) are left out, unless archived: true, which lists only them.
+ */
+export function filterSongs(songs, { text = '', chart = 'all', folder = 'all', archived = false } = {}) {
   const q = text.trim().toLowerCase();
   return songs.filter((s) => {
     const type = chartType(s);
     if (type === 'exercise') return false;
+    if (!!s.archived !== archived) return false;
     if (chart !== 'all' && type !== chart) return false;
     if (folder === '') return !s.folder; // unfiled
     if (folder !== 'all' && s.folder !== folder) return false;

@@ -172,6 +172,12 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **The user's "GitHub library" is the private repo the app syncs to** (`fretboard/library.json` + one file per song, `js/sync.js`), not the code repo `Nathancald3r/fretboard`, which holds no songs. A song deleted in the app leaves that repo on the next sync, so the cleanup has to be done in the app on a device with sync on. Claude can't reach the user's browser storage or token.
 - "Official tab" = `song.sourceUrl` parses (`parseSource`) as an UG `-official-` link; songs imported before `sourceUrl` was kept look unofficial and get ticked, which is why the user reviews the list.
 
+## Library song menu: ⋮ and Archive (2026-10-28, asked by the user)
+
+- Every library row has a ⋮ (a three-dot SVG button, `.lib-more`: 40 px, 44 px on a phone; before it was a faint 36 px glyph). Right-click and long-press open the same menu (`openCardMenu` in `js/app.js`, drawn by `popMenu` in `js/menu.js`).
+- The menu, top to bottom: the song's title (artist · type), the ranking stars, Open chord sheet / Edit mode / Edit text or Rename / Version, then Add to setlist / Move to folder / **Archive** / Share (Split and Ask-before-combining only when they apply), and Delete last, in red. Items take `icon: '<key>'` (`ICONS` in `menu.js`) and a `{ head, sub }` row is a title that does nothing.
+- **Archive** is `song.archived` (a timestamp, `null` after Restore): out of the way, nothing deleted. `filterSongs` leaves archived songs out of the library, its folders, counts and search; `filterSongs(songs, { archived: true })` lists only them. The folder menu gets an **Archived** entry when there are any (`archiveView` in `app.js`); in that view the ⋮ menu says Restore. A search with no hit says "n in your archive" with Show archive. Select mode has Archive / Restore for many songs. The field syncs with the song like any other, and a song in a setlist stays in it.
+
 ## Phone → computer → phone: "Ask my computer for a song" (2026-10-27, asked by the user)
 
 The user wants the APK on the phone **only once sync results are consistent** (APK 1.53 is built and held; `node scripts/apk.mjs --no-bump` installs it). The goal: save a song on the phone, the computer fetches the official UG tab and the official lyric/music video, syncs them, and the finished song lands on the phone by itself.

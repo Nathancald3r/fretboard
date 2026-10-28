@@ -58,7 +58,7 @@ async function route() {
   if (view === 'library' && name !== 'song' && name !== 'edit') {
     const last = lastSongId();
     const to = last && await getSong(last) ? last
-      : (await listSongs()).filter((s) => chartType(s) !== 'exercise' && !s.want).sort(SORTS.recent)[0]?.id; // deleted: the latest one
+      : (await listSongs()).filter((s) => chartType(s) !== 'exercise' && !s.want && !s.archived).sort(SORTS.recent)[0]?.id; // deleted: the latest one
     if (to) { location.replace(`#song/${to}`); return; }
   }
   if (name === 'song' || name === 'edit') {
@@ -111,6 +111,9 @@ let folderList = [];
 let lastAll = [];
 let libSongs = [];
 let libNames = [];
+let archiveView = false; // the list shows the archived songs, not the library
+let archivedCount = 0;
+const archiveEmpty = (q) => `<p class="muted">${q ? `“${escape(q)}” isn’t in your archive.` : 'Nothing archived.'}</p><button class="ghost small" data-arch="hide">Back to your songs</button>`;
 const TYPES = [['all', 'All types'], ['pro', 'Pro tabs'], ['tab', 'Text tabs'], ['chords', 'Chord charts'], ['sheet', 'Sheet music']];
 const folderLabel = (f) => (f === 'all' ? 'All songs' : f === '' ? 'No folder' : f);
 const openSongId = () => { const [n, id] = location.hash.slice(1).split('/'); return n === 'song' || n === 'edit' ? Number(id) : null; };
@@ -125,9 +128,14 @@ async function renderLibrary() {
   libNames = folderNames(songsOnly, folderList);
   if (folderFilter !== 'all' && folderFilter !== '' && !libNames.includes(folderFilter)) folderFilter = 'all';
   const q = $('find-query').value.trim();
-  const shown = filterSongs(all, { chart: chartFilter, folder: folderFilter });
-  libSongs = filterSongs(shown, { text: q }).sort(SORTS.title);
-  $('lib-folder-btn').innerHTML = `📁 <b>${escape(folderLabel(folderFilter))}</b> <span class="muted">${shown.length}</span> ▾`;
+  archivedCount = all.filter((s) => s.archived && chartType(s) !== 'exercise').length;
+  if (!archivedCount) archiveView = false; // the last archived song was restored or deleted
+  const shown = filterSongs(all, { chart: chartFilter, folder: archiveView ? 'all' : folderFilter, archived: archiveView });
+  libSongs = filterSongs(shown, { text: q, archived: archiveView }).sort(SORTS.title);
+  const archivedMatches = q && !archiveView ? filterSongs(all, { text: q, archived: true }).length : 0;
+  $('lib-folder-btn').innerHTML = archiveView
+    ? `🗄 <b>Archived</b> <span class="muted">${shown.length}</span> ▾`
+    : `📁 <b>${escape(folderLabel(folderFilter))}</b> <span class="muted">${shown.length}</span> ▾`;
   $('lib-folder-btn').title = 'Folders';
   $('lib-type-chip').hidden = chartFilter === 'all';
   $('lib-type-chip').textContent = `${TYPES.find(([k]) => k === chartFilter)?.[1] || ''} ✕`;
@@ -151,9 +159,9 @@ async function renderLibrary() {
       ${selecting() ? `<input type="checkbox" class="lib-check" tabindex="-1" aria-label="Select ${escape(s.title)}"${isPicked(s.id) ? ' checked' : ''}>` : ''}
       <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${want ? escape(wantLabel(s)) : escape(CHART_LABEL[type]) + (s.chordSheet && type !== 'chords' ? ' + chords' : '')}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}${selecting() && officialGaps(s).length ? `<span class="lib-why">${escape(officialGaps(s).join(' · '))}</span>` : ''}</a>
       ${s.rating ? `<span class="lib-stars" title="Your ranking">★${s.rating}</span>` : ''}
-      <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu">⋮</button></li>`;
-  }).join('') || `<li class="lib-empty">${q
-    ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button>${helperPossible() ? '' : '<button class="primary small" data-qi="want" title="Your computer finds the official tab and video, lines them up and sends the song here">Ask my computer</button>'}</div>`
+      <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg></button></li>`;
+  }).join('') || `<li class="lib-empty">${archiveView ? archiveEmpty(q) : q
+    ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p>${archivedMatches ? `<p>${archivedMatches} in your archive. <button class="ghost small" data-arch="show">Show archive</button></p>` : ''}<div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button>${helperPossible() ? '' : '<button class="primary small" data-qi="want" title="Your computer finds the official tab and video, lines them up and sends the song here">Ask my computer</button>'}</div>`
     : songsOnly.length ? '<p class="muted">No songs here.</p>' : '<p class="muted">No songs yet. Type a song above to get it from Ultimate Guitar, or drop a file here.</p>'}</li>`;
   if (focused) $('library-list').querySelector(`.lib-row[data-id="${focused}"] > a`)?.focus();
   drawBar();
@@ -162,21 +170,23 @@ async function renderLibrary() {
 // The folder menu: which folder you're in, and making, renaming and deleting folders.
 function folderMenu() {
   const count = (f) => filterSongs(lastAll, { folder: f }).length;
-  const real = folderFilter && folderFilter !== 'all';
+  const real = !archiveView && folderFilter && folderFilter !== 'all';
   popMenu($('lib-folder-btn'), [
-    { k: 'f:all', label: 'All songs', hint: `${count('all')} songs`, check: folderFilter === 'all' },
-    { k: 'f:none', label: 'No folder', hint: `${count('')} songs`, check: folderFilter === '' },
-    ...libNames.map((n, i) => ({ k: `f:${i}`, label: n, hint: `${count(n)} songs`, check: folderFilter === n })),
+    { k: 'f:all', label: 'All songs', hint: `${count('all')} songs`, check: !archiveView && folderFilter === 'all' },
+    { k: 'f:none', label: 'No folder', hint: `${count('')} songs`, check: !archiveView && folderFilter === '' },
+    ...libNames.map((n, i) => ({ k: `f:${i}`, label: n, hint: `${count(n)} songs`, check: !archiveView && folderFilter === n })),
+    archivedCount ? { k: 'f:archived', icon: 'archive', label: 'Archived', hint: `${archivedCount} song${archivedCount === 1 ? '' : 's'}, out of the way`, check: archiveView } : null,
     '-',
     { k: 'new', label: 'New folder…' },
     real ? { k: 'rename', label: `Rename “${folderFilter}”…` } : null,
     real ? { k: 'delete', label: `Delete “${folderFilter}”…`, hint: 'Its songs stay in All songs', danger: true } : null,
   ], async (k) => {
-    if (k.startsWith('f:')) { const v = k.slice(2); folderFilter = v === 'all' ? 'all' : v === 'none' ? '' : libNames[Number(v)]; renderLibrary(); return; }
+    if (k === 'f:archived') { archiveView = true; renderLibrary(); return; }
+    if (k.startsWith('f:')) { archiveView = false; const v = k.slice(2); folderFilter = v === 'all' ? 'all' : v === 'none' ? '' : libNames[Number(v)]; renderLibrary(); return; }
     if (k === 'new') {
       const f = await ask({ title: 'New folder', ok: 'Create', fields: { title: '', artist: '' }, single: true });
       const name = f?.title.trim();
-      if (name) { await addFolder(name); folderFilter = name; renderLibrary(); }
+      if (name) { await addFolder(name); archiveView = false; folderFilter = name; renderLibrary(); }
     } else if (k === 'rename') {
       const f = await ask({ title: 'Rename folder', ok: 'Save', fields: { title: folderFilter, artist: '' }, single: true });
       const name = f?.title.trim();
@@ -243,6 +253,8 @@ async function undoCombineSplit() {
 }
 
 async function onLibraryClick(e) {
+  const arch = e.target.closest('[data-arch]');
+  if (arch) { archiveView = arch.dataset.arch === 'show'; renderLibrary(); return; }
   const qi = e.target.closest('[data-qi]');
   if (qi) { if (qi.dataset.qi === 'want') askComputer($('find-query').value); else findSong(qi.dataset.qi); return; }
   const row = e.target.closest('.lib-row');
@@ -295,6 +307,8 @@ async function cardAct(act, id) {
     renderLibrary();
     return;
   }
+  if (act === 'archive') { await updateSong(id, { archived: Date.now() }); toast(`Archived “${song.title}”. It’s under 📁 Folders → Archived.`, 4500); renderLibrary(); return; }
+  if (act === 'restore') { await updateSong(id, { archived: null }); toast(`Restored “${song.title}”.`); renderLibrary(); return; }
   if (act === 'delete') {
     const ok = await ask({ title: 'Delete from library?', text: `“${song.title}” will be removed. Your practice log keeps its history.`, ok: 'Delete' });
     if (!ok) return;
@@ -339,7 +353,7 @@ function ask({ title, text = '', ok = 'OK', fields = null, single = false }) {
   });
 }
 
-// ⋮ button, right-click and long-press on a song: setlist, folder, ranking, edit mode, version, rename, delete.
+// ⋮ button, right-click and long-press on a song: its title, ranking, edit, rename, version, setlist, folder, archive, share, delete.
 function openCardMenu(row, at) {
   const id = Number(row.dataset.id);
   const song = libSongs.find((s) => s.id === id);
@@ -347,26 +361,31 @@ function openCardMenu(row, at) {
   const type = row.dataset.type;
   if (row.dataset.want) { // a song asked for: only retry and delete make sense
     popMenu(at || row.querySelector('[data-act=menu]'), [
-      row.dataset.want === 'failed' ? { k: 'want-retry', label: 'Try again', hint: 'Ask the computer once more' } : null,
-      { k: 'delete', label: row.dataset.want === 'failed' ? 'Delete' : 'Cancel the request', danger: true },
+      row.dataset.want === 'failed' ? { k: 'want-retry', icon: 'retry', label: 'Try again', hint: 'Ask the computer once more' } : null,
+      { k: 'delete', icon: 'trash', label: row.dataset.want === 'failed' ? 'Delete' : 'Cancel the request', danger: true },
     ], (k) => cardAct(k, id));
     return;
   }
   const editable = type !== 'chords' && type !== 'exercise';
   const list = setlistTargetName();
+  const archived = !!song.archived;
   popMenu(at || row.querySelector('[data-act=menu]'), [
-    { k: 'setlist', label: list ? `Add to “${list}”` : 'Add to a setlist', hint: list ? '' : 'Starts “My setlist”' },
-    { k: 'folder', label: 'Move to folder…', hint: song.folder || 'No folder' },
-    { k: 'share', label: '⤴ Share…', hint: 'MusicStand, email, Nearby Share…' },
+    { head: song.title, sub: `${song.artist ? `${song.artist} · ` : ''}${CHART_LABEL[type]}` },
     { stars: song.rating || 0 },
     '-',
-    song.chordSheet && (type === 'pro' || type === 'tab') ? { k: 'open-chords', label: 'Open the chord sheet', hint: 'Chords over the words' } : null,
-    editable ? { k: 'edit', label: '✎ Edit mode', hint: 'Arrange bars, fix notes, match a recording' } : null,
-    { k: 'version', label: '🎧 Version…', hint: 'Studio, live or cover' },
-    row.dataset.parts ? { k: 'split', label: 'Split tabs apart', hint: 'One song for each tab again' } : null,
-    type === 'text' && combinePref !== 'ask' ? { k: 'combine-ask', label: 'Ask before combining tabs', hint: `Now: always ${combinePref === 'yes' ? 'combine' : 'keep apart'}` } : null,
-    { k: 'rename', label: song.kind === 'text' ? 'Edit' : 'Rename' },
-    { k: 'delete', label: 'Delete', danger: true },
+    song.chordSheet && (type === 'pro' || type === 'tab') ? { k: 'open-chords', icon: 'chords', label: 'Open the chord sheet', hint: 'Chords over the words' } : null,
+    editable ? { k: 'edit', icon: 'edit', label: 'Edit mode', hint: 'Arrange bars, fix notes, match a recording' } : null,
+    { k: 'rename', icon: 'text', label: song.kind === 'text' ? 'Edit text' : 'Rename…' },
+    { k: 'version', icon: 'version', label: 'Version…', hint: 'Studio, live or cover' },
+    '-',
+    { k: 'setlist', icon: 'setlist', label: list ? `Add to “${list}”` : 'Add to a setlist', hint: list ? '' : 'Starts “My setlist”' },
+    { k: 'folder', icon: 'folder', label: 'Move to folder…', hint: song.folder || 'No folder' },
+    archived ? { k: 'restore', icon: 'restore', label: 'Restore', hint: 'Back in your library' } : { k: 'archive', icon: 'archive', label: 'Archive', hint: 'Hides it; nothing is deleted' },
+    { k: 'share', icon: 'share', label: 'Share…', hint: 'MusicStand, email, Nearby Share…' },
+    row.dataset.parts ? { k: 'split', icon: 'split', label: 'Split tabs apart', hint: 'One song for each tab again' } : null,
+    type === 'text' && combinePref !== 'ask' ? { k: 'combine-ask', icon: 'ask', label: 'Ask before combining tabs', hint: `Now: always ${combinePref === 'yes' ? 'combine' : 'keep apart'}` } : null,
+    '-',
+    { k: 'delete', icon: 'trash', label: 'Delete', danger: true },
   ], async (k, b) => {
     if (k === 'star') { const n = Number(b.dataset.n); await rateSong(id, (song.rating || 0) === n ? 0 : n); return; } // the same star again clears it
     if (k === 'open-chords') openDrawer(false);
@@ -1246,7 +1265,7 @@ async function main() {
     if (ids?.length === 1) location.hash = `song/${ids[0]}`;
   };
   $('library-list').addEventListener('click', onLibraryClick);
-  initBulk({ shown: () => libSongs, ask, redraw: renderLibrary });
+  initBulk({ shown: () => libSongs, ask, redraw: renderLibrary, archived: () => archiveView });
   $('lib-tidy').addEventListener('click', (e) => {
     const act = e.target.closest('[data-tidy]')?.dataset.tidy;
     if (act === 'combine') combineSplit().catch((err) => { console.error(err); toast('Couldn’t combine them.'); });

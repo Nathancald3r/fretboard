@@ -15,7 +15,7 @@ const changed = () => window.dispatchEvent(new Event('songschange'));
 
 const picked = new Set();
 let on = false;
-let hooks = null; // { shown(): the songs listed now, ask(opts), redraw() }
+let hooks = null; // { shown(): the songs listed now, ask(opts), redraw(), archived(): the library shows the archive }
 
 export const selecting = () => on;
 export const isPicked = (id) => picked.has(id);
@@ -58,6 +58,7 @@ export function drawBar() {
       <button class="small" data-bulk="folder" ${n ? '' : 'disabled'}>📁 Folder</button>
       <button class="small" data-bulk="key" ${n ? '' : 'disabled'}>♯♭ Key</button>
       <button class="small" data-bulk="share" ${n ? '' : 'disabled'}>⤴ Share</button>
+      <button class="small" data-bulk="${hooks.archived?.() ? 'restore' : 'archive'}" ${n ? '' : 'disabled'} title="${hooks.archived?.() ? 'Back into your library' : 'Hide them from the library; nothing is deleted'}">${hooks.archived?.() ? '↩ Restore' : '🗄 Archive'}</button>
       <button class="small danger" data-bulk="delete" ${n ? '' : 'disabled'}>Delete</button>
     </div>`;
 }
@@ -78,7 +79,17 @@ async function act(k, button) {
   if (k === 'folder') return folderMenu(button);
   if (k === 'key') return keyDialog();
   if (k === 'share') return share();
+  if (k === 'archive' || k === 'restore') return archive(k === 'archive');
   if (k === 'delete') return remove();
+}
+
+/* ---------- archive: out of the library's way, nothing deleted ---------- */
+
+async function archive(on) {
+  const songs = await pickedSongs();
+  for (const s of songs) await updateSong(s.id, { archived: on ? Date.now() : null });
+  toast(on ? `Archived ${plural(songs.length, 'song')}. They’re under 📁 Folders → Archived.` : `Restored ${plural(songs.length, 'song')} to your library.`);
+  stop();
 }
 
 /* ---------- pick the songs that are not "official tab + its video + synced" ---------- */

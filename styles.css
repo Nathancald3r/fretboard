@@ -2674,3 +2674,17 @@ body.annotating .chordview .hl:hover { background-color: var(--hlc); }
 .tx-sw button { width: 1.5rem; height: 1.5rem; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; background: var(--hlb); cursor: pointer; }
 .tx-sw button.on { border-color: #fff; }
 @media (max-width: 700px) { .tx-note { top: calc(var(--tx-top-h, 3rem) + .4rem) !important; left: .5rem !important; right: .5rem; width: auto; } }
+/* the library's ⋮ (easy to see, easy to hit) and the song menu: its title, icons, groups */
+.icon-btn.lib-more { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--text); opacity: .72; }
+.icon-btn.lib-more svg { width: 20px; height: 20px; display: block; fill: currentColor; }
+.icon-btn.lib-more:hover, .icon-btn.lib-more[aria-expanded=true] { opacity: 1; background: #ffffff14; }
+@media (max-width: 640px) { .icon-btn.lib-more { width: 44px; height: 44px; } }
+.card-menu { min-width: 15rem; padding: .35rem; }
+.card-menu button { min-height: 42px; padding: .4rem .7rem; }
+.card-menu .menu-head { display: grid; gap: .1rem; padding: .4rem .7rem .55rem; margin-bottom: .3rem; border-bottom: 1px solid var(--line); }
+.card-menu .menu-head b { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-menu .menu-head small { color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-menu button.has-icon { grid-template-columns: 1.4rem 1fr; align-items: center; column-gap: .65rem; }
+.card-menu .mi { width: 1.25rem; height: 1.25rem; color: var(--muted); }
+.card-menu button.has-icon:hover .mi, .card-menu button.has-icon:focus-visible .mi { color: var(--text); }
+.card-menu button.danger .mi { color: inherit; }
