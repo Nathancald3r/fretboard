@@ -14,7 +14,7 @@ TIMING ONLY (a LISTEN with "deliver": true, 2026-10-28, asked by the user: "timi
         the mean chord distance is at most TIMING_DIST_MAX. The sync is right, so the worker delivers it. Any other
         fail, or a listen about a step or a half beat, keeps it from being delivered.
 
-The checks (all from the recording itself, none from Beat This!, which can sit on the off-beats):
+The checks (all from the recording itself; Beat This! only checks an ending's slow-down, see "ending" below, since it can sit on the off-beats):
   match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok"). A
            free intro is a LISTEN: only stretches in the first FREE_INTRO_S of the tab fail (other chords, or the
            band taking longer), by at most FREE_INTRO_LONGER_S, and the rest matches
@@ -27,17 +27,23 @@ The checks (all from the recording itself, none from Beat This!, which can sit o
   steady   every 4-bar stretch lines up at 0 or half a beat out (syncqa.steadiness); a drifting stretch means
            a bar lost or gained, the wrong tempo, or a band that changes speed. One inside a free intro, the
            ending, a single spot or a step (syncqa.differences) is a LISTEN; a bar more or less is a FAIL
+  ending   a band that slows at the ending while the tab keeps its tempo makes the sync bend there (speed jumps, a
+           drifting last stretch). That is excused (a note, not a fail) when it starts in the last END_ZONE bars,
+           every bar line from one bar before it to the end sits within BEAT_TOL_MS of one Beat This! finds in this
+           recording (wavefit_beats.json) and those bars last END_SLOW times the median bar (followed_ending).
+           Without that, or with the sync off the tracker's bar lines, it is judged as before
   drums    the drum clock (drumclock.py: the Demucs drums stem folded onto the tab's drum notes, every 4 bars,
            to a few ms) settles each step: on time there (within drumclock.STEP_MS) drops the LISTEN, clearly
            off is a FAIL, no clear drums keeps the LISTEN. A step the clock finds by itself is a FAIL. Drums
            that sit off the sync everywhere are a LISTEN (the clock can't be read there)
 
-The self-test breaks each good song's sync eight ways (moved 30 ms and 60 ms, half a beat, 1 % too fast,
-a bar lost in the middle, a stray jump in one bar, the wrong recording, and the tab a bar short with a steady
-sync, so no jump gives it away). The gate works when every good song
+The self-test breaks each good song's sync nine ways (moved 30 ms and 60 ms, half a beat, 1 % too fast,
+a bar lost in the middle, a stray jump in one bar, a slow-down at the ending the band didn't play, the wrong
+recording, and the tab a bar short with a steady sync, so no jump gives it away). The gate works when every good song
 passes and every broken one fails. Writes out/qa.json (every verdict) and out/qa_selftest.json.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -60,6 +66,28 @@ SECTION_JUMP_PCT = 2 * syncqa.SECTION_PCT  # a tempo change where a section star
 FREE_INTRO_S = 20.0         # a free intro: the match may fail only in this much of the tab's start
 FREE_INTRO_LONGER_S = 10.0  # and the band may take this much longer over it
 TIMING_DIST_MAX = 0.2       # timing-only: the tab's chords may differ from the recording's by at most this (mean chord distance; real songs 0.09-0.16)
+END_ZONE = 10               # a slow-down at the ending is excused only when it starts in the last this many bars
+BEAT_TOL_MS = 100           # ...and every bar line from one bar before it to the end sits this close to a bar line Beat This! finds in the recording
+END_SLOW = (1.0, 1.6)       # ...and those bars last this many times the song's median bar (a slow-down, not a bar lost or a speed-up)
+
+
+def followed_ending(ps, nbars, jumps, drift, downbeats):
+    """The first bar (1-based) of an ending's slow-down that the sync follows, or None. A band slows at the ending and the tab
+    keeps its tempo, so a sync that follows it bends there, and the checks that want a steady tempo (speed, steady) would fail
+    it. Excused only with an independent read of the same recording: Beat This!'s bar lines. Here I Am's first file sat 0.6-0.95 s
+    off them in its last four bars and sounded wrong; the file that follows them sounds right (the user, 2026-10-28)."""
+    if downbeats is None or not len(downbeats):
+        return None
+    late = [b for b in list(jumps) + [r[0] for r in drift] if b > nbars - END_ZONE]
+    if not late:
+        return None
+    first = min(late) - 1
+    tail = [ms / 1000 for b, ms in ps if b + 1 >= first]
+    if len(tail) < 3 or any(np.abs(downbeats - t).min() > BEAT_TOL_MS / 1000 for t in tail):
+        return None
+    median = float(np.median(np.diff([ms / 1000 for _, ms in ps])))
+    ratio = (tail[-1] - tail[0]) / (len(tail) - 1) / max(1e-9, median)
+    return first if END_SLOW[0] <= ratio <= END_SLOW[1] else None
 
 
 def free_intro(info):
@@ -116,7 +144,12 @@ def load(name):
     bars = syncqa.tab_bars(info, notes)
     env, tab_env, rec_c, tab_c, length = features(out, song, info)
     sections = ((entry.get("autoSync") or {}).get("beats") or {}).get("tempo_sections") or []
-    return {"song": song, "out": out, "info": info, "bars": bars, "points": entry["syncPoints"],
+    # Beat This!'s bar lines for this very recording (wavefit's cache), the check on an ending's slow-down
+    rid = (entry.get("recording") or {}).get("id") or (re.search(r"v=([\w-]+)", info.get("url") or "") or [None, None])[1]
+    saved = (out / "wavefit_beats.json")
+    saved = json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else {}
+    downs = np.array(saved["downbeats"], float) if rid and (saved.get("key") or {}).get("vid") == rid and saved.get("downbeats") else None
+    return {"song": song, "out": out, "info": info, "bars": bars, "points": entry["syncPoints"], "downbeats": downs,
             "env": env, "tab_env": tab_env, "rec_c": rec_c, "tab_c": tab_c, "length": length,
             "sections": [p - 1 for p in sections]}
 
@@ -163,8 +196,17 @@ def judge(s, points=None, env=None, rec_c=None):
     bar_beats = np.diff(y) / max(1e-9, float(np.median(per_beat)))
     odd = (np.abs(bar_beats - np.rint(bar_beats)) <= 0.15) & (np.rint(bar_beats) >= 1) & (np.rint(bar_beats) != beats)
     jump = np.where(at_section & (level | odd[:-1] | odd[1:]), 0, jump)
-    if (jump > JUMP_PCT).any():
-        where = [ps[i + 1][0] + 1 for i in np.flatnonzero(jump > JUMP_PCT)]
+    where = [ps[i + 1][0] + 1 for i in np.flatnonzero(jump > JUMP_PCT)]
+    st = syncqa.steadiness(sync, bars, s["tab_env"], env, look)
+    # the band slows at the ending and the sync follows it (every bar line there is one Beat This! finds in this recording):
+    # no jump and no drift, a note instead. The real recording only, like the drum clock.
+    notes = []
+    tail = followed_ending(ps, len(bars), where, st["drift_bars"], s.get("downbeats")) if env is s["env"] else None
+    if tail:
+        where = [b for b in where if b <= tail]
+        notes.append(f"bars {tail}-{len(bars)}: the band slows at the ending and the sync follows its bar lines (Beat This!, within {BEAT_TOL_MS} ms)")
+    drift = [r for r in st["drift_bars"] if not tail or r[0] <= tail]
+    if where:
         fails.append(f"speed: the tempo jumps at bar{'s' if len(where) > 1 else ''} {', '.join(map(str, where[:6]))}{'…' if len(where) > 6 else ''}")
     # lock: the whole song at 0, and clearly
     lags, c = syncqa.lag_curve(sync, s["tab_env"], env)
@@ -175,18 +217,16 @@ def judge(s, points=None, env=None, rec_c=None):
         fails.append(f"lock: the whole song is {off:+d} ms off (it lines up best moved that far)")
     if lock < LOCK_MIN:
         fails.append(f"lock: the tab barely lines up with this recording ({lock:.2f}, needs {LOCK_MIN})")
-    st = syncqa.steadiness(sync, bars, s["tab_env"], env, look)
     span = lambda bs: ", ".join(f"{a}-{b}" for a, b in bs)
     # a drifting stretch is explained (listen, not fail) where the tab and the recording are known to differ:
     # a free intro, the ending, one spot, or a step the note starts don't back (syncqa.differences)
-    diffs = syncqa.differences(sync, bars, look) if not st["steady"] else []
+    diffs = syncqa.differences(sync, bars, look) if drift else []
     if any(d["kind"] == "bar" for d in diffs):
         fails += [f"bar: {d['what']}" for d in diffs if d["kind"] == "bar"]
     seen = lambda r: any(d["kind"] != "bar" and d["bars"][0] <= r[1] and r[0] <= d["bars"][1] for d in diffs)
-    left = [r for r in st["drift_bars"] if not seen(r)]
+    left = [r for r in drift if not seen(r)]
     if left:
         fails.append(f"steady: bars {span(left)} drift off the tempo")
-    notes = []
     clock = drums(s, points) if env is s["env"] else None  # the clock reads the real recording only
     if clock and not clock["sure"]:
         listens.append(f"drums: they sit {clock['level_ms']:+.0f} ms off the sync everywhere (the whole song off, or a drum part"
@@ -225,7 +265,7 @@ def judge(s, points=None, env=None, rec_c=None):
     deliver = verdict == "PASS" or (timing_only and all(l.startswith(("match:", "drums:")) for l in listens))
     return {"verdict": verdict, "deliver": deliver, "timing_only": timing_only, "fails": fails, "listen": listens, "notes": notes, "off_ms": off, "lock": round(lock, 3),
             "drum_level_ms": clock and clock["level_ms"], "drum_clear": clock and clock["clear"],
-            "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"], "differences": diffs}
+            "half_beat_bars": st["half_beat_bars"], "drift_bars": drift, "differences": diffs}
 
 
 def drums(s, points):
@@ -252,6 +292,8 @@ def breaks(s, other):
         "1 % too fast": as_points(ms[0] + (ms - ms[0]) / 1.01),
         "a bar lost in the middle": as_points(np.where(np.arange(len(ms)) >= mid, ms + bar_ms, ms)),
         "one bar jumps": as_points(np.where(np.arange(len(ms)) == mid, ms + 0.25 * bar_ms, ms)),
+        # a slow-down the band didn't play: the last bars drift later, so no bar line sits on Beat This!'s (the ending's excuse must not apply)
+        "an ending slow-down the band didn't play": as_points(ms + 0.06 * bar_ms * np.clip(np.arange(len(ms)) - (len(ms) - 7), 0, None)),
     }
     if other is not None:
         out["the wrong recording"] = ("env", other["env"], other["rec_c"])
