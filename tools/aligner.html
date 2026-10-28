@@ -39,26 +39,71 @@
   .mixrow button.solo.on { background: #2b6fd6; border-color: #2b6fd6; }
   .mixnote { color: var(--dim); font-size: 12px; }
   kbd { background: #2a2f38; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: 12px ui-monospace, Consolas, monospace; color: var(--text); }
+  header { row-gap: 6px; padding: 6px 12px; }
+  header select { max-width: 230px; }
+  header button { padding: 5px 9px; }
+  #toggles .grow { flex: 1; }
+  #toggles #status { min-width: 0; text-align: right; }
+  .grp { position: relative; display: flex; align-items: center; gap: 4px; padding: 15px 6px 5px; border: 1px solid var(--line); border-radius: 8px; }
+  .grp .gl { position: absolute; top: 1px; left: 8px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); pointer-events: none; }
+  header button kbd { margin-left: 7px; padding: 0 4px; font-size: 11px; color: var(--dim); background: #1d2026; }
+  header button.primary kbd { color: #cfe0ff; background: #2459ad; border-color: #2459ad; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; padding: 6px 8px; margin-left: -1px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button kbd { margin: 0 5px 0 0; }
+  .seg button.on { outline: none; background: #2b6fd6; border-color: #2b6fd6; }
+  .seg button.on kbd { color: #cfe0ff; background: #2459ad; border-color: #2459ad; }
+  #toggles { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 12px; background: #181b21; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+  .chip { display: inline-flex; gap: 6px; align-items: center; background: #272c35; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 11px 1px 5px; font: inherit; cursor: pointer; }
+  .chip:hover { background: #313845; }
+  .chip.on { color: var(--text); border-color: var(--mark); }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a515d; }
+  .chip.on .dot { background: var(--mark); }
+  .hintline { margin: 2px 0 4px; }
+  #help { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .62); }
+  #help[hidden] { display: none; }
+  #help .card { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; width: min(1000px, 100%); max-height: 92vh; overflow: auto; padding: 14px 20px 18px; }
+  #help .top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  #help h3 { margin: 0; font-size: 17px; flex: 1; }
+  #help .x { background: #272c35; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; }
+  #help .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 30px; }
+  #help h4 { margin: 0 0 5px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--mark); }
+  #help .row { display: grid; grid-template-columns: 10.5em 1fr; gap: 8px; padding: 3px 0; font-size: 13px; border-bottom: 1px solid #262b33; }
+  #help .row .k { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+  #help .row .m { color: var(--vid); }
+  #help .row .d { color: var(--dim); }
 </style>
 </head>
 <body>
 <header>
   <select id="song" aria-label="Song"></select>
-  <button id="play" title="Play from the marker (Space)">▶ Play</button>
-  <button id="head" title="Centre the view on the playhead (P)">To playhead</button>
-  <button id="follow" title="Keep the playhead in the middle while playing (F)">Follow</button>
-  <button id="match" title="Find the shift here by matching the note starts (M)">Match here</button>
-  <button id="cut" title="Start a new section at the nearest bar line (A)">Cut here</button>
-  <button id="uncut" title="Join this section to the one before it (Delete)">Join</button>
-  <span title="Pick a section by clicking its name above the waveform, then squeeze or stretch the video across it">
-    <button id="sq" title="Squeeze the picked section: the video's end moves toward its start ( [ ). Shift = 100 ms">Squeeze</button><button id="st" title="Stretch the picked section ( ] ). Shift = 100 ms">Stretch</button><button id="lock" title="Back to the tab's tempo: the section only moves, it is not squeezed (K)">Lock tempo</button>
-  </span>
-  <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
-  <button id="reset" title="Go back to the sync as it was opened">Reset</button>
+  <div class="grp"><span class="gl">Play</span>
+    <button id="play" title="Play from the marker (Space)"><span class="lbl">▶ Play</span><kbd>Space</kbd></button>
+    <button id="head" title="Centre the view on the playhead (P)">To playhead<kbd>P</kbd></button>
+    <button id="follow" title="Keep the playhead in the middle while playing (F)">Follow<kbd>F</kbd></button>
+  </div>
+  <div class="grp"><span class="gl">Zoom</span><div class="seg" id="zoom"></div></div>
+  <div class="grp" title="Cut the song into sections that each get their own shift"><span class="gl">Sections</span>
+    <button id="match" title="Find the shift here by matching the note starts (M)">Match<kbd>M</kbd></button>
+    <button id="cut" title="Start a new section at the nearest bar line (A, or double-click the waveform)">Cut<kbd>A</kbd></button>
+    <button id="uncut" title="Join this section to the one before it (Delete)">Join<kbd>Del</kbd></button>
+  </div>
+  <div class="grp" title="Pick a section by clicking its name above the waveform, then squeeze or stretch the video across it"><span class="gl">Picked section</span>
+    <button id="sq" title="Squeeze: the video's end moves toward its start ( [ ). Shift-click = 100 ms">Squeeze<kbd>[</kbd></button>
+    <button id="st" title="Stretch ( ] ). Shift-click = 100 ms">Stretch<kbd>]</kbd></button>
+    <button id="lock" title="Back to the tab's tempo: the section only moves, it is not squeezed (K)">Lock tempo<kbd>K</kbd></button>
+  </div>
+  <div class="grp"><span class="gl">Edit</span>
+    <button id="undo" title="Undo (Ctrl+Z)">Undo<kbd>Ctrl Z</kbd></button>
+    <button id="reset" title="Go back to the sync as it was opened">Reset</button>
+  </div>
   <span class="grow"></span>
-  <span id="status"></span>
-  <button id="save" class="primary" title="Write the sync into the song's .fretboard file (Ctrl+S)">Save</button>
+  <button id="helpbtn" title="All the shortcuts (?)">Shortcuts<kbd>?</kbd></button>
+  <button id="save" class="primary" title="Write the sync into the song's .fretboard file (Ctrl+S)">Save<kbd>Ctrl S</kbd></button>
 </header>
+<div id="toggles"><span>Sound and look:</span><span class="grow"></span><span id="status"></span></div>
 <main>
   <canvas id="c"></canvas>
   <div id="hint"></div>
@@ -68,19 +113,14 @@
   <details id="mix"><summary>Loudness: the whole mix and each instrument</summary>
     <div id="mixbox"></div>
   </details>
-  <details id="keys"><summary>Keys and mouse</summary>
-  <div>
-    <b>Nudge the video</b> <kbd>←</kbd> <kbd>→</kbd> 10 ms · <kbd>Shift</kbd> 100 ms · <kbd>Ctrl</kbd> 1 ms &nbsp;|&nbsp;
-    <b>Zoom</b> <kbd>1</kbd> whole song · <kbd>2</kbd> 45 s · <kbd>3</kbd> 12 s · <kbd>4</kbd> 3 s · <kbd>5</kbd> 0.6 s (number row or numpad) &nbsp;|&nbsp;
-    <b>Scrub</b> click or drag in the song strip at the top, or drag the marker's tab (you hear it) · <kbd>P</kbd> view to playhead · <kbd>F</kbd> follow · <kbd>+</kbd> <kbd>−</kbd> zoom around the playhead &nbsp;|&nbsp;
-    <b>Squeeze</b> click a section's name to pick it · <kbd>[</kbd> squeeze · <kbd>]</kbd> stretch (Shift 100 ms, Ctrl 1 ms) · <kbd>K</kbd> lock to the tab's tempo · drag a pink cut line = move that boundary, squeezing both sides · double-click = cut at the bar nearest the pointer &nbsp;|&nbsp;
-    <b>Move</b> click = marker · <b>drag = move the video</b> · <kbd>Shift</kbd>+drag, wheel or <kbd>,</kbd> <kbd>.</kbd> = scroll the view · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>N</kbd> <kbd>Shift+N</kbd> = next / previous note start · <kbd>Home</kbd> <kbd>End</kbd><br>
-    <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>L</kbd> auto level (quiet notes get tall) · <kbd>G</kbd> boost quiet parts ·
-    <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save<br>
-    <b>Loudness</b> open the panel above: a slider for the whole tab and the whole video, and one for each instrument (the tab's tracks; the video's drums, bass, other, vocals once it is split). M mutes, S solos, double-click a slider for 100%. The waveform shows what the sliders leave.
-  </div>
-  </details>
+  <div class="hintline">The key for each button is on it. <kbd>?</kbd> shows every shortcut, and the mouse ones too.</div>
 </footer>
+<div id="help" hidden>
+  <div class="card" role="dialog" aria-label="Shortcuts">
+    <div class="top"><h3>Shortcuts</h3><span class="d" style="color:var(--dim);font-size:13px">orange = mouse</span><button class="x" id="helpx">Close <kbd>Esc</kbd></button></div>
+    <div class="grid" id="helpgrid"></div>
+  </div>
+</div>
 <script>
 'use strict';
 const $ = (s) => document.querySelector(s);
@@ -454,7 +494,7 @@ function draw() {
   const oh = OX(S.marker); g.fillStyle = '#3fe0d0'; g.fillRect(oh - d, 0, 2 * d, top);
   if (S.play) { g.fillStyle = '#fff'; g.fillRect(OX(S.play.t) - d, 0, 2 * d, top); }
   g.fillStyle = '#9aa3b0'; g.font = `${11 * d}px system-ui`; g.fillText(fmtClock(headT()), Math.min(W - 48 * d, oh + 6 * d), top - 7 * d);
-  readout();
+  paintChrome(); readout();
 }
 const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 function readout() {
@@ -525,13 +565,13 @@ function startPlay(from) {
     }
   }
   S.play = { t0, t: t0, startAt, nodes };
-  $('#play').textContent = '■ Stop'; $('#play').classList.add('on');
+  $('#play .lbl').textContent = '■ Stop'; $('#play').classList.add('on');
 }
 function stopPlay(quiet) {
   if (!S.play) return;
   for (const n of S.play.nodes) { try { n.stop(); } catch { /* not started yet */ } n.disconnect(); }
   S.play = null; dirty = true;
-  if (!quiet) { $('#play').textContent = '▶ Play'; $('#play').classList.remove('on'); }
+  if (!quiet) { $('#play .lbl').textContent = '▶ Play'; $('#play').classList.remove('on'); }
 }
 function togglePlay() {
   if (snippet) { snippet = false; clearTimeout(scrubStop); return; } // a scrub burst is playing: let it carry on as real play
@@ -669,6 +709,57 @@ async function save() {
   say(`Saved ${d.file.split(/[\\/]/).pop()}. Import it in Fretboard and choose “Replace it”.`, 'ok');
 }
 
+/* ---------- shortcuts on screen: the zoom and toggle bars, and the list ---------- */
+// The six switches, one definition for the key and the chip that shows its state.
+const TOGGLES = [
+  { code: 'KeyT', key: 'T', label: 'Tab sound', on: () => !S.mute.tab, run: () => { S.mute.tab = !S.mute.tab; applyGains(); paintMixer(); say(S.mute.tab ? 'Tab sound off.' : 'Tab sound on.'); } },
+  { code: 'KeyV', key: 'V', label: 'Video sound', on: () => !S.mute.rec, run: () => { S.mute.rec = !S.mute.rec; applyGains(); paintMixer(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); } },
+  { code: 'KeyE', key: 'E', label: 'One ear each', on: () => S.split, run: () => { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); } },
+  { code: 'KeyO', key: 'O', label: 'Overlay', on: () => S.overlay, run: () => { S.overlay = !S.overlay; dirty = true; say(S.overlay ? 'Both waveforms on top of each other.' : 'Waveforms stacked.'); } },
+  { code: 'KeyL', key: 'L', label: 'Auto level', on: () => S.auto, run: () => { S.auto = !S.auto; dirty = true; say(S.auto ? 'Auto level on: each lane is scaled to its loudest part on screen.' : 'Auto level off: true loudness between the lanes.'); } },
+  { code: 'KeyG', key: 'G', label: 'Boost quiet parts', on: () => S.boost, run: () => { S.boost = !S.boost; dirty = true; say(S.boost ? 'Quiet parts boosted.' : 'True loudness.'); } },
+];
+const ZOOMS = [['Song', 1], ['45 s', 2], ['12 s', 3], ['3 s', 4], ['0.6 s', 5]];
+// A leading "@" marks a mouse action (shown in orange), everything else is a key.
+const HELP = [
+  ['Play and scrub', [['Space', 'Play or stop both'], ['@Song strip (top)', 'Click or drag: scrub, you hear it'], ['@Marker’s tab', 'Drag it to scrub'], ['P', 'Centre the view on the playhead'], ['F', 'Follow the playhead while playing'], ['↑ / ↓', 'Marker to the previous / next bar (Shift: 4 bars)'], ['N / Shift N', 'Marker to the next / previous note start'], ['Home / End', 'Marker to the start / end']]],
+  ['Zoom and scroll', [['1 2 3 4 5', 'Whole song, 45 s, 12 s, 3 s, 0.6 s'], ['+ / −', 'Zoom in / out around the playhead'], ['@Ctrl + wheel', 'Zoom at the pointer'], ['@Wheel, Shift + drag', 'Scroll the view'], [', / .', 'Scroll back / forward']]],
+  ['Move the video', [['@Drag the waveform', 'Moves the section under the pointer'], ['← / →', 'Nudge 10 ms (Shift 100 ms, Ctrl 1 ms)'], ['M', 'Match here by the note starts (±1 s)']]],
+  ['Sections and squeeze', [['A', 'Cut at the bar nearest the marker'], ['@Double-click', 'Cut at the bar nearest the pointer'], ['Delete', 'Join with the section before'], ['@Section’s name', 'Click to pick that section'], ['[ / ]', 'Squeeze / stretch the picked section (Shift 100 ms, Ctrl 1 ms)'], ['K', 'Lock it back to the tab’s tempo'], ['@Pink cut line', 'Drag: moves the boundary, squeezing both sides']]],
+  ['Sound and look', [['T / V', 'Tab / video sound on or off'], ['E', 'One ear each'], ['O', 'Overlay or stacked'], ['L', 'Auto level (quiet notes get tall)'], ['G', 'Boost quiet parts'], ['@Loudness panel', 'A slider per instrument; M mutes, S solos; double-click = 100%']]],
+  ['File', [['Ctrl S', 'Save'], ['Ctrl Z', 'Undo'], ['?', 'Open or close this list'], ['Esc', 'Close this list']]],
+];
+function buildChrome() {
+  const zoom = $('#zoom');
+  for (const [label, lv] of ZOOMS) {
+    const b = document.createElement('button'), k = document.createElement('kbd');
+    k.textContent = lv; b.append(k, label); b.dataset.z = lv; b.title = `Zoom ${label} (key ${lv})`;
+    b.onclick = () => setLevel(lv); zoom.append(b);
+  }
+  for (const t of TOGGLES) {
+    const b = document.createElement('button'), k = document.createElement('kbd'), dot = document.createElement('span');
+    b.className = 'chip'; dot.className = 'dot'; k.textContent = t.key; b.dataset.t = t.code; b.title = `${t.label} (${t.key})`;
+    b.append(dot, k, t.label); b.onclick = () => { t.run(); dirty = true; b.blur(); }; $('#toggles').append(b);
+  }
+  const grid = $('#helpgrid');
+  for (const [title, rows] of HELP) {
+    const box = document.createElement('div'), h = document.createElement('h4'); h.textContent = title; box.append(h);
+    for (const [keys, what] of rows) {
+      const row = document.createElement('div'), k = document.createElement('span'), d = document.createElement('span');
+      row.className = 'row'; k.className = 'k'; d.className = 'd'; d.textContent = what;
+      if (keys[0] === '@') { k.classList.add('m'); k.textContent = keys.slice(1); }
+      else for (const part of keys.split(' / ')) { const kb = document.createElement('kbd'); kb.textContent = part; k.append(kb); }
+      row.append(k, d); box.append(row);
+    }
+    grid.append(box);
+  }
+}
+function paintChrome() {
+  for (const b of $('#zoom').children) b.classList.toggle('on', Number(b.dataset.z) === S.level);
+  for (const b of $('#toggles').querySelectorAll('.chip')) b.classList.toggle('on', TOGGLES.find((t) => t.code === b.dataset.t).on());
+}
+function toggleHelp(show) { $('#help').hidden = !show; }
+
 /* ---------- input ---------- */
 const timeAtX = (clientX) => { const r = cv.getBoundingClientRect(); return S.view.t0 + ((clientX - r.left) / r.width) * S.view.span; };
 let drag = null;
@@ -757,7 +848,10 @@ cv.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 document.addEventListener('keydown', (e) => {
+  if (!$('#help').hidden) { if (e.code === 'Escape' || e.key === '?') { toggleHelp(false); e.preventDefault(); } return; }
   if (e.target.matches?.('select, input, textarea')) { if (e.code !== 'Space') return; e.target.blur(); }
+  else if (e.target.matches?.('button')) e.target.blur(); // a clicked button must not swallow Space or Enter: the shortcuts keep working
+  if (e.key === '?') { toggleHelp(true); e.preventDefault(); return; }
   if (!S.tab) return;
   const key = e.code;
   const step = e.shiftKey ? 100 : e.ctrlKey || e.altKey ? 1 : 10;
@@ -783,12 +877,7 @@ document.addEventListener('keydown', (e) => {
   else if (key === 'Home') { S.marker = 0; showMarker(); dirty = true; }
   else if (key === 'End') { S.marker = S.total; showMarker(); dirty = true; }
   else if (key === 'Space') togglePlay();
-  else if (key === 'KeyT') { S.mute.tab = !S.mute.tab; applyGains(); paintMixer(); say(S.mute.tab ? 'Tab sound off.' : 'Tab sound on.'); }
-  else if (key === 'KeyV') { S.mute.rec = !S.mute.rec; applyGains(); paintMixer(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); }
-  else if (key === 'KeyE') { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); }
-  else if (key === 'KeyO') { S.overlay = !S.overlay; dirty = true; }
-  else if (key === 'KeyL') { S.auto = !S.auto; dirty = true; say(S.auto ? 'Auto level on: each lane is scaled to its loudest part on screen.' : 'Auto level off: true loudness between the lanes.'); }
-  else if (key === 'KeyG') { S.boost = !S.boost; dirty = true; say(S.boost ? 'Quiet parts boosted.' : 'True loudness.'); }
+  else if (TOGGLES.some((t) => t.code === key) && !e.ctrlKey && !e.metaKey) { TOGGLES.find((t) => t.code === key).run(); dirty = true; }
   else if (key === 'KeyA') cutHere();
   else if (key === 'Delete' || key === 'Backspace') joinHere();
   else if (key === 'KeyM') matchHere();
@@ -802,6 +891,8 @@ function toggleFollow() {
 }
 $('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = () => cutHere(); $('#uncut').onclick = joinHere;
 $('#head').onclick = toPlayhead; $('#follow').onclick = toggleFollow;
+$('#helpbtn').onclick = () => toggleHelp(true); $('#helpx').onclick = () => toggleHelp(false);
+$('#help').addEventListener('mousedown', (e) => { if (e.target === $('#help')) toggleHelp(false); });
 $('#sq').onclick = (e) => squeeze(e.shiftKey ? -100 : -10); $('#st').onclick = (e) => squeeze(e.shiftKey ? 100 : 10); $('#lock').onclick = lockTempo;
 $('#undo').onclick = undo; $('#reset').onclick = reset; $('#save').onclick = save;
 $('#song').onchange = (e) => openSong(e.target.value);
@@ -809,7 +900,7 @@ new ResizeObserver(resize).observe($('main'));
 window.addEventListener('beforeunload', (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 (async () => {
-  $('#keys').open = innerHeight > 700 && innerWidth > 900; // a small window keeps the canvas big
+  buildChrome();
   resize(); requestAnimationFrame(loop);
   const list = await (await fetch('/api/songs')).json();
   if (!list.length) { hint('No song to line up yet. Make one with: python tests/yt2gp5/fromlink.py "<youtube link>"'); return; }
