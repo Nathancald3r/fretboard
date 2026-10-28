@@ -2,7 +2,7 @@
 import { listSongs, getSong, putSong, deleteSong, updateSong, getValue, setValue } from './db.js';
 import { initPlayer, openPlayer, closePlayer } from './player.js';
 import { askVersion } from './version.js';
-import { initText, openText, closeText, cleanTabText, editorText, fromEditor } from './texttab.js';
+import { initText, openText, closeText, cleanTabText, editorText, fromEditor, previewHtml } from './texttab.js';
 import { openSheet, closeSheet } from './sheetview.js';
 import { initMetronome, stopMetronome } from './metronome.js';
 import { initLayers, resetLayers } from './layers.js';
@@ -89,6 +89,7 @@ async function route() {
 
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== view; });
   document.body.classList.toggle('in-player', view === 'player');
+  document.body.classList.toggle('in-text', view === 'text'); // a chord sheet gets the whole screen: its own slim bar, no site header
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view || (a.dataset.nav === 'library' && SONG_VIEWS.includes(view)) || (a.dataset.nav === 'practice' && PRACTICE_VIEWS.includes(view))));
 
   if (view === 'log') renderLog();
@@ -1079,10 +1080,25 @@ function openEditor(song, prefill = {}) {
   $('tf-title').value = song?.title || prefill.title || '';
   $('tf-artist').value = song?.artist || prefill.artist || '';
   $('tf-body').value = song ? editorStart : prefill.data || '';
+  // a chord chart is shown as the song page shows it, beside the ChordPro, as you type
+  $('tf-preview').hidden = !pro;
+  $('tab-dialog').classList.toggle('has-preview', pro);
+  if (pro) drawPreview();
   $('tab-dialog').showModal();
 }
 
+let previewTimer = 0;
+function drawPreview() {
+  clearTimeout(previewTimer);
+  try { $('tf-preview').innerHTML = previewHtml($('tf-body').value); } catch { /* half-typed ChordPro: keep the last preview */ }
+}
+
 function initEditor() {
+  $('tf-body').addEventListener('input', () => {
+    if ($('tf-preview').hidden) return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(drawPreview, 150);
+  });
   $('tab-dialog').addEventListener('close', async () => {
     if ($('tab-dialog').returnValue !== 'save') return;
     const text = $('tf-body').value;

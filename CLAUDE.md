@@ -191,6 +191,16 @@ The user wants the APK on the phone **only once sync results are consistent** (A
 - A card saves the exercise as a library entry (found again by **title**, so its practice time adds up and nothing is saved twice) and opens the player. A routine step ticks itself from today's sessions (an exercise by its title, a drill by its id), or by hand (`fretboard-routine` in localStorage, with the day, so it resets by itself).
 - To add an exercise: put it in `EXERCISES` (title, tempo, level, tip, `tex()`) and in a category of `FOUNDATIONS`; run `node scripts/test.mjs`. Strings in the text count 6 (low E) to 1.
 
+## Chord sheet viewer (2026-10-27, asked by the user)
+
+- The text view (`kind: 'text'`) is a slim one-row bar (☰ library, title, key chip, transpose, capo, A−/A+, auto-scroll, Edit, ⋯ menu) over the lyrics; `body.in-text` hides the global top bar. The ⋯ menu holds the rest (Fit, Fold repeats, chord shapes, video, Play as tab, Perform, chord names). On phones the bar is two rows.
+- **Stored vs edited:** a song is still stored as UG-style chords-over-words text (`song.data`, a head plus `[Section]` headers): playback sync, share, library detection and the UG helper read it. The **editor shows ChordPro** (`[G]` inline, `editorText` / `fromEditor` in `js/texttab.js`, `sheetToChordPro` / `readChordPro` in `js/chordpro.js`); `{G}` is read too (`curlyChords`), `[G]` is what is written. The editor has a live preview.
+- `js/chordsheetview.js` (pure) builds the view: `readSections`, `foldRepeats`, `capoPlan`, `viewHtml`. `tests/chordsheetview.test.mjs` covers it, the `{G}` reading and the sheet → ChordPro → sheet round trip.
+- **Repeats:** the first occurrence is shown in full; an identical later section (≥ 2 lines, or the same name) becomes `↻ Chorus ×N`. `song.fold === false` shows everything.
+- **Capo:** `song.capo` is the capo fret (null = the sheet's own). Shapes shown = written chords + transpose + sheet capo − capo; the key chip moves only with transpose.
+- **Fit:** `fit()` picks the biggest text (24 down to 12) with the fewest columns (1–3) so the whole song fits the screen height and tab lines fit across; else one column that scrolls. `song.textSize` set by A−/A+ is kept; null = auto. The video docks beside (≥ 1000 px) or under the song; it never floats over the chords.
+- **Trap:** the Edit tool turns `styles.css` (mixed endings, CRLF majority) into all CRLF; give unchanged lines their HEAD endings back (or let `ship.mjs` flag it) before committing.
+
 ## Android Back and the history (`js/layers.js`)
 
 - Each open layer (the ☰ drawer, a sheet, the ⚙ menu, the tempo or video pop-up, full screen) adds one history entry, so Android Back closes it first. Layers are found from body classes and `.sheet[hidden]` by a MutationObserver.

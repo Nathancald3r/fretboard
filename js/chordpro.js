@@ -10,6 +10,9 @@ const CHORD = /^[A-G][#b♯♭]?(?:maj|min|dim|aug|sus|add|no|m|M|\+|°|ø|-|\d|
 const isChord = (t) => CHORD.test(t);
 const NOTE = '✎';
 
+/** "Seven P.M. thou{G}ghts" → "thou[G]ghts": a chord in curly braces is read as the standard [G]. Directives ({key: G}) stay. */
+export const curlyChords = (line) => line.replace(/\{\s*([A-G][^{}\s:]*)\s*\}/g, (m, c) => (isChord(c) ? `[${c}]` : m));
+
 /* ---------- ChordPro → chord sheet ---------- */
 
 const SECTIONS = { sov: 'Verse', soc: 'Chorus', sob: 'Bridge', sot: 'Tab', sog: 'Grid' };
@@ -46,7 +49,7 @@ export function readChordPro(src, { notes = true } = {}) {
   const blank = () => { if (body.length && body[body.length - 1] !== '') body.push(''); };
   let inTab = false;
   for (const raw of String(src || '').replace(/\r\n?/g, '\n').split('\n')) {
-    const line = raw.replace(/\s+$/, '');
+    const line = curlyChords(raw.replace(/\s+$/, ''));
     const d = /^\s*\{\s*([\w-]+)\s*(?::\s*(.*?))?\s*\}\s*$/.exec(line);
     if (!d) {
       if (/^#/.test(line)) continue; // a ChordPro remark, not shown

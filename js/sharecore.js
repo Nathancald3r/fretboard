@@ -162,8 +162,14 @@ function merge(chords, words, move) {
   for (let j = t.length - 1; j >= 0; j--) {
     const x = t[j];
     if (!CHORD.test(x.text)) { extras.unshift(x.text); continue; }
-    s = s.padEnd(x.at);
-    s = s.slice(0, x.at) + `[${move(x.text)}]` + s.slice(x.at);
+    let at = x.at;
+    if (s[at] === ' ') { // a chord over a gap belongs to the word just after it
+      let k = at;
+      while (k < s.length && s[k] === ' ') k++;
+      if (k < s.length && k - at <= 3) at = k;
+    }
+    s = s.padEnd(at);
+    s = s.slice(0, at) + `[${move(x.text)}]` + s.slice(at);
   }
   return (s.replace(/\s+$/, '') + (extras.length ? `  ${extras.join(' ')}` : ''));
 }

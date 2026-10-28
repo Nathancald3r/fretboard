@@ -5,17 +5,18 @@ import { shapesFor } from './chordshapes.js';
 import { chordDiagram } from './keys.js';
 import { strum } from './pluck.js';
 import { splitSheet, sheetToChordPro } from './sharecore.js';
-import { readChordPro } from './chordpro.js';
+import { readChordPro, curlyChords } from './chordpro.js';
 import { createPracticeTimer, formatDuration } from './practice.js';
 import { asciiTabToAlphaTex } from './asciitab.js';
 import { shapesKey, keyLabel, toNashville, toRoman, pitchClass, noteName } from './theory.js';
 import { shiftChordName } from './transpose.js';
 import { findRecording } from './ytsearch.js';
 import { playStrum, stopStrum } from './strumplay.js';
+import { CHORD, TAB_LINE, chordTokens, cleanTabText, readSections, foldRepeats, viewHtml, capoPlan, chordsOf } from './chordsheetview.js';
+
+export { cleanTabText };
 
 const $ = (id) => document.getElementById(id);
-const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d?|add\d+|b\d+|#\d+|\((?:no|add)?\d+\))*(\/[A-G][#b]?)?\)?$/; // G7sus, F2(no3) too
-const TAB_LINE = /^\s*[A-Ga-g]?[#b]?\s*[|:]?[-0-9|hpbrx/\\~^().<>*=sv ]*-{3,}[-0-9|hpbrx/\\~^().<>*=sv ]*$/;
 
 let song = null;
 let scrolling = false;
@@ -30,16 +31,6 @@ const timer = createPracticeTimer({
 });
 
 const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-// Ultimate Guitar's raw format wraps chords and tabs in [ch]..[/ch] and [tab]..[/tab].
-export const cleanTabText = (text) => text.replace(/\[\/?(ch|tab)\]/g, '').replace(/\r\n?/g, '\n');
-
-// Also on a chord line: repeats and bar marks ("G  C/G  (x2)", "| G | D |", "N.C.").
-const EXTRA = /^(\(?x\d+\)?|\(?\d+x\)?|\|+|-+|N\.?C\.?)$/i;
-const chordTokens = (line) => {
-  const tokens = line.trim().split(/\s+/).filter(Boolean);
-  return tokens.some((t) => CHORD.test(t)) && tokens.every((t) => CHORD.test(t) || EXTRA.test(t)) ? tokens : null;
-};
 
 function songChords(text) {
   return cleanTabText(text).split('\n').flatMap((line) =>
@@ -73,19 +64,6 @@ export function highlight(text, rename, played) {
   }).join('\n');
 }
 
-// The highlighted sheet in blocks, one per section (a [Verse] line or a blank line starts the next), so
-// two columns never split a section.
-function sectionsHtml(html) {
-  const blocks = [[]];
-  for (const line of html.split('\n')) {
-    const cur = blocks[blocks.length - 1];
-    if (!line.trim()) { if (cur.length) blocks.push([]); continue; }
-    if (line.startsWith('<span class="section">') && cur.length) blocks.push([line]);
-    else cur.push(line);
-  }
-  return blocks.filter((b) => b.length).map((b) => `<div class="tx-sec">${b.join('\n')}</div>`).join('');
-}
-
 // A chord sheet starts with "Song - Artist", "Chords · Key: Bb · Capo: 3rd fret · Tuning: …" and maybe
 // "From: <url>" (the UG helper, a ChordPro import, the editor). Those lines become the facts over the
 // sheet; body is the sheet without them (null: it has no head).
@@ -114,7 +92,7 @@ export function editorText(song) {
   return sheetToChordPro(song.data).replace(/^\{comment: Tuning (.*)\}$/m, '{tuning: $1}');
 }
 
-const looksChordPro = (text) => /^\s*\{\s*[\w-]+\s*(:[^}]*)?\}\s*$/m.test(text) || /\[[A-G][#b]?[^\]\s]{0,10}\]\S/.test(text);
+const looksChordPro = (text) => /^\s*\{\s*[\w-]+\s*(:[^}]*)?\}\s*$/m.test(text) || /\[[A-G][#b]?[^\]\s]{0,10}\]\S/.test(text) || curlyChords(text) !== text;
 
 /**
  * The editor's text back as a chord sheet (chords over the words). ChordPro is turned back; anything
@@ -132,6 +110,12 @@ export function fromEditor(text, { title = '', artist = '', old = null } = {}) {
   const url = old ? splitSheet(cleanTabText(old.data)).url : '';
   if (url) lines.splice(2, 0, `From: ${url}`);
   return { data: lines.join('\n') + '\n', title, artist };
+}
+
+/** The editor's text as the song page shows it (the Edit dialog's live preview). */
+export function previewHtml(text) {
+  const { data } = fromEditor(text);
+  return viewHtml(foldRepeats(readSections(sheetHead(data).body ?? data)));
 }
 
 const FLAT_MAJORS = [5, 10, 3, 8, 1]; // F Bb Eb Ab Db
@@ -158,12 +142,18 @@ export function strumHtml(p, i = 0) {
     + `<div class="tx-strokes">${cells}</div></div>`;
 }
 
+let sheetCapo = 0; // the capo the sheet was written for
+let shown = { size: 15, cols: 1 }; // what fit() picked
+let items = [];
+
 function render() {
   const head = sheetHead(song.data);
   // a combined song shows each tab in turn, under its instrument's name
   const text = [head.body ?? song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
+  const sections = readSections(text);
+  const chords = chordsOf(sections);
   // the shapes' key: the page's Key: minus its capo, guessed from the chords only with no key line
-  const detected = shapesKey(head.key, head.capo, songChords(text));
+  const detected = shapesKey(head.key, head.capo, chords);
   const keySelect = $('tx-key');
   keySelect.innerHTML = '';
   keySelect.add(new Option(detected ? `Auto (${keyLabel(detected)}${detected.from === 'page' ? ', from the page' : ''})` : 'Auto (no chords found)', 'auto'));
@@ -177,40 +167,110 @@ function render() {
     ? { tonic: parseInt(song.key, 10), minor: song.key.endsWith('m') }
     : detected;
   const numbers = { nashville: toNashville, roman: toRoman }[song.chordMode];
-  keySelect.disabled = !numbers;
-  // transpose: the chords as written (shapes) move; the key it sounds in is the page's, else the shapes' plus the capo
+  $('tx-key-row').hidden = !numbers;
+  // Transpose moves the key; the capo then lowers the shapes (the sheet's own capo is already in its chords).
+  // The key it sounds in is the page's, else the shapes' plus the sheet's capo, moved by the transpose only.
   const shift = song.transpose || 0;
-  const shapes = moveKey(detected, shift);
-  const sounds = moveKey(keyOf(head.key) || moveKey(detected, head.capo), shift);
-  const played = shift ? (c) => shiftChordName(c, shift, shapes ? flatKey(shapes) : false) : null;
+  sheetCapo = head.capo || 0;
+  const plan = capoPlan({ written: sheetCapo, capo: song.capo ?? null, shift });
+  capo = plan.capo;
+  const shapes = moveKey(detected, plan.move);
+  const sounds = moveKey(keyOf(head.key) || moveKey(detected, sheetCapo), shift);
+  const played = plan.move ? (c) => shiftChordName(c, plan.move, shapes ? flatKey(shapes) : false) : null;
   const rename = numbers && key ? (c) => numbers(c, key) : played;
-  capo = head.capo || 0;
-  $('tx-body').innerHTML = sectionsHtml(highlight(text, rename, played));
-  $('tx-body').classList.toggle('cols-2', song.columns === 2);
-  $('tx-cols').textContent = song.columns === 2 ? '1 column' : '2 columns';
-  $('tx-cols').setAttribute('aria-pressed', String(song.columns === 2));
+  const fold = song.fold !== false;
+  items = foldRepeats(sections, fold);
+  $('tx-body').innerHTML = viewHtml(items, { rename, played });
+  $('tx-fold').checked = fold;
   hidePop();
   drawShapes();
-  $('tx-shift').textContent = `Tr. ${shift > 0 ? '+' : ''}${shift}`;
+  tuckChords();
+  fit();
+  $('tx-shift').textContent = `Tr ${shift > 0 ? '+' : ''}${shift}`;
+  $('tx-capo').textContent = capo ? `Capo ${capo}` : 'No capo';
+  $('tx-keychip').innerHTML = sounds ? `Key <b>${keyName(sounds)}</b>${capo && shapes ? `<small> · ${keyName(shapes)} shapes</small>` : ''}` : '';
+  $('tx-keychip').title = shift && sounds ? `Written in ${keyName(moveKey(sounds, -shift))}` : '';
   const facts = [
-    sounds && `Key <b>${keyName(sounds)}</b>`,
     // played in another key than written: whose key it is, and the written one (kept)
     shift && `${song.keyBy ? `<b>${escape(song.keyBy)}’s</b> key` : 'Your key'} · ${sounds ? `written in <b>${keyName(moveKey(sounds, -shift))}</b>` : `moved <b>${shift > 0 ? '+' : ''}${shift}</b>`}`,
-    head.capo && `Capo <b>${head.capo}</b>${shapes ? ` · ${keyName(shapes)} shapes` : ''}`,
+    sheetCapo && capo !== sheetCapo && `Sheet written for capo <b>${sheetCapo}</b>`,
     `<b>${tempo}</b> bpm`,
     head.tuning && !/^E A D G B E$/.test(head.tuning) && `Tuning <b>${escape(head.tuning)}</b>`,
     // which key the numbers count from (the shapes as played, transposed too)
     numbers && key && `${song.chordMode === 'roman' ? 'Roman' : 'Nashville'} in <b>${keyName(moveKey(key, shift))}</b>`,
   ].filter(Boolean).map((f) => `<span class="chip">${f}</span>`);
-  if (head.url) facts.push(`<a class="chip tx-more" href="${escape(head.url)}" target="_blank" rel="noopener">UG page</a>`);
+  if (head.url) facts.push(`<a class="chip" href="${escape(head.url)}" target="_blank" rel="noopener">UG page</a>`);
   $('tx-facts').innerHTML = facts.join('');
   const strum = (song.strum || []).filter((p) => p.strokes?.length);
   $('tx-strum').hidden = !strum.length;
   $('tx-strum').innerHTML = strum.map(strumHtml).join('');
   // the strum is heard on the song's first chord, as the shapes are played (capo and transpose too)
-  const first = songChords(text)[0];
-  strumChord = { chord: first ? (shift ? shiftChordName(first, shift, shapes ? flatKey(shapes) : false) : first) : 'G', capo: head.capo || 0 };
+  const first = chords[0];
+  strumChord = { chord: first ? (plan.move ? shiftChordName(first, plan.move, shapes ? flatKey(shapes) : false) : first) : 'G', capo };
   stopStrumPlay();
+}
+
+// A chord wider than its word would leave a gap before the next word. Where the words after it carry no
+// chord of their own, the chord hangs over them instead (a negative margin, in em, so it holds at any size).
+function tuckChords() {
+  const range = document.createRange();
+  const width = (node, first) => {
+    range.selectNodeContents(node);
+    return (first ? range.getClientRects()[0] : range.getBoundingClientRect())?.width || 0;
+  };
+  const jobs = [];
+  for (const cs of $('tx-body').querySelectorAll('.w > .cs:last-child')) {
+    const next = cs.parentElement.nextSibling;
+    if (next?.nodeType !== 3 || !/\S/.test(next.data)) continue;
+    const over = cs.getBoundingClientRect().width - width(cs.lastElementChild);
+    if (over > 1) jobs.push([cs, Math.min(over, width(next, true))]);
+  }
+  for (const [cs, px] of jobs) cs.style.marginRight = `${-px / parseFloat(getComputedStyle(cs).fontSize)}em`;
+}
+
+/* ---------- fit: columns and text size from the screen ---------- */
+
+const SIZES = [11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28]; // the A− / A+ steps
+const AUTO = [24, 22, 20, 19, 18, 17, 16, 15, 14, 13, 12]; // tried in turn, biggest first, until the song fits the screen
+
+// The biggest text (and the fewest columns) with which the whole song fits on the screen. A song that
+// can't fit at any size stays one column, at a size that reads well, and scrolls. A size you picked
+// (A− / A+) is kept; only the columns follow the screen.
+function fit() {
+  const body = $('tx-body');
+  if (!song || $('view-text').hidden) return;
+  const manual = song.textSize > 0 ? song.textSize : 0;
+  const cs = getComputedStyle(body);
+  const inner = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const vid = $('tx-vid');
+  const docked = !vid.hidden && getComputedStyle(vid).position === 'sticky';
+  const room = innerHeight - (body.getBoundingClientRect().top + window.scrollY) - (docked ? vid.offsetHeight : 0) - 14;
+  const apply = (size, cols) => {
+    body.style.fontSize = `${size}px`;
+    body.style.columnCount = cols > 1 ? String(cols) : '';
+    body.classList.toggle('one', cols === 1);
+  };
+  const across = (size) => Math.max(1, Math.min(3, Math.floor((inner + size * 2.2) / (size * 23.2)))); // a column holds ~21 em
+  const wide = [...body.querySelectorAll('.pre')]; // tab lines keep their spacing: they must fit the column too
+  body.classList.toggle('tabs', wide.length > 0); // and a single column with tabs is wider
+  const fits = () => body.offsetHeight <= room && !wide.some((p) => p.scrollWidth > p.clientWidth + 1);
+  let pick = null;
+  for (const size of manual ? [manual] : AUTO) {
+    for (let cols = 1; cols <= across(size) && !pick; cols++) {
+      apply(size, cols);
+      if (fits()) pick = { size, cols };
+    }
+    if (pick) break;
+  }
+  if (!pick) { // it scrolls: one column, as big as reads well while the tab lines still fit across
+    const down = manual ? [manual] : AUTO.filter((n) => n <= 15);
+    for (const size of down) {
+      apply(size, 1);
+      if (!wide.some((p) => p.scrollWidth > p.clientWidth + 1)) { pick = { size, cols: 1 }; break; }
+    }
+  }
+  shown = pick || { size: manual || 12, cols: 1 };
+  apply(shown.size, shown.cols);
 }
 
 /* ---------- chord shapes: the song's chords as diagrams, every way to play each, your own pick kept ---------- */
@@ -316,11 +376,6 @@ async function popAction(act) {
   }
 }
 
-// The bar sticks just under the top bar, whose height changes with the width.
-function barTop() {
-  $('view-text').style.setProperty('--tx-top', `${document.querySelector('.topbar')?.offsetHeight || 0}px`);
-}
-
 function initShapes() {
   getValue('chordShapes').then((v) => { myShapes = v || {}; if (song && showShapes) drawShapes(); }).catch(() => {});
   const box = document.createElement('div');
@@ -354,16 +409,22 @@ function initShapes() {
   $('tx-shapes').addEventListener('click', tap);
   document.addEventListener('pointerdown', (e) => { if (pop && !e.target.closest('#tx-pop, .chord, .tx-shape')) hidePop(); });
   window.addEventListener('scroll', () => { if (pop) placePop(); }, { passive: true });
-  window.addEventListener('resize', () => { if (song) barTop(); if (pop) placePop(); });
+  // a new width refits the columns; a height change alone (a phone's address bar) leaves the text still
+  let fitWidth = innerWidth;
+  let fitTimer = 0;
+  window.addEventListener('resize', () => {
+    if (pop) placePop();
+    if (!song || innerWidth === fitWidth) return;
+    fitWidth = innerWidth;
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fit, 120);
+  });
   $('tx-shapes-btn').addEventListener('click', () => {
     showShapes = !showShapes;
     try { localStorage.setItem('fretboard-tx-shapes', showShapes ? '1' : '0'); } catch { /* ignore */ }
     drawShapes();
-  });
-  $('tx-cols').addEventListener('click', async () => {
-    if (!song) return;
-    song = await updateSong(song.id, { columns: song.columns === 2 ? 1 : 2 });
-    render();
+    menu(false);
+    fit();
   });
 }
 
@@ -412,10 +473,12 @@ function showVideo(on) {
   const id = videoId();
   if (on && !id) { findVideo(); return; }
   $('tx-vid').hidden = !on;
+  $('view-text').classList.toggle('has-vid', on); // docked beside the song (wide) or under it (narrow), never over the chords
   $('tx-vid-frame').innerHTML = on
     ? `<iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1" title="Video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
     : '';
   videoLabel();
+  fit();
 }
 
 // No video from UG: the best match on YouTube, kept as the song's recording.
@@ -446,8 +509,21 @@ function setPerform(on) {
   performing = on;
   document.body.classList.toggle('performing', on);
   $('tx-perform').textContent = on ? 'Leave perform' : 'Perform';
+  $('tx-leave').hidden = !on;
+  menu(false);
   if (on) document.documentElement.requestFullscreen?.().catch(() => { /* not allowed here: still perform mode */ });
   else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  requestAnimationFrame(fit); // the bar's gone: more room
+}
+
+/* ---------- the ⋯ menu: everything that isn't a tool you reach for while playing ---------- */
+
+function menu(on) {
+  const box = $('tx-menu');
+  if (box.hidden === !on) return;
+  box.hidden = !on;
+  $('tx-more').setAttribute('aria-expanded', String(on));
+  if (on) box.style.top = `${$('tx-top').getBoundingClientRect().bottom + 4}px`;
 }
 
 function frame(now) {
@@ -468,25 +544,23 @@ function setScrolling(on) {
   scrolling = on;
   lastFrame = 0;
   carry = 0;
-  $('tx-scroll').textContent = on ? 'Stop scrolling' : 'Auto-scroll';
-  if (on) requestAnimationFrame(frame);
+  $('tx-scroll').textContent = on ? '■' : '▶';
+  $('tx-scroll').setAttribute('aria-pressed', String(on));
+  if (on) { menu(false); requestAnimationFrame(frame); }
 }
 
 export function openText(s) {
   song = s;
-  $('tx-title').textContent = s.title;
+  $('tx-title').textContent = s.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '');
   $('tx-artist').textContent = s.artist || '';
-  $('tx-size').value = s.textSize || 15;
-  $('tx-body').style.fontSize = $('tx-size').value + 'px';
   $('tx-speed').value = s.scrollSpeed || 5;
   $('tx-time').textContent = '';
   const playable = asciiTabToAlphaTex(s.data);
   // the tempo you set, else the strumming pattern's bpm, else the tab's own "Tempo:" line
   tempo = s.tempo || s.strum?.find((p) => p.bpm)?.bpm || playable?.tempo || 100;
   $('tx-tempo').value = tempo;
+  menu(false);
   render();
-  // the bar (auto-scroll, transpose…) stays in sight under the top bar
-  barTop();
   $('tx-play').disabled = !playable;
   $('tx-play').title = playable
     ? `Play ${playable.bars} bars as a score (rhythm is guessed from spacing)`
@@ -500,6 +574,7 @@ export function openText(s) {
 
 export function closeText() {
   hidePop();
+  menu(false);
   stopStrumPlay();
   setScrolling(false);
   showVideo(false);
@@ -514,10 +589,41 @@ export function initText({ onEdit }) {
     if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);
   });
   $('tx-scroll').addEventListener('click', () => setScrolling(!scrolling));
-  $('tx-size').addEventListener('input', (e) => {
-    $('tx-body').style.fontSize = e.target.value + 'px';
-    if (song) updateSong(song.id, { textSize: Number(e.target.value) });
+  // A− / A+ pick a size and keep it; "Fit text to screen" (the ⋯ menu) goes back to the biggest that fits
+  const size = async (d) => {
+    if (!song) return;
+    const next = d > 0 ? SIZES.find((n) => n > shown.size) : [...SIZES].reverse().find((n) => n < shown.size);
+    if (!next) return;
+    song = await updateSong(song.id, { textSize: next });
+    fit();
+  };
+  $('tx-bigger').addEventListener('click', () => size(1));
+  $('tx-smaller').addEventListener('click', () => size(-1));
+  $('tx-fit').addEventListener('click', async () => {
+    if (!song) return;
+    song = await updateSong(song.id, { textSize: null });
+    menu(false);
+    fit();
   });
+  $('tx-fold').addEventListener('change', async (e) => {
+    if (!song) return;
+    song = await updateSong(song.id, { fold: e.target.checked });
+    render();
+  });
+  // the capo: the shapes to play with it at this fret; the key the song sounds in stays
+  const moveCapo = async (d) => {
+    if (!song) return;
+    const next = Math.max(0, Math.min(11, capo + d));
+    song = await updateSong(song.id, { capo: next === sheetCapo ? null : next });
+    render();
+  };
+  $('tx-capo-down').addEventListener('click', () => moveCapo(-1));
+  $('tx-capo-up').addEventListener('click', () => moveCapo(1));
+  $('tx-lib').addEventListener('click', () => document.getElementById('menu-btn').click());
+  $('tx-more').addEventListener('click', () => menu($('tx-menu').hidden));
+  $('tx-leave').addEventListener('click', () => setPerform(false));
+  document.addEventListener('pointerdown', (e) => { if (!$('tx-menu').hidden && !e.target.closest('#tx-menu, #tx-more')) menu(false); });
+  $('tx-menu').addEventListener('click', (e) => { if (e.target.closest('.tx-btns button, .tx-nav a')) menu(false); });
   $('tx-speed').addEventListener('change', (e) => { if (song) updateSong(song.id, { scrollSpeed: Number(e.target.value) }); });
   $('tx-edit').addEventListener('click', () => song && onEdit(song));
   $('tx-tempo').addEventListener('change', async (e) => {
@@ -534,7 +640,7 @@ export function initText({ onEdit }) {
   };
   $('tx-down').addEventListener('click', () => transpose(-1));
   $('tx-up').addEventListener('click', () => transpose(1));
-  $('tx-video').addEventListener('click', () => showVideo($('tx-vid').hidden));
+  $('tx-video').addEventListener('click', () => { showVideo($('tx-vid').hidden); menu(false); });
   $('tx-vid-close').addEventListener('click', () => showVideo(false));
   $('tx-perform').addEventListener('click', () => setPerform(!performing));
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && performing) setPerform(false); });
@@ -551,6 +657,7 @@ export function initText({ onEdit }) {
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && pop) { hidePop(); return; }
+    if (e.key === 'Escape' && !$('tx-menu').hidden) { menu(false); return; }
     if (e.key === 'Escape' && performing) { setPerform(false); return; }
     if ($('view-text').hidden || e.target.closest('input, select, textarea, button, dialog')) return;
     if (e.code === 'Space') { e.preventDefault(); setScrolling(!scrolling); }

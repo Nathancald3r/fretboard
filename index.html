@@ -701,47 +701,63 @@
 
   <!-- TEXT TAB -->
   <main id="view-text" class="view" hidden>
-    <div class="player-head">
-      <div>
-        <h1 id="tx-title">—</h1>
-        <div id="tx-artist" class="muted"></div>
+    <div class="tx-top" id="tx-top">
+      <button id="tx-lib" class="icon-btn" aria-label="Library and setlists" title="Your songs and setlists ( / )">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="tx-id"><b id="tx-title">—</b><span id="tx-artist" class="muted"></span></div>
+      <span id="tx-keychip" class="tx-keychip"></span>
+      <div class="tx-tools2">
+        <span class="tx-grp" title="Transpose: move the key up or down a half step (every chord moves)">
+          <button id="tx-down" class="ghost small" aria-label="Transpose down">−</button>
+          <span id="tx-shift" class="tx-val">Tr 0</span>
+          <button id="tx-up" class="ghost small" aria-label="Transpose up">+</button>
+        </span>
+        <span class="tx-grp" title="Capo: the shapes to play with a capo at this fret. The key it sounds in stays the same">
+          <button id="tx-capo-down" class="ghost small" aria-label="Capo down">−</button>
+          <span id="tx-capo" class="tx-val">Capo 0</span>
+          <button id="tx-capo-up" class="ghost small" aria-label="Capo up">+</button>
+        </span>
+        <span class="tx-grp" title="Text size">
+          <button id="tx-smaller" class="ghost small" aria-label="Smaller text">A−</button>
+          <button id="tx-bigger" class="ghost small" aria-label="Bigger text">A+</button>
+        </span>
+        <button id="tx-scroll" class="primary small tx-go" aria-label="Auto-scroll" title="Auto-scroll (Space)">▶</button>
       </div>
-      <div id="tx-facts" class="tx-facts"></div>
-      <div class="row tx-tools">
-        <label title="Text tabs have no tempo, so set it here">Tempo <input id="tx-tempo" type="number" min="30" max="260" value="100"> BPM</label>
-        <button id="tx-play" class="primary" title="Turn the tab lines into a playable score (rhythm is guessed from spacing)">Play as tab</button>
-        <button id="tx-edit" class="ghost">Edit</button>
-      </div>
+      <button id="tx-edit" class="ghost small" title="Edit the chords and words as ChordPro">Edit</button>
+      <button id="tx-more" class="ghost small" aria-haspopup="true" aria-expanded="false" aria-label="More" title="More">⋯</button>
+      <button id="tx-leave" class="ghost small" hidden>✕ Leave</button>
     </div>
-    <div class="transport tx-bar">
-      <button id="tx-scroll" class="primary big">Auto-scroll</button>
-      <label>Speed <input id="tx-speed" type="range" min="1" max="20" value="5"></label>
-      <span class="tx-shift" title="Transpose: move every chord up or down a half step">
-        <button id="tx-down" class="ghost small" aria-label="Transpose down">−</button>
-        <span id="tx-shift">Tr. 0</span>
-        <button id="tx-up" class="ghost small" aria-label="Transpose up">+</button>
-      </span>
-      <label>Text <input id="tx-size" type="range" min="10" max="40" value="15"></label>
-      <button id="tx-shapes-btn" class="ghost" aria-pressed="false" title="The song's chords as diagrams. Tap one (or any chord in the song) for other ways to play it">Chord shapes</button>
-      <button id="tx-cols" class="ghost" aria-pressed="false" title="Show the song in two columns (sections never split)">2 columns</button>
-      <button id="tx-video" class="ghost" title="Play along with the song's video">▶ Video</button>
-      <button id="tx-perform" class="ghost" title="Just the song, big: tempo, key, transpose, auto-scroll and video (Esc to leave)">Perform</button>
-      <label class="tx-more">Chords
+    <div id="tx-menu" class="tx-menu" hidden>
+      <div id="tx-facts" class="tx-facts"></div>
+      <label class="tx-row" title="Text tabs have no tempo, so set it here">Tempo <input id="tx-tempo" type="number" min="30" max="260" value="100"> BPM</label>
+      <label class="tx-row">Scroll speed <input id="tx-speed" type="range" min="1" max="20" value="5"></label>
+      <label class="tx-row">Chords
         <select id="tx-chords">
           <option value="letters">Letters (G, Em)</option>
           <option value="nashville">Nashville (1, 6m)</option>
           <option value="roman">Roman (I, vi)</option>
         </select>
       </label>
-      <label class="tx-more">Key <select id="tx-key"></select></label>
-      <span id="tx-time" class="mono muted tx-more"></span>
+      <label class="tx-row" id="tx-key-row">Key <select id="tx-key"></select></label>
+      <label class="tx-row tx-chk" title="A section written out again with the same chords and words shows once, then as a one-line marker"><input id="tx-fold" type="checkbox"> Fold repeated sections</label>
+      <div class="tx-btns">
+        <button id="tx-fit" class="ghost small" title="Pick the biggest text that fits the screen">Fit text to screen</button>
+        <button id="tx-shapes-btn" class="ghost small" aria-pressed="false" title="The song's chords as diagrams. Tap one (or any chord in the song) for other ways to play it">Chord shapes</button>
+        <button id="tx-video" class="ghost small" title="Play along with the song's video">▶ Video</button>
+        <button id="tx-play" class="ghost small" title="Turn the tab lines into a playable score (rhythm is guessed from spacing)">Play as tab</button>
+        <button id="tx-perform" class="ghost small" title="Just the song, big: key, transpose, auto-scroll and video (Esc to leave)">Perform</button>
+      </div>
+      <div class="tx-foot"><span id="tx-time" class="mono muted"></span><span class="tx-nav"><a href="#library">Songs</a><a href="#practice">Practice</a><a href="#log">Log</a></span></div>
     </div>
     <div id="tx-strum" class="tx-strum" hidden></div>
     <div id="tx-shapes" class="tx-shapes" hidden></div>
-    <div id="tx-body" class="text-tab"></div>
-    <div id="tx-vid" class="tx-vid" hidden>
-      <div class="tx-vid-head"><span>Video</span><button id="tx-vid-close" class="ghost small" aria-label="Close the video">✕</button></div>
-      <div id="tx-vid-frame" class="tx-vid-frame"></div>
+    <div class="tx-main">
+      <div id="tx-body" class="text-tab chordview"></div>
+      <div id="tx-vid" class="tx-vid" hidden>
+        <div class="tx-vid-head"><span>Video</span><button id="tx-vid-close" class="ghost small" aria-label="Close the video">✕</button></div>
+        <div id="tx-vid-frame" class="tx-vid-frame"></div>
+      </div>
     </div>
   </main>
 
@@ -1040,8 +1056,8 @@
         <input id="tf-title" placeholder="Title" required>
         <input id="tf-artist" placeholder="Artist">
       </div>
-      <p id="tf-help" class="muted small-text" hidden>ChordPro: <code>[G]</code> puts G over the word after it. <code>{start_of_chorus: Chorus}</code> … <code>{end_of_chorus}</code> marks a section (also verse, bridge, tab). <code>{key: G}</code>, <code>{capo: 2}</code>, <code>{tempo: 90}</code> set the facts.</p>
-      <textarea id="tf-body" rows="18" placeholder="Paste the tab or chords here…" required></textarea>
+      <p id="tf-help" class="muted small-text" hidden>ChordPro: <code>[G]</code> puts G over the word after it. <code>{start_of_chorus: Chorus}</code> … <code>{end_of_chorus}</code> marks a section (also verse, bridge, tab). <code>{key: G}</code>, <code>{capo: 2}</code>, <code>{tempo: 90}</code> set the facts. <code>{G}</code> is read like <code>[G]</code>. A section written out twice shows once in the song.</p>
+      <div class="tf-split"><textarea id="tf-body" rows="18" placeholder="Paste the tab or chords here…" required></textarea><div id="tf-preview" class="tf-preview text-tab chordview" hidden aria-label="Preview"></div></div>
       <div class="row spread">
         <button value="cancel" formnovalidate class="ghost">Cancel</button>
         <button value="save" class="primary">Save</button>

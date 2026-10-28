@@ -136,6 +136,13 @@ Done (`ec69318`): piano ties (also over the bar line and into a line), triplets 
 - Each track keeps its own capo and key.
 - The player's Tuning menu, with its "Not the original key" badge.
 
+## Chord sheet viewer redesign (2026-10-27): what's left
+
+Done: one-row bar, fit to the screen, capo, ChordPro editor, folded repeats (see CLAUDE.md "Chord sheet viewer"). Small gaps:
+- Android Back doesn't close the ⋯ menu first (it isn't a layer in `js/layers.js`); a tap outside closes it.
+- A chord wider than its word hangs over the plain words after it; when the next word has its own chord, the line gets a small gap instead.
+- Not checked on the phone itself (only the preview at 375 wide); the APK is held.
+
 ## UG helper: a whole official song in ~30 s (done 2026-10-23, keep for reference)
 
 - **Now:** Here I Am To Worship (8 tracks + chords) saves in **20 s**. The fretted tracks' Standard + Tab prints are off by default: they were the longest (~15 s together), and Fretboard reads only dynamics and words from them.
