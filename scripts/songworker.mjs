@@ -160,7 +160,7 @@ export function pipelineRunner({ python = 'python', log = () => {} } = {}) {
 
 function config() {
   const f = join(HOME, 'sync.json');
-  const c = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {};
+  const c = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8').replace(/^﻿/, '')) : {}; // PowerShell 5.1 writes a BOM
   const repo = process.env.FRETBOARD_SYNC_REPO || c.repo;
   const token = process.env.FRETBOARD_SYNC_TOKEN || c.token;
   if (!repo || !token) throw new Error(`No sync settings. Put { "repo": "owner/name", "token": "..." } in ${f} (the same private repository and token as the app's Sync and backup panel).`);
