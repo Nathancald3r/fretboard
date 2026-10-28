@@ -41,6 +41,7 @@ plays something the tab doesn't (the confidence rule lets those windows follow t
 two sounds' own attack difference, about 10-20 ms; nothing in the sound can be more exact than that.
 """
 import argparse
+import json
 import re
 import sys
 import time
@@ -82,6 +83,25 @@ FLOOR_Z = 1.5              # below this a window has no say in the line
 REFINE_S = 0.10            # s: the whole-song tuning moves a knot at most this far from where the windows put it
 HARM = 0.8                 # weight of the harmony's z next to the note starts' z in each window (harmony try only)
 CHROMA_HOP = 512           # the harmony's frames (qa.py's cache): 23 ms
+POLISH_S = 8.0              # s: each tempo change is tried at every bar line this near where the windows put it (0 = off)
+POLISH_DY = 0.25           # s: and with its video time this far either side of the line
+END_GAIN = 0.0              # the ending try keeps a slow-down only if the whole song's note starts agree this much more (correlation)
+END_REACH_S = 16.0         # s: the slow-down may start this far from the last bar line (and at least 4 s)
+START_RANGE_S = 40.0       # s: the start is searched this far either side of the file's (an intro the tab lacks, or the reverse)
+START_STEP = 5             # lag grid of that search, in 5 ms frames
+START_COST = 0.02          # z per second of lag away from the file's start (ties go to the nearer)
+START_MIN = 0.8            # s: a shift smaller than this is left to the main fit
+START_SLOPE = 0.06         # the start line's tempo may be this much (fraction) off the tab's
+START_GAIN = 0.75          # mean z per window the best line must win by over the best line within 1.5 s (benchmark: 57 far starts fixed, 0 made worse, with the chords; the note starts alone can't tell)
+BEAT_W = 0.6               # weight of the bar-line evidence (the recording's downbeats) next to the note starts' z (bar-line try only)
+BEAT_SIGMA = 0.04          # s: how far from a bar line still counts
+BEAT_OTHER = 0.4           # a beat that is not a bar line counts this much next to a bar line's 1
+GRID_IRREGULAR = 0.05      # a recording's beat is "steady" when at most this share of its beat gaps is off the median gap
+GRID_UNMATCHED = 0.5       # cost, in similarity per tab bar, of each tab bar or recording bar the grid leaves without a partner
+GRID_MAX_UNMATCHED = 8     # bars: more than this unmatched and the grid isn't trusted
+GRID_TOL = 0.03            # s: the grid's bar times may be this far from the smooth line through them (a few bars off = a knot)
+GRID_SLIP_COST = 0.03     # a stretch of bars may sit whole beats off the grid (the recording has a short bar the tab doesn't) when that gains this much of the song's similarity
+GRID_SHIFT_S = 0.10        # s: the whole grid is nudged this far either side to sit on the note starts
 
 
 class Sync:
@@ -153,6 +173,31 @@ def recording_id(entry, info):
     return m.group(1) if m else None
 
 
+def recording_wav(info, vid):
+    folder = aligner.CACHE / info["slug"]
+    wav = folder / f"recording-{vid}.wav"
+    if not wav.exists():  # the fake recordings of synctest.py keep a longer name than the file's 11-character id
+        wav = next(iter(sorted(folder.glob(f"recording-{vid}*.wav"))), wav)
+    return wav
+
+
+def load_beats(info, vid):
+    """(beats, bar lines) of the recording in seconds from Beat This! (CPU, about 10 s; kept in wavefit_beats.json beside
+    the song and keyed by the recording, so a new video is read again)."""
+    wav = recording_wav(info, vid)
+    f = aligner.LISTEN / info["slug"] / "wavefit_beats.json"
+    key = {"vid": vid, "bytes": wav.stat().st_size}
+    saved = aligner.read_json(f) if f.exists() else None
+    if saved and saved.get("key") == key:
+        return np.array(saved["beats"], float), np.array(saved["downbeats"], float)
+    import torch
+    from beat_this.inference import Audio2Beats
+    torch.set_num_threads(2)
+    beats, downs = Audio2Beats(device="cpu", dbn=False)(read_wav(wav), RATE)
+    f.write_text(json.dumps({"key": key, "beats": [float(b) for b in beats], "downbeats": [float(b) for b in downs]}), encoding="utf-8")
+    return np.asarray(beats, float), np.asarray(downs, float)
+
+
 def load_sounds(info, vid, use):
     """{layer: (tab_sound, recording_sound)} for each stem (the tab's tracks of that kind), or one "mix" layer without stems."""
     folder = aligner.CACHE / info["slug"]
@@ -160,9 +205,7 @@ def load_sounds(info, vid, use):
     meta = aligner.read_json(sub / "meta.json")
     if not meta:
         raise FileNotFoundError("The tab's rendered tracks are not saved. Run listen.py again.")
-    wav = folder / f"recording-{vid}.wav"
-    if not wav.exists():  # the fake recordings of synctest.py keep a longer name than the file's 11-character id
-        wav = next(iter(sorted(folder.glob(f"recording-{vid}*.wav"))), wav)
+    wav = recording_wav(info, vid)
     stems = folder / f"stems-{wav.stem.split('recording-')[-1]}"
     have = all((stems / f"{s}.wav").exists() for s in STEMS)
     tab = {}
@@ -222,6 +265,228 @@ def harmony_matrix(harm, base, edges, lags):
 
 
 # ---------- windows, scores, the path ----------
+
+def beat_pulse(beats, downs, n):
+    """The recording's beats (BEAT_OTHER) and bar lines (1) as a soft pulse train on the recording's 5 ms clock."""
+    p = np.zeros(n, np.float32)
+    for t, w in [(t, BEAT_OTHER) for t in beats] + [(t, 1.0) for t in downs]:
+        i = int(round(t / DT))
+        if 0 <= i < n:
+            p[i] = max(p[i], w)
+    s = BEAT_SIGMA / DT
+    return np.convolve(p, np.exp(-0.5 * (np.arange(-int(4 * s), int(4 * s) + 1) / s) ** 2).astype(np.float32), "same")
+
+
+def beat_matrix(pulse, base, bars_t, edges, lags):
+    """[window, lag]: how near the tab's bar starts (the recording read at the base sync + lag) fall to the recording's
+    bar lines. A strummed song looks the same a beat away in note starts and chords; its bar lines don't."""
+    rt = np.arange(len(pulse)) * DT
+    v0 = base(bars_t)
+    M = np.stack([np.interp(v0 + g, rt, pulse, left=0, right=0) for g in lags], axis=1)  # [bar, lag]
+    idx = np.searchsorted(bars_t, edges[:-1] - 1e-6)
+    return np.add.reduceat(M, idx, axis=0) / np.diff(np.r_[idx, len(bars_t)])[:, None]
+
+
+def regular_beats(beats):
+    """The recording's beats with the odd missing one put back (a gap of 2 or 3 beats), or None when its beat isn't
+    steady (a tempo change, or a tracker that heard half and double time)."""
+    b = np.asarray(beats, float)
+    if len(b) < 16:
+        return None
+    g = float(np.median(np.diff(b)))
+    out, bad = [float(b[0])], 0
+    for t in b[1:]:
+        r = (t - out[-1]) / g
+        n = int(round(r))
+        if n in (1, 2, 3) and abs(r - n) <= 0.2 * n:
+            out.extend(out[-1] + (t - out[-1]) * m / n for m in range(1, n))
+        else:
+            bad += 1
+        out.append(float(t))
+    return np.array(out) if bad <= GRID_IRREGULAR * len(b) else None
+
+
+def _beat_times(B, gb, idx):
+    """The recording's time at beat number idx (whole numbers; beyond either end the beat goes on at the median gap gb)."""
+    nB = len(B)
+    return np.where(idx < 0, B[0] + idx * gb, np.where(idx > nB - 1, B[-1] + (idx - (nB - 1)) * gb, B[np.clip(idx, 0, nB - 1)]))
+
+
+def grid_slips(layers, bars_t, harm, B, gb, pb, b0):
+    """How many beats off the one-for-one grid each bar sits (0 mostly). A band may play a short bar the tab writes as a full
+    one (Stressed Out, a 2-beat bar at 96 s), and every bar after it is then half a bar off. Per bar and per offset
+    (-(pb-1) to pb-1 beats) the notes and chords are compared; the best path pays GRID_SLIP_COST for every change, so only
+    a stretch that clearly fits better another way is moved. Bar 1 stays on the grid (b0 chose it)."""
+    nb = len(bars_t)
+    states = np.arange(-(pb - 1), pb)
+    zero = np.zeros(1)
+    bar_edges = np.r_[bars_t, bars_t[-1] + np.median(np.diff(bars_t))]
+    P, w = np.zeros((nb, len(states))), None
+    for si, o in enumerate(states):
+        sync = Sync(bars_t, _beat_times(B, gb, b0 + o + pb * np.arange(nb)))
+        S, wsum, _ = score_matrix(layers, sync, bar_edges, zero)
+        if w is None:
+            w = wsum / max(wsum.sum(), 1e-9)
+        sim = S[:, 0]
+        if harm is not None:
+            sim = (sim + HARM * harmony_matrix(harm, sync, bar_edges, zero)[:, 0]) / (1 + HARM)
+        P[:, si] = w * sim
+    z = int(np.flatnonzero(states == 0)[0])
+    best = np.full((nb, len(states)), -np.inf)
+    back = np.zeros((nb, len(states)), int)
+    best[0, z] = P[0, z]
+    for b in range(1, nb):
+        top = int(np.argmax(best[b - 1]))
+        for si in range(len(states)):
+            stay, move = best[b - 1, si], best[b - 1, top] - GRID_SLIP_COST
+            best[b, si], back[b, si] = (stay, si) if stay >= move else (move, top)
+            best[b, si] += P[b, si]
+    path = [int(np.argmax(best[-1]))]
+    for b in range(nb - 1, 0, -1):
+        path.append(int(back[b, path[-1]]))
+    return states[np.array(path[::-1])]
+
+
+def grid_base(layers, bars_t, per_bar, harm, beats, downs=None):
+    """The tab's bars laid one for one on the recording's beat grid: bar i starts on beat b0 + per_bar * i. An official
+    tab is the whole song in order, so a steady recording has as many bars as the tab (plus maybe a lead-in or a tail);
+    b0 is the one the notes and chords agree with most, less a cost for each bar left without a partner. Only the beats
+    the recording's bar lines sit on can start a bar (the first bars decide, else most of them), and bar 1 can't start before the
+    recording does or the last bar after it ends. Where the
+    windows see too few clear note starts, or the song loops every few bars, this still knows where bar 1 is.
+    Returns (Sync, {b0, bar1, runner_up_bars, unmatched, steady}); raises RuntimeError when the grid doesn't apply."""
+    if len(set(per_bar)) != 1 or per_bar[0] < 1:
+        raise RuntimeError("The tab's bars don't all have the same number of beats, so they can't sit on a beat grid.")
+    pb, nb = int(per_bar[0]), len(bars_t)
+    B = regular_beats(beats)
+    if B is None:
+        raise RuntimeError("The recording's beat isn't steady, so its beats can't be the tab's bars.")
+    nB, gb = len(B), float(np.median(np.diff(B)))
+    if not (0.8 * nb * pb <= nB <= 1.25 * nb * pb + 8 * pb):
+        raise RuntimeError(f"The recording has {nB / pb:.0f} bars and the tab {nb}: no one-for-one grid.")
+    edges = windows(bars_t)
+    zero = np.zeros(1)
+    rec_len = len(next(iter(layers.values()))[1]) * DT
+    phase = None
+    if downs is not None and len(downs) >= 4:  # which beat of the recording's grid its bar lines sit on (mod beats per bar)
+        at = (np.abs(B[None, :] - np.asarray(downs)[:, None]).argmin(1)) % pb
+        votes = np.bincount(at, minlength=pb)
+        if len(set(at[:6])) == 1:  # the first bars decide: a band may drop or add a beat later (Stressed Out has a 2-beat bar at 96 s), the beats go on
+            phase = int(at[0])
+        elif votes.max() >= 0.7 * votes.sum():
+            phase = int(votes.argmax())
+    results = []
+    for b0 in range(min(-2 * pb, nB - nb * pb - 2 * pb), max(2 * pb, nB - nb * pb + 2 * pb) + 1):
+        if phase is not None and b0 % pb != phase:
+            continue
+        idx = b0 + pb * np.arange(nb)
+        v = _beat_times(B, gb, idx)
+        if v[0] < -0.3 or v[-1] > rec_len - 0.3:
+            continue
+        sync = Sync(bars_t, v)
+        S, wsum, _ = score_matrix(layers, sync, edges, zero)
+        w = wsum / max(wsum.sum(), 1e-9)
+        sim = float(np.sum(w * S[:, 0]))
+        if harm is not None:
+            sim = (sim + HARM * float(np.sum(w * harmony_matrix(harm, sync, edges, zero)[:, 0]))) / (1 + HARM)
+        out_of_range = int(np.sum((idx < 0) | (idx > nB - 1)))
+        unmatched = out_of_range + (max(0, b0) + max(0, nB - (b0 + nb * pb))) / pb
+        results.append((sim - GRID_UNMATCHED * unmatched / nb, b0, v, unmatched))
+    if not results:
+        raise RuntimeError("No place for the tab on the recording's beat grid.")
+    results.sort(key=lambda r: -r[0])
+    best = results[0]
+    if best[3] > GRID_MAX_UNMATCHED:
+        raise RuntimeError(f"The best place leaves {best[3]:.0f} bars without a partner: the tab and the recording aren't the same length.")
+    other = next((r for r in results[1:] if abs(r[1] - best[1]) >= pb), None)
+    offs = grid_slips(layers, bars_t, harm, B, gb, pb, best[1])
+    v = _beat_times(B, gb, best[1] + offs + pb * np.arange(nb))
+    score = _scorer(layers)
+    shifts = np.arange(-GRID_SHIFT_S, GRID_SHIFT_S + 1e-9, 0.005)
+    d = float(shifts[int(np.argmax([score(bars_t, v + dd) for dd in shifts]))])
+    slips = [(int(b), int(offs[b] - offs[b - 1])) for b in range(1, nb) if offs[b] != offs[b - 1]]
+    return Sync(bars_t, v + d), {"b0": best[1], "bar1": float(v[0] + d), "shift": d, "unmatched": best[3], "score": best[0],
+                                 "runner_up": None if other is None else {"b0": other[1], "score": other[0]},
+                                 "slips": slips, "plain": best[2] + d}
+
+
+def grid_result(bars_t, grid, info, file_sync):
+    """The grid as a sync: the beat tracker's bar times, smoothed by a piecewise-linear line over the bar number (a few
+    knots, where a stretch of bars stays off the line by more than GRID_TOL; the tab's own tempo is no part of it). The
+    windows don't get to bend it: where the tab differs from the recording they see nothing, and the grid is the structure."""
+    t0 = time.time()
+    v_all = np.asarray(grid(bars_t), float)
+    v = np.asarray(info.get("plain", v_all), float)  # the smooth line is drawn through the bars as if none were short or long
+    n = len(v)
+    i, w = np.arange(n, dtype=float), np.ones(n)
+    knots = [0.0, float(n - 1)]
+    for _ in range(20):
+        sol, fit = pw_fit(i, v, w, np.array(knots))
+        res = v - fit
+        sm = np.array([np.median(res[max(0, j - 1):j + 2]) for j in range(n)])
+        pick = next((int(j) for j in np.argsort(-np.abs(sm)) if abs(sm[j]) > GRID_TOL and all(abs(j - k) >= 4 for k in knots)), None)
+        if pick is None:
+            break
+        knots = sorted(knots + [float(pick)])
+    sol, fit = pw_fit(i, v, w, np.array(knots))
+    slips = info.get("slips") or []
+    delta = v_all - v  # what the slips move each bar by: one level per stretch between slips (the beats' own jitter is not a tempo change)
+    for lo, hi in zip([0] + [c for c, _ in slips], [c for c, _ in slips] + [n]):
+        delta[lo:hi] = np.median(delta[lo:hi])
+    sync = Sync(bars_t, fit + delta)
+    ks = [int(k) for k in knots]
+    dur = np.diff(bars_t)
+    tab_changes = [j + 1 for j in range(len(dur) - 1) if abs(dur[j + 1] / dur[j] - 1) > 0.03]  # the tab's own tempo changes: the video's per-bar tempo doesn't
+    at_slip = {b for c, _ in slips for b in (c - 1, c)}  # the short bar and the bar after it: the video's speed changes there because the recording's bar has other beats than the tab's
+    return {"start_moved": float(sync(bars_t[0]) - float(file_sync(bars_t[0]))), "ending_gain": None, "points": _points(sync, bars_t), "base": file_sync, "sync": sync,
+            "knots": np.array([bars_t[k] for k in ks]), "sections": sorted(set(ks[1:-1]) | set(tab_changes) | at_slip),
+            "slopes": np.diff(fit[ks]) / np.diff(bars_t[ks]), "bars_t": bars_t, "seconds": round(time.time() - t0, 1), "edges": [], "windows": [], "grid": info}
+
+
+def wide_start(layers, bars_t, base, harm, pulse):
+    """Where the tab starts, searched over +-START_RANGE_S instead of 1.5 s: an intro the file's start didn't know about
+    (a recording with 10 s of pad before the band, a tab without it) puts every window the same few bars off. The same
+    evidence as the main fit, on a coarse lag grid; then the straight line (offset and slope, the recording's tempo up to
+    START_SLOPE off the tab's) that collects the most of it over the whole song. A line, not a path: many windows of a
+    real song have no clear place, and a path wanders onto whatever dense stretch of the recording looks like anything.
+    Adopted only when it beats the best line that stays within 1.5 s of the file's start by START_GAIN (mean z per window)
+    and is off by at least START_MIN s. Returns (base, median shift s, gain)."""
+    edges = windows(bars_t)
+    step = START_STEP * DT
+    lags = np.arange(-START_RANGE_S, START_RANGE_S + 1e-9, step)
+    S, wsum, centre = score_matrix(layers, base, edges, lags)
+    Z = zscore(S, wsum)
+    if harm is not None:
+        Z = Z + HARM * zscore(harmony_matrix(harm, base, edges, lags), wsum)
+    if pulse is not None:
+        Z = Z + BEAT_W * zscore(beat_matrix(pulse, base, bars_t, edges, lags), wsum)
+    live = wsum > 1e-6
+    if live.sum() < 4:
+        return base, 0.0, 0.0
+    Zl, c0 = Z[live], centre[live][0]
+    c = centre[live] - c0
+    rows = np.arange(len(c))[None, :]
+    best = near = (-1e9, 0.0, 0.0)  # (score, offset at the first window, slope)
+    for slope in np.arange(-START_SLOPE, START_SLOPE + 1e-9, 0.005):
+        lag = lags[:, None] + slope * c[None, :]  # [offset, window]
+        idx = np.rint((lag - lags[0]) / step).astype(int)
+        inside = (idx >= 0) & (idx < len(lags))
+        score = np.where(inside, Zl[rows, np.clip(idx, 0, len(lags) - 1)], -2.0).sum(1) - START_COST * np.abs(lag).sum(1)
+        i = int(np.argmax(score))
+        if score[i] > best[0]:
+            best = (float(score[i]), float(lags[i]), float(slope))
+        ok = (np.abs(lags) <= RANGE_S) & (np.abs(lags + slope * c[-1]) <= RANGE_S)
+        if ok.any():
+            j = int(np.argmax(np.where(ok, score, -1e18)))
+            if score[j] > near[0]:
+                near = (float(score[j]), float(lags[j]), float(slope))
+    gain = (best[0] - near[0]) / len(c)
+    shift = float(np.median(best[1] + best[2] * c))
+    if abs(shift) < START_MIN or gain < START_GAIN:
+        return base, 0.0, gain
+    t = np.r_[edges[0], centre[live], edges[-1]]
+    return Sync(t, base(t) + best[1] + best[2] * (t - c0)), shift, gain
+
 
 def windows(bars_t):
     edges = [float(bars_t[0])]
@@ -375,27 +640,32 @@ def choose_knots(t, v, w, bars_t, ending=False):
     return np.array(knots), np.asarray(sol)
 
 
-def refine(layers, knots, vals, reach=REFINE_S):
-    """The knots' video times tuned against the whole song at once: the tab's note starts against the recording's,
-    every layer, as one correlation over all of it (the windows only found the structure; a window alone is noisy,
-    the whole song is not). A pattern search, 20 ms down to 1 ms steps, each knot moving at most `reach` from where
-    the windows put it."""
+def _scorer(layers):
+    """score(knots, video times): the tab's note starts against the recording's over the whole song, every layer."""
     n = min(len(a) for a, _ in layers.values())
     t = np.arange(n) * DT
     tabs = {k: (a[:n] - a[:n].mean()) / (a[:n].std() + 1e-9) for k, (a, _) in layers.items()}
     rts = {k: np.arange(len(rec)) * DT for k, (_, rec) in layers.items()}
 
-    def score(vv):
+    def score(knots, vv):
         v = Sync(knots, vv)(t)
         total = 0.0
         for k, (_, rec) in layers.items():
             r = np.interp(v, rts[k], rec, left=0, right=0)
             total += float(np.mean(tabs[k] * (r - r.mean()) / (r.std() + 1e-9)))
         return total
+    return score
 
+
+def refine(layers, knots, vals, reach=REFINE_S):
+    """The knots' video times tuned against the whole song at once: the tab's note starts against the recording's,
+    every layer, as one correlation over all of it (the windows only found the structure; a window alone is noisy,
+    the whole song is not). A pattern search, 20 ms down to 1 ms steps, each knot moving at most `reach` from where
+    the windows put it."""
+    score = _scorer(layers)
     vals = np.asarray(vals, float)
     start, cur = vals.copy(), vals.copy()
-    best = score(cur)
+    best = score(knots, cur)
     for step in (0.020, 0.008, 0.003, 0.001):
         moved = True
         while moved:
@@ -404,9 +674,71 @@ def refine(layers, knots, vals, reach=REFINE_S):
                 for d in (-step, step):
                     trial = cur.copy()
                     trial[k] = float(np.clip(trial[k] + d, start[k] - reach, start[k] + reach))
-                    if trial[k] != cur[k] and (sc := score(trial)) > best + 1e-6:
+                    if trial[k] != cur[k] and (sc := score(knots, trial)) > best + 1e-6:
                         cur, best, moved = trial, sc, True
     return cur
+
+
+def polish_ending(layers, knots, vals, bars_t):
+    """A band slows down (or rushes) in the last bars, where the windows are too few to see it. Tried against the whole
+    song: a new knot at each bar line in the last END_REACH_S, on the line, with the last bar line's video time searched
+    from 150 ms early to 400 ms late; kept when the song's note starts agree END_GAIN more. Returns (knots, vals, gain)."""
+    score = _scorer(layers)
+    knots, vals = np.array(knots, float), np.array(vals, float)
+    s0 = (vals[-1] - vals[0]) / (knots[-1] - knots[0])
+    base = score(knots, vals)
+    best = (0.0, None)
+    last = knots[-1]
+    for k in map(float, bars_t):
+        if not (last - END_REACH_S <= k <= last - 4) or k <= knots[-2] + 4:
+            continue
+        if np.any(np.isclose(knots, k, atol=1e-6)):
+            continue
+        yk = float(np.interp(k, knots, vals))
+        for dy in np.arange(-0.15, 0.40 + 1e-9, 0.010):
+            kn = np.r_[knots[:-1], k, last]
+            vv = np.r_[vals[:-1], yk, vals[-1] + dy]
+            sl = np.diff(vv) / np.diff(kn)
+            if np.any(np.abs(sl / s0 - 1) > TEMPO_PCT / 100) or dy == 0:
+                continue
+            g = score(kn, vv) - base
+            if g > best[0]:
+                best = (g, (kn, vv))
+    if best[1] is not None and best[0] >= END_GAIN:
+        return best[1][0], best[1][1], best[0]
+    return knots, vals, best[0]
+
+
+def polish(layers, knots, vals, bars_t, reach=POLISH_S):
+    """The tempo changes where the whole song puts them. A window is 5 s wide, so a knot lands on the bar line nearest
+    the windows' middle, which can be a few bars off the real change: the line is right on both sides and wrong in
+    between (the benchmark's +3 % stretch ended 3 s late, 99 ms off). Each inner knot is tried at every bar line
+    within `reach`, with its video time searched +-POLISH_DY, and kept where the whole song's note starts agree most."""
+    if reach <= 0 or len(knots) < 3:
+        return np.asarray(knots, float), np.asarray(vals, float)
+    score = _scorer(layers)
+    knots, vals = np.array(knots, float), np.array(vals, float)
+    s0 = (vals[-1] - vals[0]) / (knots[-1] - knots[0])
+    best = score(knots, vals)
+    dys = np.arange(-POLISH_DY, POLISH_DY + 1e-9, 0.010)
+    for _ in range(2):
+        moved = False
+        for i in range(1, len(knots) - 1):
+            for k in map(float, bars_t):
+                if abs(k - knots[i]) > reach or not (knots[i - 1] + 2 < k < knots[i + 1] - 2):
+                    continue
+                y0 = float(np.interp(k, knots, vals))
+                for dy in dys:
+                    kn, vv = knots.copy(), vals.copy()
+                    kn[i], vv[i] = k, y0 + dy
+                    sl = np.diff(vv) / np.diff(kn)
+                    if np.any(np.abs(sl / s0 - 1) > TEMPO_PCT / 100) or (k == knots[i] and dy == 0):
+                        continue
+                    if (sc := score(kn, vv)) > best + 1e-6:
+                        knots, vals, best, moved = kn, vv, sc, True
+        if not moved:
+            break
+    return knots, vals
 
 
 # ---------- one song ----------
@@ -421,30 +753,22 @@ def get_curves(info, vid, use):
     return _CACHE[key]
 
 
-def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print, ending=False, harmony=False):
-    """The song's bar times lined up on the recording, starting from the points given (or the file's own)."""
-    d = aligner.LISTEN / slug
-    info = aligner.read_json(d / "info.json")
-    fb = Path(base_file) if base_file else aligner.fretboard_of(d)
-    entry = aligner.read_json(fb)["songs"][0]
-    vid = recording_id(entry, info)
-    bars_t = np.array([b[0] for b in info["bars"]], float)
-    pts = base_points or entry["syncPoints"]
-    base = Sync([bars_t[p] for p, _ in pts], [ms / 1000 for _, ms in pts])
+def fit_core(layers, bars_t, base, harm=None, rng=RANGE_S, ending=False, beats=None):
+    """The fit on arrays: curves per layer {name: (tab, recording)}, the tab's bar start times, the starting sync, and the
+    harmony (or None), and the recording's bar lines as a beat_pulse (or None). fit_song reads them from a saved song;
+    the truth benchmark builds them."""
     t0 = time.time()
-    layers = get_curves(info, vid, use)
-    say(f"  layers: {', '.join(layers)} (video {vid}); curves {time.time() - t0:.1f} s")
-    harm = load_harmony(info, len(next(iter(layers.values()))[1]) * DT) if harmony else None
-    if harmony and harm is None:
-        raise RuntimeError("The harmony isn't saved for this song (qa.py makes it).")
     edges = windows(bars_t)
     lags = np.arange(-rng, rng + 1e-9, DT)
     base0 = base
+    base, start_moved, _ = wide_start(layers, bars_t, base, harm, beats) if START_RANGE_S > 0 and harm is not None else (base, 0.0, 0.0)  # note starts alone find dense stretches of the recording that look like anything
     for attempt in range(4):
         S, wsum, centre = score_matrix(layers, base, edges, lags)
         Z = zscore(S, wsum)
         if harm is not None:  # the chords too: a window whose note starts have look-alike peaks, or too few, still has a clear place
             Z = Z + HARM * zscore(harmony_matrix(harm, base, edges, lags), wsum)
+        if beats is not None:  # and the recording's bar lines: the tab's bar starts should sit on them
+            Z = Z + BEAT_W * zscore(beat_matrix(beats, base, bars_t, edges, lags), wsum)
         mid = (edges[:-1] + edges[1:]) / 2
         reach = np.r_[0, np.ceil(LAG_STEP_PCT / 100 * np.diff(mid) / DT)]  # bins the lag may move from one window to the next
         Zp = Z - LAG_COST * np.abs(lags)[None, :] * (wsum > 1e-6)[:, None]  # a strummed song looks the same one beat away: when two lags score alike, the one nearer the file's sync wins
@@ -462,13 +786,68 @@ def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=
             break
         base = sync  # a lag ran towards the edge of the search (the file's sync drifts far): look again round the line just found
     sol = refine(layers, knots, sol)
+    knots, sol = polish(layers, knots, sol, bars_t)
+    end_gain = None
+    if ending:
+        knots, sol, end_gain = polish_ending(layers, knots, sol, bars_t)
+        knots, sol = polish(layers, knots, sol, bars_t)
+    sol = refine(layers, knots, sol, reach=0.02)
     sync = Sync(knots, sol)
-    return {"slug": slug, "points": _points(sync, bars_t), "base": base0, "sync": sync, "knots": knots,
+    return {"start_moved": start_moved, "ending_gain": end_gain, "points": _points(sync, bars_t), "base": base0, "sync": sync, "knots": knots,
             "sections": [int(np.argmin(np.abs(bars_t - k))) for k in knots[1:-1]],  # the bars where the tempo changes (0-based)
             "slopes": np.diff(sol) / np.diff(knots), "bars_t": bars_t, "seconds": round(time.time() - t0, 1),
             "edges": [int(i) for i, p in enumerate(path) if keep[i] and (p <= 1 or p >= len(lags) - 2)],
             "windows": [{"from": float(edges[w]), "lag_ms": round(1000 * float(g[w])), "z": round(float(z[w]), 1), "used": bool(keep[w] and z[w] >= NEED_Z)}
                         for w in range(len(g))]}
+
+
+def fit_song(slug, base_file=None, base_points=None, use=None, rng=RANGE_S, say=print, ending=False, harmony=False, bars=False, grid=False):
+    """The song's bar times lined up on the recording, starting from the points given (or the file's own)."""
+    d = aligner.LISTEN / slug
+    info = aligner.read_json(d / "info.json")
+    fb = Path(base_file) if base_file else aligner.fretboard_of(d)
+    entry = aligner.read_json(fb)["songs"][0]
+    vid = recording_id(entry, info)
+    bars_t = np.array([b[0] for b in info["bars"]], float)
+    pts = base_points or entry["syncPoints"]
+    base = Sync([bars_t[p] for p, _ in pts], [ms / 1000 for _, ms in pts])
+    t0 = time.time()
+    layers = get_curves(info, vid, use)
+    say(f"  layers: {', '.join(layers)} (video {vid}); curves {time.time() - t0:.1f} s")
+    harm = load_harmony(info, len(next(iter(layers.values()))[1]) * DT) if harmony else None
+    if harmony and harm is None:
+        raise RuntimeError("The harmony isn't saved for this song (qa.py makes it).")
+    grid_info = None
+    if grid:  # the tab's bars on the recording's beat grid: where bar 1 is, however few clear note starts there are
+        try:
+            beats, gdowns = load_beats(info, vid)
+        except Exception as e:
+            raise RuntimeError(f"The recording's beats can't be found ({e}).")
+        gh = harm or load_harmony(info, len(next(iter(layers.values()))[1]) * DT)
+        file_sync = base
+        base, grid_info = grid_base(layers, bars_t, [b[2] for b in info["bars"]], gh, beats, gdowns)
+        r = grid_result(bars_t, base, grid_info, file_sync)
+        r["slug"], r["seconds"] = slug, round(time.time() - t0, 1)
+        return r
+    pulse = downs = None
+    if bars:  # the recording's bar lines: evidence for each window, and a search for the start over the whole song
+        try:
+            beats, downs = load_beats(info, vid)
+        except Exception as e:  # no Beat This!, or the recording can't be read: the other tries still run
+            raise RuntimeError(f"The recording's bar lines can't be found ({e}).")
+        slope = (float(base(bars_t[-1])) - float(base(bars_t[0]))) / (bars_t[-1] - bars_t[0])
+        per = float(np.median(np.diff(downs)) / (np.median(np.diff(bars_t)) * slope)) if len(downs) > 3 else 0.0
+        if abs(np.log(max(per, 1e-3))) > 0.10:  # How Great Is Our God's tab is in 2/4 and the band in 4/4: half the tab's bars start mid-bar
+            raise RuntimeError(f"The tab's bars aren't the recording's bars (the recording's bar is {per:.2f} of the tab's), so its bar lines can't vote.")
+        pulse = beat_pulse(beats, downs, len(next(iter(layers.values()))[1]))
+    r = fit_core(layers, bars_t, base, harm, rng, ending, pulse)
+    r["slug"], r["seconds"] = slug, round(time.time() - t0, 1)
+    return r
+
+
+def entry_base0(entry, bars_t, base_points=None):
+    pts = base_points or entry["syncPoints"]
+    return Sync([bars_t[p] for p, _ in pts], [ms / 1000 for _, ms in pts])
 
 
 def _points(sync, bars_t):
@@ -536,7 +915,7 @@ def selftest(use=None):
     return ok == total
 
 
-def run(slug, use=None, rng=RANGE_S, check=False, verbose=False):
+def run(slug, use=None, rng=RANGE_S, check=False, verbose=False, accept_start=False):
     """Line the song up, judge it, and write the bar times when they are better than the file's (never worse).
     The verdict of the sync the song has afterwards. Used by main() and by listen.py (every new song)."""
     import fixsync  # the gate and the rule for what is better (they need the yt2gp5 Python)
@@ -548,31 +927,52 @@ def run(slug, use=None, rng=RANGE_S, check=False, verbose=False):
     first = fb.with_name(fb.name + ".before-wavefit")  # a second run starts from the file as it was before wavefit first wrote it, so it gives the same answer
     start = first if first.exists() else None
     tried = []
+    results = []
     best = None  # the steady fit first; the one with an ending knot only if the gate likes it better (an ending is too few windows to trust alone)
-    for name, ending, harmony in (("wavefit", False, False), ("wavefit + ending", True, False),
-                                  ("wavefit + harmony", False, True), ("wavefit + harmony + ending", True, True)):
+    for name, ending, harmony, bars, grid in (("wavefit", False, False, False, False), ("wavefit + ending", True, False, False, False),
+                                              ("wavefit + harmony", False, True, False, False), ("wavefit + harmony + ending", True, True, False, False),
+                                              ("wavefit + bars + harmony", False, True, True, False), ("wavefit + bars + harmony + ending", True, True, True, False),
+                                              ("wavefit + grid", False, True, False, True)):
         try:
-            r = fit_song(slug, base_file=start, use=use, rng=rng, ending=ending, harmony=harmony, say=print if not (ending or harmony) else (lambda *x: None))
+            r = fit_song(slug, base_file=start, use=use, rng=rng, ending=ending, harmony=harmony, bars=bars, grid=grid, say=print if not (ending or harmony or bars or grid) else (lambda *x: None))
         except RuntimeError as e:  # too few note starts to go on: the file's own sync stays (the harmony tries may still find a place)
             print(f"  {name} left out: {e}")
             continue
-        if ending and best and any(list(r["knots"]) == list(b["knots"]) for b in tried if b["harmony"] == harmony):
+        if ending and best and any(list(r["knots"]) == list(b["knots"]) for b in tried if (b["harmony"], b["bars"], b["grid"]) == (harmony, bars, grid)):
             continue
-        tried.append({"knots": r["knots"], "harmony": harmony})
-        if not (ending or harmony):
+        tried.append({"knots": r["knots"], "harmony": harmony, "bars": bars, "grid": grid})
+        if not (ending or harmony or bars or grid):
             show(r, verbose)
         else:
+            if r.get("grid"):
+                g = r["grid"]
+                print(f"  {name}: the tab's bars on the recording's beats: bar 1 on beat {g['b0']:+d} = {g['bar1']:.2f} s, {g['unmatched']:.1f} bars without a partner")
+            elif r.get("start_moved"):
+                print(f"  {name}: the start moved {r['start_moved']:+.1f} s")
             print("  with an ending knot: " + ", ".join(f"{k0:.0f}-{k1:.0f}s {100 / sl:.2f}%" for k0, k1, sl in zip(r["knots"][:-1], r["knots"][1:], r["slopes"])))
         v = qa.judge({**s, "sections": r["sections"]}, points=r["points"])
         print(f"  {v['verdict']:6} {name}: {len(v['fails'])} fails, {len(v['listen'])} listens, {fixsync.score(v)[2]} bars drift")
         for x in v["fails"] + v["listen"]:
             print(f"           {x[:150]}")
+        results.append((name, r, v))
         if best is None or fixsync.score(v) < fixsync.score(best[2]):
             best = (name, r, v)
     if best is None:
         return old
+    hard_of = lambda v: [f for f in v["fails"] if not f.startswith(("steady:", "match:"))]  # a drifting stretch or "this tab differs" is the same whatever the clock; a bad lock, a jump or a backwards sync is not
+    on_grid = [t for t in results if t[1].get("grid") and not hard_of(t[2])]
+    if on_grid:  # the beat grid knows where bar 1 is when the tries that start from the file's start don't (the gate counts stretches, it can't see a bar 1 two bars late)
+        g = min(on_grid, key=lambda t: fixsync.score(t[2]))
+        if abs(g[1]["points"][0][1] - best[1]["points"][0][1]) > 1000 and fixsync.RANK[g[2]["verdict"]] <= fixsync.RANK[best[2]["verdict"]]:
+            print(f"  the beat grid puts bar 1 at {g[1]['points'][0][1] / 1000:.2f} s, {best[0]} at {best[1]['points'][0][1] / 1000:.2f} s: the grid is kept")
+            best = g
     name, r, new = best
     better = fixsync.score(new) < fixsync.score(old)
+    moved = r.get("start_moved")
+    hard = hard_of(new)
+    if moved and abs(moved) >= START_MIN and not better and not hard and (accept_start or fixsync.score(new)[2] <= fixsync.score(old)[2]):  # the file started seconds from where the sound says: its verdict is no fair yardstick (the gate can't tell a wrong start from an intro it lists), so a fit with no hard fail replaces it
+        print(f"  the file started {abs(moved):.1f} s from where the sound puts the tab, so its verdict isn't a fair yardstick; {name} has no hard fail")
+        better = True
     if better and not check:
         out = aligner.save(slug, r["points"], f"{name}: {old['verdict']} -> {new['verdict']}", by="wavefit", sections=r["sections"])
         print(f"{name} is better, written: {out['file']} (the first version is {out['backup']}); import it in Fretboard with Replace it")
@@ -587,6 +987,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", nargs="?", default="")
     ap.add_argument("--check", action="store_true", help="judge and print only; the .fretboard file stays as it is")
+    ap.add_argument("--accept-start", action="store_true", help="write a fit that moves the start by seconds even when the gate counts more drifting bars than for the file (the file's start is wrong, "
+                    "so its verdict says little); the backup .before-wavefit is kept, and a person should listen")
     ap.add_argument("--selftest", action="store_true", help="the fake recordings, where the right answer is known")
     ap.add_argument("--layers", default="", help="what to line up: mix (default: all the tab against the whole recording), "
                     "stems (each Demucs stem against the tab's tracks of that kind), all, or some of drums,bass,other,vocals")
@@ -600,7 +1002,7 @@ def main():
         sys.exit(__doc__)
     slug = find(a.name)
     print(slug)
-    v = run(slug, use=use, rng=a.range, check=a.check, verbose=a.verbose)
+    v = run(slug, use=use, rng=a.range, check=a.check, verbose=a.verbose, accept_start=a.accept_start)
     sys.exit(0 if v["verdict"] == "PASS" else 2 if v["verdict"] == "LISTEN" else 3)
 
 

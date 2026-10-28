@@ -148,6 +148,15 @@ def judge(s, points=None, env=None, rec_c=None):
     # a sync with one tempo per section changes speed where a section of the tab starts, and only there
     at_section = np.array([ps[i + 1][0] in s["sections"] for i in range(len(jump))], bool)
     jump = np.where(at_section & (jump <= SECTION_JUMP_PCT), 0, jump)
+    # where the tab's own tempo changes and the recording keeps its beat (Stressed Out: 85 BPM all through, the tab 74 later),
+    # the video's time per beat stays level; that is the tab's tempo map, not a jump in the sync
+    beats = np.array([sum(b[2] for b in bars[ps[i][0]:ps[i + 1][0]]) for i in range(len(ps) - 1)], float)
+    per_beat = np.diff(y) / np.maximum(1e-6, beats)
+    level = 100 * np.abs(np.diff(per_beat)) / np.maximum(1e-9, per_beat[:-1]) <= JUMP_PCT
+    # or the recording plays a short or long bar the tab writes as a full one: that bar lasts a whole number of the song's beats, not the tab's
+    bar_beats = np.diff(y) / max(1e-9, float(np.median(per_beat)))
+    odd = (np.abs(bar_beats - np.rint(bar_beats)) <= 0.15) & (np.rint(bar_beats) >= 1) & (np.rint(bar_beats) != beats)
+    jump = np.where(at_section & (level | odd[:-1] | odd[1:]), 0, jump)
     if (jump > JUMP_PCT).any():
         where = [ps[i + 1][0] + 1 for i in np.flatnonzero(jump > JUMP_PCT)]
         fails.append(f"speed: the tempo jumps at bar{'s' if len(where) > 1 else ''} {', '.join(map(str, where[:6]))}{'…' if len(where) > 6 else ''}")

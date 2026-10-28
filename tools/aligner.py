@@ -44,7 +44,9 @@ def read_json(p, default=None):
 
 
 def fretboard_of(folder):
-    files = sorted(folder.glob("*.fretboard"), key=lambda p: p.stat().st_mtime, reverse=True)
+    """The song's own file; the variants beside it ("(key points)", "(steady)"...) only when it has none (the way qa.py picks it).
+    Newest first among equals. A stale "(key points)" file put How Great's bar 1 at 0 s in the aligner while the song's own file had 8 s."""
+    files = sorted(folder.glob("*.fretboard"), key=lambda p: ("(" in p.stem, -p.stat().st_mtime))
     return files[0] if files else None
 
 

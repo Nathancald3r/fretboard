@@ -1,0 +1,473 @@
+<title>Fretboard Commands</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style id="css">
+/* Layout: sticky bar (search, downloads), a picture of how the commands connect, then one card per command grouped by job.
+   Colour: cool grey ground, ebony code blocks with brass prompts, one hue per group. */
+:root{
+  --bg:#eceff2; --panel:#ffffff; --ink:#151a20; --mut:#566271; --line:#d6dce3; --soft:#f4f6f8;
+  --accent:#8f5a0c; --accent-ink:#ffffff; --code-bg:#17130f; --code-ink:#ece4d6; --code-dim:#a08a5a;
+  --gsat:52%; --glit:34%; --warn:#9a3d12; --warn-bg:#fbe9dc;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --sans:"Hanken Grotesk","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,"Cascadia Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1318; --panel:#171d24; --ink:#e7ecf1; --mut:#93a0ae; --line:#28313b; --soft:#1c242d;
+  --accent:#e8b04a; --accent-ink:#1b1306; --code-bg:#0b0907; --code-ink:#ece4d6; --code-dim:#b49a62;
+  --gsat:60%; --glit:70%; --warn:#f0a070; --warn-bg:#3a2417; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1318; --panel:#171d24; --ink:#e7ecf1; --mut:#93a0ae; --line:#28313b; --soft:#1c242d;
+  --accent:#e8b04a; --accent-ink:#1b1306; --code-bg:#0b0907; --code-ink:#ece4d6; --code-dim:#b49a62;
+  --gsat:60%; --glit:70%; --warn:#f0a070; --warn-bg:#3a2417; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1080px;margin:0 auto}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:14px 0 12px;border-bottom:1px solid var(--line)}
+h1{font:700 26px/1.1 var(--display);letter-spacing:-.015em;margin:0;text-wrap:balance}
+.sub{color:var(--mut);margin:4px 0 0;font-size:14px;max-width:70ch}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+input,button{font:inherit;color:inherit}
+.search{flex:1 1 240px;min-width:0;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.sw{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--mut);cursor:pointer;user-select:none}
+.sw input{accent-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.root{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:14px;font-size:13px;color:var(--mut)}
+.root code{color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 8px;overflow-wrap:anywhere}
+h2{font:700 18px/1.2 var(--display);margin:0;letter-spacing:-.005em}
+.flowhead{margin:26px 0 4px}
+.lead{color:var(--mut);margin:2px 0 14px;font-size:14px;max-width:72ch}
+.lane{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.lane h3{font:600 13px/1.3 var(--sans);text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin:0 0 8px}
+.steps{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:4px}
+.node{flex:none;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:118px;max-width:170px;padding:7px 10px;border-radius:8px;
+  border:1px solid hsl(var(--h) var(--gsat) var(--glit) / .55);background:hsl(var(--h) var(--gsat) var(--glit) / .12);text-align:left;cursor:pointer;line-height:1.25}
+.node b{font-weight:600;font-size:13px}
+.node span{font-size:11.5px;color:var(--mut);font-family:var(--mono)}
+.node:hover{background:hsl(var(--h) var(--gsat) var(--glit) / .22)}
+.node.plain{border-style:dashed;background:transparent;cursor:default;border-color:var(--line)}
+.node.plain:hover{background:transparent}
+.arrow{flex:none;align-self:center;width:26px;text-align:center;color:var(--mut);font-size:15px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:22px 0 4px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:4px 11px;font-size:13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.chip i{width:9px;height:9px;border-radius:50%;background:hsl(var(--h) var(--gsat) var(--glit))}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--soft);font-weight:600}
+.chip span{color:var(--mut);font-variant-numeric:tabular-nums}
+section{margin-top:26px;scroll-margin-top:150px}
+.ghead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.ghead i{width:12px;height:12px;border-radius:50%;background:hsl(var(--h) var(--gsat) var(--glit));flex:none}
+.gnote{color:var(--mut);margin:0 0 12px;font-size:14px;max-width:72ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;min-width:0;scroll-margin-top:150px}
+.card.flash{outline:2px solid var(--accent);outline-offset:2px}
+.head{display:flex;gap:8px 12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.title{font:600 16px/1.3 var(--sans);margin:0}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:11.5px;font-weight:600;border-radius:5px;padding:1px 7px;background:var(--soft);color:var(--mut);border:1px solid var(--line)}
+.tag.heavy{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.code{margin:10px 0 8px;background:var(--code-bg);color:var(--code-ink);border-radius:8px;display:flex;gap:10px;align-items:flex-start;padding:10px 10px 10px 14px}
+.code pre{margin:0;font:13.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;flex:1;min-width:0}
+.code .pr{color:var(--code-dim)}
+.copy{flex:none;background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:4px 12px;font-weight:600;cursor:pointer;font-size:13px}
+.copy.done{opacity:.7}
+dl{display:grid;grid-template-columns:96px minmax(0,1fr);gap:5px 12px;margin:0;font-size:14px}
+dt{color:var(--mut);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+dd{margin:0;min-width:0}
+.path{display:inline-flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.path code{overflow-wrap:anywhere;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.cp{border:1px solid var(--line);background:var(--panel);border-radius:5px;font-size:12px;padding:0 7px;cursor:pointer;line-height:20px}
+.cp:hover{border-color:var(--accent)}
+.empty{padding:36px 10px;text-align:center;color:var(--mut)}
+.toast{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--code-bg);color:var(--code-ink);padding:8px 16px;border-radius:8px;font-size:13px;z-index:20}
+@media (max-width:640px){dl{grid-template-columns:minmax(0,1fr);gap:0}dt{padding-top:8px}h1{font-size:23px}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+<div class="top"><div class="wrap">
+  <h1>Fretboard commands</h1>
+  <p class="sub" id="sub">Every command in the project, in PowerShell, with the folder to run it from, what it does and where it sits in the work. Press Copy, paste, press Enter.</p>
+  <div class="bar">
+    <input id="q" class="search" type="search" placeholder="Search: apk, sync, test, wavefit, training…" aria-label="Search commands">
+    <label class="sw"><input id="cdp" type="checkbox" checked> Copy with the <code>cd</code> line</label>
+    <button class="btn pri" id="dl-html" type="button" hidden>Download page (.html)</button>
+    <button class="btn" id="dl-md" type="button" hidden>Download list (.md)</button>
+  </div>
+</div></div>
+
+<div class="wrap" id="app"><div class="empty">Loading…</div></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const R = 'C:\\Users\\natha\\Desktop\\[4] Project Database\\Claude\\Song star';
+const H = 'C:\\Users\\natha';
+const CD = (d) => 'cd -LiteralPath "' + d + '"; ';
+const PY = '& "$env:USERPROFILE\\.fretboard\\yt2gp5-venv\\Scripts\\python.exe" ';
+const VENVPY = H + '\\.fretboard\\yt2gp5-venv\\Scripts\\python.exe';
+const ADB = '& "$env:USERPROFILE\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe" -s 49111JEKB02598 ';
+
+const GROUPS = [
+  {id:'run',  h:205, name:'Run the app', note:'The web app is plain files. A small Node server shows them in the browser; the same files go to the website and into the APK.'},
+  {id:'test', h:150, name:'Test and ship', note:'Run the tests, then ship. A push to main updates the website and the UG helper, which downloads its files from there.'},
+  {id:'phone',h:100, name:'Android phone', note:'One script builds the APK, checks it is under 30 MB and installs it on the Pixel 8a over USB. The soundfont is never bundled.'},
+  {id:'ug',   h:42,  name:'Get official tabs (UG helper)', note:'The helper drives its own Chrome window and saves an official Ultimate Guitar song as one PDF per instrument plus Chords.txt. Fretboard converts the PDFs.'},
+  {id:'make', h:18,  name:'Make a synced song', note:'From a YouTube link to a song whose tab plays in step with that exact video. These live in tests/yt2gp5 and run in the yt2gp5 Python environment.'},
+  {id:'fix',  h:335, name:'Check and fix sync', note:'Line a tab up with its video, judge the result with the gate (PASS, LISTEN, FAIL), and move bars by eye and ear when it needs a person.'},
+  {id:'measure',h:282,name:'Measure sync', note:'Numbers instead of opinions: a benchmark where the right bar times are known, and a report and dashboard that show whether each change helped.'},
+  {id:'stems',h:250, name:'Stems and note checks', note:'Splitting a recording into instruments and checking what the tab says against what is heard. Also the YouTube to Guitar Pro notebook tests.'},
+  {id:'train',h:176, name:'Training data (TabMaker)', note:'Download approved commercial-use datasets, turn them into labelled examples and look at them. Long jobs; they hold themselves to 60% of the CPU.'},
+  {id:'auto', h:72,  name:'Autopilot and phone worker', note:'Things that run while you are away: Claude working through a task list, and the worker that fetches songs you ask for on the phone.'}
+];
+
+// c(id, group, title, command, script, what it does, how it fits, {extras})
+const C = [];
+const c = (id, g, title, cmd, file, does, fits, o) => C.push(Object.assign({id, g, title, cmd, file, does, fits}, o || {}));
+const T = 'tests\\yt2gp5\\';
+
+/* ---- run ---- */
+c('app-own','run','Your own copy of the app','node server.mjs',R+'\\server.mjs',
+  'Serves the app at http://localhost:8420 from the project files.',
+  'The importer, the player and the chord sheet all run from here. Never start a second server on 8420, you may be using it.',{open:'http://localhost:8420'});
+c('app-preview','run','Preview copy for checking changes','$env:PORT=8421; node server.mjs',R+'\\server.mjs',
+  'The same server on port 8421.',
+  'Test a change here without touching your own copy. The UG helper accepts pages from 8420, 8421 and GitHub Pages only. Claude\'s preview uses the "fretboard" entry in .claude\\launch.json.',{open:'http://localhost:8421'});
+c('npm-install','run','Install the packages','npm install',R+'\\package.json',
+  'Installs alphaTab 1.8.4 and then builds the patched copy by itself (scripts\\vendor.mjs runs afterwards).',
+  'Needed once on a new computer. vendor\\alphatab\\alphaTab.js is generated; never edit it.');
+
+/* ---- test and ship ---- */
+c('test-all','test','Run every test','node scripts\\test.mjs',R+'\\scripts\\test.mjs',
+  'Runs all 35 files in tests\\*.test.mjs and prints one line each. Exit 1 if any fails.',
+  'Run it after any change to js\\ugtab.js, js\\pdftab.js, js\\chordsheet.js or js\\player.js, and before shipping.');
+c('test-round','test','Every test, plus the round-trip import test','node scripts\\test.mjs --round',R+'\\scripts\\test.mjs',
+  'The same, then the round-trip import test (about 6 s more).',
+  'Use it after an importer change: the round-trip score should not drop.');
+c('test-one','test','Run one test file','node tests\\songmeta.test.mjs',R+'\\tests\\songmeta.test.mjs',
+  'Runs a single test file. Swap songmeta for any name in the tests folder.',
+  'Quicker than the whole set while you work on one part.');
+c('roundtrip','test','Round-trip import test','python tests\\roundtrip\\roundtrip.py',R+'\\tests\\roundtrip\\roundtrip.py',
+  'Draws each song in tests\\roundtrip\\songs as UG-style tab PDFs, reads them back with the importer and prints a score per song and check. Options: -k NAME, --keep, --verbose.',
+  'The importer\'s safety net. Needs Python Playwright with Chromium; no server needed. Exits 1 below the pass mark in config.json.');
+c('ship-check','test','Check before shipping (changes nothing)','node scripts\\ship.mjs --check',R+'\\scripts\\ship.mjs',
+  'Looks for flipped line endings and for files that must not be committed (out\\, APKs, _xxx folders).',
+  'The dry run of the next command.');
+c('ship','test','Ship: commit named files and push to main','node scripts\\ship.mjs -m "message" file1 file2',R+'\\scripts\\ship.mjs',
+  'Fixes flipped line endings, refuses out\\, APKs and _xxx folders, commits only the files you name and pushes to main.',
+  'A push to main updates the website and the UG helper. Restart the helper to pick up a helper fix.');
+c('diffstat','test','See what changed before committing by hand','git diff --stat',null,
+  'Lists changed files and line counts.',
+  'A small edit that shows hundreds of changed lines means the line endings flipped. ship.mjs fixes that for you.');
+c('vendor','test','Rebuild the patched alphaTab','node scripts\\vendor.mjs',R+'\\scripts\\vendor.mjs',
+  'Regenerates vendor\\alphatab\\alphaTab.js with our sound patches (NaN guard, stereo samples, modulators, volume floor, direct audio channel, second drum channel).',
+  'Run it after editing scripts\\vendor.mjs. Each patch throws if alphaTab changes, so an upgrade cannot drop one silently. Guitar sound comes first.',{writes:R+'\\vendor\\alphatab\\alphaTab.js'});
+c('drum-levels','test','Set drum sample loudness in the soundfont','python tools\\drum_levels.py',R+'\\tools\\drum_levels.py',
+  'Sets how loud single drum samples (ride, hi-hat) play in MuseScore_General.sf3, in place, same file size.',
+  'Running it twice changes nothing. Used so the ride and hi-hat do not vanish in a band mix.',{writes:R+'\\vendor\\soundfont\\MuseScore_General.sf3'});
+
+/* ---- phone ---- */
+c('apk-bump','phone','Build, install on the phone, bump the version','node scripts\\apk.mjs',R+'\\scripts\\apk.mjs',
+  'Bumps versionCode and versionName, builds the release APK, checks it is under 30 MB, keeps Fretboard-<version>.apk and installs it on the Pixel 8a, then checks the version.',
+  'The last step of a release. APK 1.53 is built and held until sync results are consistent. Afterwards send APK_PATH to the user.',{writes:R+'\\Fretboard-<version>.apk'});
+c('apk-nobump','phone','Rebuild or reinstall the same version','node scripts\\apk.mjs --no-bump',R+'\\scripts\\apk.mjs',
+  'Same, without a new version number.','This is the command that puts the held APK 1.53 on the phone.');
+c('apk-noinstall','phone','Build only, skip the phone','node scripts\\apk.mjs --no-install',R+'\\scripts\\apk.mjs',
+  'Builds and size-checks the APK without installing it.','Use it when the phone is not plugged in.');
+c('adb-version','phone','Which version is on the phone?', ADB+'shell dumpsys package app.fretboard | Select-String versionName',H+'\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe',
+  'Asks the phone for the installed versionName.',
+  'adb is not on the PATH, and -s is needed because an offline emulator also shows in adb devices.',{nocd:true});
+c('adb-install','phone','Install a built APK by hand', ADB+'install -r android\\app\\build\\outputs\\apk\\release\\app-release.apk',H+'\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe',
+  'Installs the release APK over USB, keeping app data (-r).','What apk.mjs does for you at its last step.');
+c('gradle','phone','Build the release APK by hand','./gradlew --console=plain assembleRelease -q',R+'\\android\\gradlew.bat',
+  'Builds android\\app\\build\\outputs\\apk\\release\\app-release.apk. The copyWeb task copies the web files into the APK.',
+  'apk.mjs runs this for you. Run it from the android folder.',{dir:R+'\\android'});
+
+/* ---- ug ---- */
+c('ug-start','ug','Start the UG helper','& "$env:USERPROFILE\\Fretboard UG helper\\start.cmd"',H+'\\Fretboard UG helper\\start.cmd',
+  'Downloads the latest helper files from the website, then starts the helper on 127.0.0.1:9231 with its own Chrome (debug port 9222).',
+  'Same as the "Start UG helper" shortcut. Fretboard\'s "Find tabs online" talks to it. A fix reaches you only after a push and a restart of the helper.',{nocd:true});
+c('ug-refresh','ug','Set up or refresh the helper','python tools\\ug_helper_setup.py --refresh',R+'\\tools\\ug_helper_setup.py',
+  'Copies ug_watch.py and ug_collect.py from the Fretboard website into the installed helper folder and writes start.cmd.',
+  'Start.cmd runs this first. Without --refresh it is the one-time setup (also installs Playwright for Python).',{writes:H+'\\Fretboard UG helper'});
+c('ug-dev','ug','Run the helper from the project folder','& ".\\UG helper.cmd"',R+'\\UG helper.cmd',
+  'Opens the collector Chrome and links it to Fretboard. Leave the window open.',
+  'The development copy of the helper (tools\\ug_watch.py). The installed copy above is what you normally use.');
+c('ug-collect','ug','Save one official UG song by hand','python tools\\ug_collect.py "<song url>"',R+'\\tools\\ug_collect.py',
+  'Saves every track of an official song as a PDF into Downloads\\UG Songs\\<Song> - <Artist> (Key X), plus Chords.txt. Options: --only "Lead Guitar,Piano", --no-ui, --gp.',
+  'The helper runs this for you from Fretboard. Collector Chrome must be running with a UG Pro login. Exit 0 done, 1 failed, 2 skipped, 3 cancelled.',{writes:H+'\\Downloads\\UG Songs'});
+c('songsterr','ug','Save a Songsterr song as PDFs','python tools\\songsterr_pdf.py',R+'\\tools\\songsterr_pdf.py',
+  'Uses Songsterr\'s own Print button to save one PDF per track. Needs an account that can print (Songsterr Plus).',
+  'Sign in and open the song in the collector Chrome first. Never replaces existing files.',{writes:H+'\\Downloads\\Songsterr Songs'});
+c('ug-to-gp','ug','Turn UG PDFs into .gp files','python tests\\yt2gp5\\ug_to_gp.py "C:/Users/natha/Downloads/UG Songs" -k "Ho Hey"',R+'\\tests\\yt2gp5\\ug_to_gp.py',
+  'Reads each song folder\'s part PDFs with Fretboard\'s own importer and writes Artist - Title.gp. Drop -k to do every folder.',
+  'Feeds songdb.py. fromlink.py does this step by itself.',{venv:true,writes:R+'\\tests\\yt2gp5\\cache\\ug'});
+
+/* ---- make ---- */
+c('fromlink','make','YouTube link to synced song, one command',PY+T+'fromlink.py "<youtube link>"',R+'\\tests\\yt2gp5\\fromlink.py',
+  'Finds the official UG tab, saves its PDFs, makes the .gp, adds the song with that exact video, lines it up (one steady tempo, then wavefit) and prints the .fretboard file and the QA verdict. Options: --ug URL, --title, --artist, --again.',
+  'The whole pipeline in one step. Exit 0 PASS, 2 LISTEN, 3 FAIL, 1 error. Never run two at once: they share the collector Chrome. Import the result with "Replace it".',{heavy:true,venv:true,writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\'});
+c('ladder','make','Sync ladder: every song in order',PY+T+'ladder.py',R+'\\tests\\yt2gp5\\ladder.py',
+  'Runs fromlink.py for each song in ladder.json, one at a time, simplest first, and writes out\\ladder.md (verdict, tempo, notes within 30 ms, why it failed).',
+  'The yardstick for the pipeline. Songs are the same twelve every time, so results can be compared across changes.',{heavy:true,venv:true,writes:R+'\\tests\\yt2gp5\\out\\ladder.md'});
+c('ladder-one','make','Ladder: one song',PY+T+'ladder.py -k "Ho Hey"',R+'\\tests\\yt2gp5\\ladder.py',
+  'Only the song whose name contains the text.','Quick re-test of one song after a change.',{venv:true});
+c('ladder-table','make','Ladder: print the last results',PY+T+'ladder.py --table',R+'\\tests\\yt2gp5\\ladder.py',
+  'Prints the table from the last results without running anything.','Also: --tracks guitar (guitar,bass; guitar,bass,drums; all) redoes only the line-up on those tracks.',{venv:true});
+c('listen','make','Listen: tab over its YouTube recording',PY+T+'listen.py "Ho Hey" --again',R+'\\tests\\yt2gp5\\listen.py',
+  'Plays each tab track with Fretboard\'s synth, stretches it to follow the recording and opens a page with the recording in the left ear and the tab in the right. Options: --url, --export, --fit, --raw, --no-wavefit.',
+  'The by-ear check. fromlink.py calls this; wavefit runs after its one-tempo fit.',{venv:true,heavy:true,writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\'});
+c('listen-export','make','Write only the .fretboard file',PY+T+'listen.py "Ho Hey" --export',R+'\\tests\\yt2gp5\\listen.py',
+  'One steady tempo and the right start, then wavefit, then the gate. No listening page.','The quick way to get a song file for import.',{venv:true});
+c('songdb-scan','make','Song list: add Guitar Pro files',PY+T+'songdb.py scan tests\\yt2gp5\\cache\\ug --official',R+'\\tests\\yt2gp5\\songdb.py',
+  'Adds every Guitar Pro file found in the folder to songs.json. Also: find (suggest a video for each song), set NAME URL, report, verify.',
+  'songs.json pairs each tab with its recording; the sync tools read it. verify downloads the suggestions in your order (official audio first) and confirms the first that matches all the way through.',{venv:true});
+c('ytfind','make','YouTube search (as JSON)',PY+T+'ytfind.py "Artist Title official" -n 10',R+'\\tests\\yt2gp5\\ytfind.py',
+  'Prints the matching videos as JSON. Nothing is downloaded.','Used by the song worker, which ranks the list with js\\ytsearch.js (the artist\'s own channel and "official" first, never covers).',{venv:true});
+
+/* ---- fix ---- */
+c('wavefit','fix','Fit the sync with the wave fitter',PY+T+'wavefit.py "Ho Hey"',R+'\\tests\\yt2gp5\\wavefit.py',
+  'Lines the tab up with the video by note starts, chords and bar lines, plus a search for the right start and a beat-grid try. Writes only when the gate likes the result better and keeps a .before-wavefit backup. About 10 s a song.',
+  'Moves only bar start times; the sheet music is untouched. Import the file with "Replace it".',{venv:true,writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\<song>.fretboard'});
+c('wavefit-check','fix','Same, but only measure',PY+T+'wavefit.py "Ho Hey" --check',R+'\\tests\\yt2gp5\\wavefit.py',
+  'Judges and prints; writes nothing.','Use it before trusting a change to wavefit.',{venv:true});
+c('wavefit-self','fix','Fitter self-test with fake recordings',PY+T+'wavefit.py --selftest',R+'\\tests\\yt2gp5\\wavefit.py',
+  'Fake recordings (copy, late 3 s, ±3% speed, noisy) with a known truth.','Must stay 20 of 20 after any change to wavefit.',{venv:true});
+c('fixsync','fix','Try every way of syncing, keep the best',PY+T+'fixsync.py "Ho Hey"',R+'\\tests\\yt2gp5\\fixsync.py',
+  'Tries the file as made, its variants, one tempo, one tempo per section and drum-clock moves, judges each with the gate and keeps the best. --all does every song, --dry only prints.',
+  'The older fixer; listen.py and wavefit now cover most of it.',{venv:true});
+c('qa','fix','The gate: verdict for one song',PY+T+'qa.py "Ho Hey"',R+'\\tests\\yt2gp5\\qa.py',
+  'PASS, LISTEN or FAIL and why: match, lock, speed jumps, steadiness, drums, points.',
+  'Everything that decides what reaches the phone. The song worker delivers only a PASS. --all judges every song in out\\listen.',{venv:true});
+c('qa-self','fix','Gate self-test',PY+T+'qa.py --selftest',R+'\\tests\\yt2gp5\\qa.py',
+  'Each good song must pass and each of its syncs broken on purpose must fail.','Last result 90 of 90. Run after changing the gate.',{venv:true});
+c('compare','fix','One song two ways, to compare by ear',PY+T+'compare.py "Ho Hey"',R+'\\tests\\yt2gp5\\compare.py',
+  'Writes "(steady)" and "(stretched)" .fretboard files beside the song and prints the gate\'s verdict for both.','Import both and play them with Mine on.',{venv:true});
+c('anchors','fix','Key points by synctoolbox',PY+T+'anchors.py "Ho Hey"',R+'\\tests\\yt2gp5\\anchors.py',
+  'Key points at each section start with one steady tempo between them.','Tried on 2026-10-24 and beaten by wavefit; kept for comparison.',{venv:true});
+c('aligner','fix','Wave aligner: line the video up by eye and ear','python tools\\aligner.py "Ho Hey"',R+'\\tools\\aligner.py',
+  'Two waveforms on the tab\'s time with bar lines and note ticks. Drag to move the video, S saves, ? lists the shortcuts. Options: --port N, --no-open.',
+  'The by-hand fix when wavefit cannot. Save writes new syncPoints into the song\'s .fretboard (first version kept as .before-aligner); import with "Replace it". Needs numpy.',{open:'http://127.0.0.1:8433',writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\'});
+c('drumclock','fix','Drum clock: how far the beat sits from the sync',PY+T+'drumclock.py "Ho Hey"',R+'\\tests\\yt2gp5\\drumclock.py',
+  'Splits the recording once into drums, bass, other and vocals (Demucs) and measures the beat\'s offset every 4 bars, to a few ms.','Feeds the gate\'s drum check. --selftest moves stretches 30, 60 and 90 ms and each must be found.',{venv:true,heavy:true});
+c('synctest','fix','Prove the sync on a known answer',PY+T+'synctest.py',R+'\\tests\\yt2gp5\\synctest.py',
+  'The tab\'s own sound as a "recording", moved and slowed by known amounts; every bar must land within 20 ms.','If this fails, the fault is in the sync, not in the song.',{venv:true,writes:R+'\\tests\\yt2gp5\\out\\synctest.json'});
+
+/* ---- measure ---- */
+c('report','measure','Show the improvement table and redraw the dashboard',PY+T+'syncreport.py',R+'\\tests\\yt2gp5\\syncreport.py',
+  'Reads stored results (about 2 s) and prints the ladder of steps: plain wavefit, harmony, ending, bars, polish, wide start.',
+  'Writes out\\truthbench\\report.md and tests\\yt2gp5\\history\\dashboard.html. Options: --refresh, --md, --save, --open.',{writes:R+'\\tests\\yt2gp5\\history\\dashboard.html'});
+c('report-refresh','measure','Judge the real songs again',PY+T+'syncreport.py --refresh',R+'\\tests\\yt2gp5\\syncreport.py',
+  'Runs the gate on each song in out\\listen (about 4 s a song) instead of using saved verdicts.','Do it after a wavefit change.',{venv:true});
+c('report-save','measure','Save a snapshot to the history',PY+T+'syncreport.py --save "what changed"',R+'\\tests\\yt2gp5\\syncreport.py',
+  'Keeps the numbers, constants and git commit in history\\sync-history.json.','Identical numbers are not added twice. Do it after each wavefit change.',{venv:true,writes:R+'\\tests\\yt2gp5\\history\\sync-history.json'});
+c('report-open','measure','Open the dashboard',PY+T+'syncreport.py --open',R+'\\tests\\yt2gp5\\syncreport.py',
+  'Redraws the dashboard from the history and opens it in the browser.','One page, no scripts, no downloads.',{venv:true});
+c('tb-build','measure','Truth benchmark: build the cases',PY+T+'truthbench.py build --songs 16',R+'\\tests\\yt2gp5\\truthbench.py',
+  'Makes cases from AAM songs (real mixes with exact bar times) with different clocks, contents and starting lines. A few minutes, once.',
+  'Needs the AAM data from tools\\datasets.py. Light CPU: 2 processes, 2 threads each.',{venv:true,writes:R+'\\tests\\yt2gp5\\out\\truthbench'});
+c('tb-run','measure','Truth benchmark: run chosen variants',PY+T+'truthbench.py run --variants +bars+harmony+ending',R+'\\tests\\yt2gp5\\truthbench.py',
+  'Fits every case with each of wavefit\'s tries and counts good (within 50 ms), ok (150 ms), bad and declined. About 25 min at 2 jobs.',
+  'Options: --split train|val, --by-case. This is how a wavefit change is judged on exact numbers.',{heavy:true,venv:true});
+c('tb-sweep','measure','Truth benchmark: sweep one setting',PY+T+'truthbench.py sweep LAMBDA 0.01,0.02,0.04 --split train',R+'\\tests\\yt2gp5\\truthbench.py',
+  'Runs the benchmark once per value of a constant.','Tune on train, check on val so overfitting shows.',{heavy:true,venv:true});
+c('startcal','measure','Calibrate the wide start search',PY+T+'startcal.py --jobs 2',R+'\\tests\\yt2gp5\\startcal.py',
+  'For each case and starting line, the shift wavefit finds and its gain next to the true shift.','Not part of the pipeline. Used to pick START_GAIN and START_MIN.',{venv:true,heavy:true});
+
+/* ---- stems ---- */
+c('stems','stems','Good stems of a recording',PY+T+'stems.py "<youtube link>"',R+'\\tests\\yt2gp5\\stems.py',
+  'Six stems (drums, bass, vocals, guitar, piano, other) as WAV, plus a listening page where each stem has Solo and Mute. Options: --uvr, --bssw, --page.',
+  'htdemucs_ft for drums, bass and vocals; htdemucs_6s for guitar and piano. Open the page through the dev server.',{venv:true,heavy:true,writes:R+'\\tests\\yt2gp5\\out\\stems\\<song>\\'});
+c('notecheck','stems','Guitar-notes check',PY+T+'notecheck.py -k champion',R+'\\tests\\yt2gp5\\notecheck.py',
+  'How many of the official tab\'s guitar notes basic-pitch hears in the recording, per Demucs model. Options: --models, --cpu 0.6, --gpu 0.85.',
+  'Uses the song\'s own sync, so it needs no chord line-up.',{venv:true,heavy:true});
+c('sepcheck','stems','Stem model test',PY+T+'sepcheck.py --part a',R+'\\tests\\yt2gp5\\sepcheck.py',
+  'Today\'s split against the RoFormer models: part a scores true stems, part b scores real recordings by guitar notes.','Used to pick the separation chain. --page writes listening pages.',{venv:true,heavy:true});
+c('real','stems','Score the notebook on real recordings',PY+T+'real.py',R+'\\tests\\yt2gp5\\real.py',
+  'Downloads each song\'s audio, plays the Guitar Pro file once, lines the two up by chords and scores the notebook\'s code.','Writes out\\real\\scorecard.md, results.json and a history line.',{venv:true,heavy:true,writes:R+'\\tests\\yt2gp5\\out\\real\\scorecard.md'});
+c('run-nb','stems','Score the notebook on synthesised songs',PY+T+'run.py',R+'\\tests\\yt2gp5\\run.py',
+  'Plays each Guitar Pro song with Fretboard\'s soundfont, runs the notebook\'s own code and scores stems, notes, tempo, bar lines and key.','Writes scorecard.md and flags any score that fell since the last run.',{venv:true,heavy:true});
+c('nb-offline','stems','Run the notebook\'s offline cells',PY+T+'test_notebook.py tools\\colab\\youtube_to_gp5.ipynb out\\nbtest',R+'\\tests\\yt2gp5\\test_notebook.py',
+  'Runs input check, Demucs on CPU, basic-pitch, Guitar Pro writing and zip on made-up audio. Options: --full, --model NAME.','A smoke test before using the notebook on Colab.',{venv:true});
+c('nb-build','stems','Rebuild the Colab notebook',PY+'tools\\colab\\build_notebook.py tools\\colab\\youtube_to_gp5.ipynb',R+'\\tools\\colab\\build_notebook.py',
+  'Builds youtube_to_gp5.ipynb from the cell sources in the script.','The notebook must also run cheaply on a free Colab T4.',{venv:true,writes:R+'\\tools\\colab\\youtube_to_gp5.ipynb'});
+
+/* ---- train ---- */
+c('ds-find','train','Find new dataset candidates','python tools\\datasets.py find',R+'\\tools\\datasets.py',
+  'Lists candidates in CANDIDATES.md for a person to approve.','Step 1. Nothing is downloaded until you approve.',{writes:H+'\\fretboard-data\\CANDIDATES.md'});
+c('ds-get','train','Download the approved datasets','python tools\\datasets.py get',R+'\\tools\\datasets.py',
+  'AAM, Guitar-TECHS, E-GMD and Groove: resumable, checked, with CREDITS.md. --budget GB limits the size.',
+  'Speed follows the network type (80% of the line at home, 1 MB/s on a Public network); --net home|public and --cap MBps override.',{heavy:true,writes:H+'\\fretboard-data'});
+c('ds-status','train','Training data: status','python tools\\datasets.py status',R+'\\tools\\datasets.py',
+  'What is downloaded and what is missing.','Check before starting the factory.');
+c('df-run','train','Make training examples','python tools\\datafactory.py run --aam 20',R+'\\tools\\datafactory.py',
+  'For each AAM song: Spleeter 5 stems (mono 22 kHz FLAC) plus labels.json (notes per stem, beats, chords). Also Guitar-TECHS clips with string and fret. About 100 s a song on CPU, capped at 7 of 12 cores.',
+  'Step 2. Resumable. Makes its own Python 3.10 environment (Spleeter needs 3.11 or older). Options: --from N, --no-gtechs, --gpu.',{heavy:true,writes:H+'\\fretboard-data\\factory'});
+c('df-check','train','Check the labels line up with the stems','python tools\\datafactory.py check --n 5',R+'\\tools\\datafactory.py',
+  'Shifts the labels over each stem\'s onsets: lined up means the best shift is 0 ms.','Step 3.');
+c('df-index','train','Rebuild the training index','python tools\\datafactory.py index',R+'\\tools\\datafactory.py',
+  'Judges older examples and writes train_index.json (hours per instrument). Stems with "use": false are skipped in training.','Step 4.',{writes:H+'\\fretboard-data\\factory\\train_index.json'});
+c('df-view','train','Look at the examples in a browser','python tools\\factoryview.py',R+'\\tools\\factoryview.py',
+  'Progress of the run, and each example: play a stem with tones at the label onsets, waveform, piano roll with beats and chords.',
+  'Read-only; can run during a run. Options: --port N, --no-open.',{open:'http://127.0.0.1:8432'});
+
+/* ---- auto ---- */
+c('auto-next','auto','Autopilot: do the next open task','python tools\\autopilot.py',R+'\\tools\\autopilot.py',
+  'Runs Claude headless on the next open task in autopilot\\tasks.md, checks the work, retries on a failure, has a cheaper model review it, then marks it done, waiting [?] or stuck [!].',
+  'Never skips permissions. Create autopilot\\STOP to stop after the current step. Questions go to autopilot\\questions.md.',{heavy:true});
+c('auto-loop','auto','Autopilot: keep going','python tools\\autopilot.py --loop',R+'\\tools\\autopilot.py',
+  'Until the list is done, the day\'s budget is spent, or STOP exists.','Use it while you are away.',{heavy:true});
+c('auto-status','auto','Autopilot: status','python tools\\autopilot.py --status',R+'\\tools\\autopilot.py',
+  'What is done, waiting and open. --dry-run shows the next prompt and runs nothing.','');
+c('worker-dry','auto','Song worker: show what was asked','node scripts\\songworker.mjs --dry',R+'\\scripts\\songworker.mjs',
+  'Syncs the private library and lists the songs you asked for on the phone. Runs nothing.',
+  'The worker is one more device of the same library. Needs %USERPROFILE%\\.fretboard\\sync.json set up once (repo and token, the same as the app\'s Sync panel).');
+c('worker-run','auto','Song worker: one round','node scripts\\songworker.mjs',R+'\\scripts\\songworker.mjs',
+  'For each asked song: finds the video, runs fromlink.py and delivers it only on a PASS. Otherwise a short reason goes on the placeholder.',
+  'Phone: Ask my computer. Computer: this. Phone: the finished song arrives by sync. One worker at a time; PAUSE file in %USERPROFILE%\\.fretboard\\worker holds it.',{heavy:true});
+c('worker-loop','auto','Song worker: keep going','node scripts\\songworker.mjs --loop --every 5',R+'\\scripts\\songworker.mjs',
+  'A round every 5 minutes (--every MIN) until stopped.','Not set up as a scheduled task yet.',{heavy:true});
+
+/* ---- how it fits: lanes of steps, each step opens its command ---- */
+const LANES = [
+  {t:'A song asked for on the phone', s:[['plain','Phone','Ask my computer','run'],['worker-run','Song worker','songworker.mjs'],['ytfind','Find the video','ytfind.py'],['fromlink','Make it','fromlink.py'],['qa','Gate','qa.py'],['plain','Phone','sync delivers a PASS']]},
+  {t:'A song by hand, from a link', s:[['ug-start','UG helper','start.cmd'],['fromlink','One command','fromlink.py'],['wavefit','Fit','wavefit.py'],['aligner','Fix by ear','aligner.py'],['qa','Gate','qa.py'],['plain','App','Replace it']]},
+  {t:'Measure and tune the sync', s:[['ds-get','AAM data','datasets.py get'],['tb-build','Build cases','truthbench build'],['tb-run','Run variants','truthbench run'],['report','Table','syncreport.py'],['report-save','Snapshot','--save'],['report-open','Dashboard','--open']]},
+  {t:'Training data for TabMaker', s:[['ds-find','Find','datasets find'],['ds-get','Download','datasets get'],['df-run','Make examples','datafactory run'],['df-check','Check','datafactory check'],['df-view','Look','factoryview.py']]},
+  {t:'Change the app and ship it', s:[['app-preview','Preview','port 8421'],['test-all','Test','test.mjs'],['roundtrip','Round-trip','roundtrip.py'],['ship-check','Check','ship --check'],['ship','Ship','ship.mjs'],['apk-bump','Phone','apk.mjs']]}
+];
+
+/* ---- rendering ---- */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const byId = id => C.find(x => x.id === id);
+const gById = id => GROUPS.find(g => g.id === id);
+const dirOf = x => x.dir || R;
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+function pathRow(label, p) {
+  return '<dt>' + label + '</dt><dd><span class="path"><code>' + esc(p) + '</code><button class="cp" type="button" data-cp="' + esc(p) + '">Copy path</button></span></dd>';
+}
+function cardHtml(x) {
+  const g = gById(x.g);
+  const tags = (x.heavy ? '<span class="tag heavy">heavy on the PC</span>' : '') + (x.open ? '<span class="tag">opens ' + esc(x.open.replace('http://', '')) + '</span>' : '') + (x.venv ? '<span class="tag">yt2gp5 Python</span>' : '');
+  const pre = x.nocd ? '' : '<span class="pr">cd ' + esc(dirOf(x) === R ? 'to the project, then' : 'to ' + dirOf(x) + ', then') + '</span>\n';
+  const rows = (x.nocd ? pathRow('Run from', 'Anywhere') .replace('<button class="cp" type="button" data-cp="Anywhere">Copy path</button>', '') : pathRow('Run from', dirOf(x))) +
+    (x.file ? pathRow('Script', x.file) : '') +
+    '<dt>What it does</dt><dd>' + esc(x.does) + '</dd>' +
+    (x.fits ? '<dt>How it fits</dt><dd>' + esc(x.fits) + '</dd>' : '') +
+    (x.writes ? pathRow('Writes', x.writes) : '');
+  return '<article class="card" id="c-' + esc(x.id) + '" style="--h:' + g.h + '"><div class="head"><p class="title">' + esc(x.title) + '</p><div class="tags">' + tags + '</div></div>' +
+    '<div class="code"><pre>' + pre + esc(x.cmd) + '</pre><button class="copy" type="button" data-id="' + esc(x.id) + '" data-raw="' + esc(x.cmd) + '" data-dir="' + esc(x.nocd ? '' : dirOf(x)) + '">Copy</button></div>' +
+    '<dl>' + rows + '</dl></article>';
+}
+function flowHtml() {
+  return '<div class="flowhead"><h2>How the commands fit together</h2></div><p class="lead">Each row is a job, left to right. Press a step to jump to its command. Dashed boxes are things you do in the app or on the phone.</p>' +
+    LANES.map(l => '<div class="lane"><h3>' + esc(l.t) + '</h3><div class="steps">' + l.s.map((st, i) => {
+      const arrow = i ? '<span class="arrow" aria-hidden="true">→</span>' : '';
+      if (st[0] === 'plain') return arrow + '<div class="node plain" style="--h:0"><b>' + esc(st[1]) + '</b><span>' + esc(st[2]) + '</span></div>';
+      const x = byId(st[0]);
+      return arrow + '<button class="node" type="button" data-jump="' + esc(x.id) + '" style="--h:' + gById(x.g).h + '"><b>' + esc(st[1]) + '</b><span>' + esc(st[2]) + '</span></button>';
+    }).join('') + '</div></div>').join('');
+}
+function listHtml(list) {
+  return GROUPS.filter(g => list.some(x => x.g === g.id)).map(g =>
+    '<section id="s-' + g.id + '" style="--h:' + g.h + '"><div class="ghead"><i></i><h2>' + esc(g.name) + '</h2></div><p class="gnote">' + esc(g.note) + '</p>' +
+    list.filter(x => x.g === g.id).map(cardHtml).join('') + '</section>').join('');
+}
+function headerHtml() {
+  return '<div class="root"><span>Project folder</span><code>' + esc(R) + '</code><button class="cp" type="button" data-cp="' + esc(R) + '">Copy path</button></div>' +
+    '<div class="root"><span>Python for the sync tools</span><code>' + esc(VENVPY) + '</code><button class="cp" type="button" data-cp="' + esc(VENVPY) + '">Copy path</button></div>';
+}
+
+/* copy and jump handlers: used by this page and by the downloaded copy */
+function bind() {
+  const cdp = document.getElementById('cdp');
+  const note = t => { const el = document.getElementById('toast'); if (!el) return; el.textContent = t; el.hidden = false; clearTimeout(note.t); note.t = setTimeout(() => { el.hidden = true; }, 1800); };
+  const put = async text => {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} ta.remove(); return ok;
+  };
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.classList.contains('copy')) {
+      const dir = b.dataset.dir, text = (dir && cdp && cdp.checked ? 'cd -LiteralPath "' + dir + '"; ' : '') + b.dataset.raw;
+      const ok = await put(text); b.textContent = ok ? 'Copied' : 'Select, Ctrl+C'; b.classList.toggle('done', ok);
+      note(ok ? 'Copied. Paste it into PowerShell.' : 'Could not copy: select the text and press Ctrl+C.');
+      setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('done'); }, 1500);
+    } else if (b.dataset.cp) {
+      const ok = await put(b.dataset.cp); note(ok ? 'Path copied.' : 'Could not copy the path.');
+    } else if (b.dataset.jump) {
+      const card = document.getElementById('c-' + b.dataset.jump); if (!card) return;
+      card.scrollIntoView({block: 'start'}); card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1600);
+    }
+  });
+}
+
+/* downloads */
+function markdown() {
+  let m = '# Fretboard commands\n\nRun every command in PowerShell 5.1. Project folder: `' + R + '`\n\nPython for the sync tools: `' + VENVPY + '`\n\nPrefix for commands run from the project folder:\n\n```\n' + CD(R).trim() + '\n```\n';
+  GROUPS.forEach(g => {
+    const list = C.filter(x => x.g === g.id); if (!list.length) return;
+    m += '\n## ' + g.name + '\n\n' + g.note + '\n';
+    list.forEach(x => {
+      m += '\n### ' + x.title + '\n\n```\n' + (x.nocd ? '' : CD(dirOf(x))) + x.cmd + '\n```\n\n';
+      m += '- Run from: ' + (x.nocd ? 'anywhere' : '`' + dirOf(x) + '`') + '\n';
+      if (x.file) m += '- Script: `' + x.file + '`\n';
+      m += '- What it does: ' + x.does + '\n';
+      if (x.fits) m += '- How it fits: ' + x.fits + '\n';
+      if (x.writes) m += '- Writes: `' + x.writes + '`\n';
+      if (x.open) m += '- Opens: ' + x.open + '\n';
+      if (x.heavy) m += '- Heavy on the PC\n';
+    });
+  });
+  m += '\n## How the commands fit together\n';
+  LANES.forEach(l => { m += '\n- ' + l.t + ': ' + l.s.map(st => (st[0] === 'plain' ? st[1] + ' (' + st[2] + ')' : byId(st[0]).title)).join(' → ') + '\n'; });
+  return m;
+}
+function standalone() {
+  const css = document.getElementById('css').textContent;
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fretboard commands</title>' +
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">' +
+    '<style>' + css + '</style></head><body><div class="top"><div class="wrap"><h1>Fretboard commands</h1><p class="sub">Every command in the project, in PowerShell, with the folder to run it from, what it does and where it sits in the work. Saved ' + new Date().toISOString().slice(0, 10) + '.</p>' +
+    '<div class="bar"><label class="sw"><input id="cdp" type="checkbox" checked> Copy with the <code>cd</code> line</label></div></div></div>' +
+    '<div class="wrap" id="app">' + headerHtml() + flowHtml() + listHtml(C) + '</div><div id="toast" class="toast" hidden></div>' +
+    '<script>const R=' + JSON.stringify(R) + ';(' + bind.toString() + ')();<' + '/script></body></html>';
+}
+async function save(downloads, filename, data, msg) {
+  try { await downloads.save({filename, data}); toast(msg); } catch (err) {
+    toast(err && err.code === 'declined' ? 'Not saved.' : 'Could not save here: ' + ((err && err.message) || 'unavailable'));
+  }
+}
+function toast(t) { const el = document.getElementById('toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2200); }
+
+/* page */
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+let group = '';
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const list = C.filter(x => (!group || x.g === group) && (!q || (x.title + ' ' + x.cmd + ' ' + x.does + ' ' + x.fits + ' ' + (x.file || '')).toLowerCase().includes(q)));
+  const chips = '<div class="chips"><button class="chip" type="button" data-group="" aria-pressed="' + (!group) + '">All <span>' + C.length + '</span></button>' +
+    GROUPS.map(g => '<button class="chip" type="button" data-group="' + g.id + '" aria-pressed="' + (group === g.id) + '" style="--h:' + g.h + '"><i></i>' + esc(g.name) + ' <span>' + C.filter(x => x.g === g.id).length + '</span></button>').join('') + '</div>';
+  document.getElementById('app').innerHTML = headerHtml() + (q || group ? '' : flowHtml()) + chips +
+    (list.length ? listHtml(list) : '<div class="empty">Nothing matches “' + esc(q) + '”.</div>');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  group = b.dataset.group; render();
+});
+document.getElementById('q').addEventListener('input', render);
+document.getElementById('cdp').checked = store.get('fb-cmd-cd') !== '0';
+document.getElementById('cdp').addEventListener('change', e => store.set('fb-cmd-cd', e.target.checked ? '1' : '0'));
+bind();
+render();
+(async () => {
+  const claude = window.claude; if (!claude || !claude.use) return;
+  const downloads = await claude.use('downloads'); if (!downloads) return;
+  const h = document.getElementById('dl-html'), m = document.getElementById('dl-md');
+  h.hidden = false; m.hidden = false;
+  h.onclick = () => save(downloads, 'Fretboard commands.html', standalone(), 'Saved the page.');
+  m.onclick = () => save(downloads, 'Fretboard commands.md', markdown(), 'Saved the list.');
+})();
+</script>
