@@ -65,6 +65,8 @@ function showError(message) {
 
 async function getState() { return (await getValue('syncState')) || {}; }
 
+export const syncIsOn = () => !!config;
+
 export async function syncNow() {
   if (!config) return;
   if (busy) { again = true; return; }

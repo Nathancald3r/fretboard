@@ -21,7 +21,8 @@ import { sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
 import { initDrawer, openDrawer, addToSetlist, addSetlist, setlistTargetName } from './drawer.js';
 import { popMenu } from './menu.js';
-import { initSync } from './syncui.js';
+import { initSync, syncIsOn } from './syncui.js';
+import { wantRecord, wantLabel, wantOf, wantRetry } from './wanted.js';
 import { parseFilename } from './tabinfo.js';
 import { initBulk, selecting, isPicked, toggle as togglePick, drawBar, keyNote } from './bulk.js';
 import { soundFor } from './sounds.js';
@@ -57,7 +58,7 @@ async function route() {
   if (view === 'library' && name !== 'song' && name !== 'edit') {
     const last = lastSongId();
     const to = last && await getSong(last) ? last
-      : (await listSongs()).filter((s) => chartType(s) !== 'exercise').sort(SORTS.recent)[0]?.id; // deleted: the latest one
+      : (await listSongs()).filter((s) => chartType(s) !== 'exercise' && !s.want).sort(SORTS.recent)[0]?.id; // deleted: the latest one
     if (to) { location.replace(`#song/${to}`); return; }
   }
   if (name === 'song' || name === 'edit') {
@@ -65,6 +66,7 @@ async function route() {
   }
   if (name === 'song') {
     song = await getSong(Number(arg));
+    if (song?.want) { toast(wantLabel(song)); location.replace('#library'); return; } // asked for, not here yet
     const sub = location.hash.split('/')[2];
     const asText = song?.kind === 'text' && sub !== 'play';
     view = !song ? 'library' : song.kind === 'sheet' || (sub === 'sheet' && song.sheets?.length) ? 'sheet' : asText ? 'text' : 'player';
@@ -143,13 +145,14 @@ async function renderLibrary() {
     const head = letters && L !== letter ? `<li class="lib-letter" aria-hidden="true">${L}</li>` : '';
     letter = L;
     const mine = keyNote(s);
-    return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}${isPicked(s.id) ? ' picked' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
+    const want = wantOf(s);
+    return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}${isPicked(s.id) ? ' picked' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}${want ? ` data-want="${want.state}"` : ''}>
       ${selecting() ? `<input type="checkbox" class="lib-check" tabindex="-1" aria-label="Select ${escape(s.title)}"${isPicked(s.id) ? ' checked' : ''}>` : ''}
-      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}${selecting() && officialGaps(s).length ? `<span class="lib-why">${escape(officialGaps(s).join(' · '))}</span>` : ''}</a>
+      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${want ? escape(wantLabel(s)) : escape(CHART_LABEL[type]) + (s.chordSheet && type !== 'chords' ? ' + chords' : '')}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}${selecting() && officialGaps(s).length ? `<span class="lib-why">${escape(officialGaps(s).join(' · '))}</span>` : ''}</a>
       ${s.rating ? `<span class="lib-stars" title="Your ranking">★${s.rating}</span>` : ''}
       <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu">⋮</button></li>`;
   }).join('') || `<li class="lib-empty">${q
-    ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button></div>`
+    ? `<p>“${escape(q)}” isn’t in your library${shown.length < songsOnly.length ? ' (with this filter)' : ''}.</p><div class="row">${helperPossible() ? '<button class="primary small" data-qi="quick" title="The UG helper finds it on Ultimate Guitar, saves it and adds it here">Quick add</button>' : ''}<button class="${helperPossible() ? 'ghost' : 'primary'} small" data-qi="manual" title="Opens the Ultimate Guitar search: download the file yourself">${helperPossible() ? 'Manual' : 'Find on Ultimate Guitar'}</button>${helperPossible() ? '' : '<button class="primary small" data-qi="want" title="Your computer finds the official tab and video, lines them up and sends the song here">Ask my computer</button>'}</div>`
     : songsOnly.length ? '<p class="muted">No songs here.</p>' : '<p class="muted">No songs yet. Type a song above to get it from Ultimate Guitar, or drop a file here.</p>'}</li>`;
   if (focused) $('library-list').querySelector(`.lib-row[data-id="${focused}"] > a`)?.focus();
   drawBar();
@@ -240,17 +243,39 @@ async function undoCombineSplit() {
 
 async function onLibraryClick(e) {
   const qi = e.target.closest('[data-qi]');
-  if (qi) { findSong(qi.dataset.qi); return; }
+  if (qi) { if (qi.dataset.qi === 'want') askComputer($('find-query').value); else findSong(qi.dataset.qi); return; }
   const row = e.target.closest('.lib-row');
   if (!row) return;
+  if (row.dataset.want && !selecting() && e.target.closest('a')) { // asked for, not here yet: say where it stands
+    e.preventDefault();
+    const s = libSongs.find((x) => x.id === Number(row.dataset.id));
+    if (s) toast(wantLabel(s) + (row.dataset.want === 'failed' ? ' (⋮ → Try again)' : ''), 5000);
+    return;
+  }
   if (selecting()) { e.preventDefault(); togglePick(Number(row.dataset.id)); return; } // picking songs: a tap ticks it
   if (e.target.closest('[data-act=menu]')) { openCardMenu(row, null); return; }
   if (e.target.closest('a')) openDrawer(false); // the song opens (its link)
 }
 
+// "Get this song for me": a placeholder in the library; the worker on the computer (scripts/songworker.mjs)
+// finds the official tab and video, lines them up, and the finished song replaces it by sync.
+async function askComputer(query = '') {
+  const { songQuery } = await import('./ytsearch.js');
+  const q = songQuery({ title: query.trim() });
+  const f = await ask({ title: 'Ask my computer for a song', text: 'It finds the official Ultimate Guitar tab and the official video, lines them up and sends the song here (a few minutes, when the computer is on).', ok: 'Ask', fields: { title: q.title, artist: q.artist } });
+  const title = f?.title.trim();
+  if (!title) return;
+  if (!syncIsOn()) { toast('Turn on Sync and backup first: that is how the request reaches your computer.', 6000); $('sync-dialog').showModal(); return; }
+  await putSong(wantRecord({ title, artist: f.artist.trim() }));
+  $('find-query').value = '';
+  toast(`Asked for “${title}”. It shows here when your computer has it.`, 6000);
+  renderLibrary();
+}
+
 async function cardAct(act, id) {
   const song = await getSong(id);
   if (!song) return;
+  if (act === 'want-retry') { await updateSong(id, wantRetry(song)); toast('Asked again.'); renderLibrary(); return; }
   if (act === 'edit') { location.hash = `edit/${id}`; return; }
   if (act === 'practice') { location.hash = `song/${id}`; return; }
   if (act === 'setlist') { await addToSetlist(id); return; }
@@ -319,6 +344,13 @@ function openCardMenu(row, at) {
   const song = libSongs.find((s) => s.id === id);
   if (!song) return;
   const type = row.dataset.type;
+  if (row.dataset.want) { // a song asked for: only retry and delete make sense
+    popMenu(at || row.querySelector('[data-act=menu]'), [
+      row.dataset.want === 'failed' ? { k: 'want-retry', label: 'Try again', hint: 'Ask the computer once more' } : null,
+      { k: 'delete', label: row.dataset.want === 'failed' ? 'Delete' : 'Cancel the request', danger: true },
+    ], (k) => cardAct(k, id));
+    return;
+  }
   const editable = type !== 'chords' && type !== 'exercise';
   const list = setlistTargetName();
   popMenu(at || row.querySelector('[data-act=menu]'), [
@@ -1184,7 +1216,7 @@ async function main() {
   initVocal();
   initStrum();
   initDrawer();
-  initQuickImport({ importFiles, openEditor, toast, renderLibrary, openSong: (id, { playAlong = false } = {}) => {
+  initQuickImport({ importFiles, openEditor, toast, renderLibrary, askComputer, openSong: (id, { playAlong = false } = {}) => {
     location.hash = `song/${id}`;
     if (playAlong) openPlayAlongSheet();
   } });

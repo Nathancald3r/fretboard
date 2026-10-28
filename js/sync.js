@@ -9,6 +9,8 @@
 // whether to upload, download, delete or leave it. Audio files added for play-along stay
 // on their device (YouTube links sync).
 
+import { cleanWant } from './wanted.js';
+
 export const DIR = 'fretboard';
 const MANIFEST = `${DIR}/library.json`;
 const songPath = (uid) => `${DIR}/songs/${String(uid).replace(/[^\w-]/g, '')}.json`;
@@ -95,6 +97,10 @@ export function songFromRecord(rec, local = null) {
     if (!song.version) delete song.version;
   }
   if (song.versionNote !== undefined && typeof song.versionNote !== 'string') delete song.versionNote;
+  if (song.want !== undefined) { // a song asked for, waiting for the computer (js/wanted.js)
+    song.want = cleanWant(song.want);
+    if (!song.want) delete song.want;
+  }
   if (song.skips !== undefined) song.skips = Array.isArray(song.skips) ? song.skips.filter((k) => Array.isArray(k) && k.length === 2 && k.every(Number.isFinite) && k[1] > k[0]) : [];
   if (song.recording?.kind === 'youtube' && !/^[\w-]{11}$/.test(song.recording.id)) delete song.recording;
   if (local) {

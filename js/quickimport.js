@@ -421,6 +421,7 @@ export function moreMenu(anchor) {
     { k: 'files', label: 'Import files…', hint: 'Guitar Pro, Power Tab, MusicXML, MIDI, ChordPro, PDF, text' },
     navigator.clipboard?.readText ? { k: 'clip', label: 'Paste from clipboard', hint: 'A text tab or chords you copied' } : null,
     { k: 'type', label: 'Type / paste text tab' },
+    !helperPossible() ? { k: 'want', label: 'Ask my computer for a song…', hint: 'Official tab + video, lined up' } : null,
     canWatch ? { k: 'downloads', label: 'Import new downloads', hint: 'Tab files from the last 14 days' } : null,
     canWatch ? { k: 'pdfs', label: q ? `PDFs for “${q}”` : 'PDFs for a song', hint: q ? 'Every part in Downloads and UG Songs' : 'Type the song first', disabled: !q } : null,
     '-',
@@ -432,6 +433,7 @@ export function moreMenu(anchor) {
       else $('file-input').click();
     } else if (k === 'clip') pasteFromClipboard(ctx.openEditor);
     else if (k === 'type') ctx.openEditor(null);
+    else if (k === 'want') ctx.askComputer(q);
     else if (k === 'downloads') checkDownloads(ctx.importFiles, ctx.toast).then(() => showStatus());
     else if (k === 'pdfs') importSongPdfs(ctx.importFiles, ctx.toast);
     else if (k === 'sync') $('sync-dialog').showModal();
@@ -807,8 +809,8 @@ export async function watchDownloads({ query = '', url = '' } = {}) {
   await showStatus();
 }
 
-export function initQuickImport({ importFiles, openEditor, toast, openSong }) {
-  ctx = { importFiles, openEditor, toast, openSong };
+export function initQuickImport({ importFiles, openEditor, toast, openSong, askComputer }) {
+  ctx = { importFiles, openEditor, toast, openSong, askComputer };
   showStatus();
   showQueue();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { autoImport(); checkRuns(); if (!helperState) showStatus(); } });
