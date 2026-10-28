@@ -62,6 +62,11 @@ APPROVED = [
      "credit": "(see E-GMD above)", "urls": [("e-gmd-v1.0.0.zip", MAG + "e-gmd/v1.0.0/e-gmd-v1.0.0.zip", 96422999145, None)]},
 ]
 
+# Downloaded once and deleted (2026-10-28): nothing reads them. The data factory makes its own stems from the mixes and
+# fetches a mix it doesn't have by byte range, so AAM's own stems and the mixes past song 1000 are dead weight (78 GB).
+# `get` skips these unless named with --only.
+NOT_USED = {"aam-stems-1", "aam-stems-2", "aam-stems-3", "aam-mixes-2", "aam-mixes-3"}
+
 # Never download these, even if a search finds them (the handoff's "Not OK" list).
 BANNED = ["lmd", "guitarset", "maestro", "medleydb", "musdb", "idmt", "dadagp", "slakh", "lakh", "goat", "ultimate guitar", "youtube"]
 OK_LICENCES = {"cc-by-4.0", "cc-by-3.0", "cc-by-2.0", "cc0-1.0", "cc-zero", "mit", "apache-2.0", "cc-by", "cc0", "pddl", "odc-by", "public domain"}
@@ -242,6 +247,8 @@ def get(budget_gb, only):
         nonlocal used
         for ds in APPROVED:
             if (only and ds["id"] not in only) or m.get(ds["id"], {}).get("done"):
+                continue
+            if ds["id"] in NOT_USED and ds["id"] not in only:
                 continue
             files = files_of(ds)
             size = sum(f[2] for f in files) / 1e9
@@ -449,7 +456,7 @@ def status():
     m = manifest()
     for ds in APPROVED:
         e = m.get(ds["id"])
-        state = "done" if e and e.get("done") else ("partly" if e else "-")
+        state = "done" if e and e.get("done") else ("partly" if e else ("unused" if ds["id"] in NOT_USED else "-"))
         print(f"{state:7} {ds['id']:14} {ds['title']}")
     print(f"{free_gb():.0f} GB free on disk; data in {DATA}")
 
