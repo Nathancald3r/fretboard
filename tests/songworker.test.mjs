@@ -106,6 +106,26 @@ try {
   const tabSong = [...p.songs.values()].find((s) => s.title === 'Count On Me');
   assert.deepEqual([tabSong.kind, tabSong.want, tabSong.recording, tabSong.syncPoints], ['gp', undefined, undefined, undefined], 'the tab, with no video or sync');
 
+  // timing only (fromlink exit 4): the sync checks pass and only the tab's chords differ from the video: delivered like a PASS.
+  // A plain LISTEN is not delivered, whatever file it made.
+  const stressed = join(tmp, 'Stressed_Out.fretboard');
+  writeFileSync(stressed, JSON.stringify({ format: 'fretboard-songs', version: 1, songs: [{ ...tabEntry, title: 'Stressed Out', artist: 'twenty one pilots', recording: { kind: 'youtube', id: 'pXRviuL6vMY', title: 't', author: 'a' }, syncPoints: [[0, 453], [4, 9000]] }] }));
+  await p.store.putSong(wantRecord({ title: 'Stressed Out', artist: 'twenty one pilots' }));
+  await sync(p, remote);
+  out = await round({ store, remote, runner: async () => ({ verdict: 'LISTEN', file: stressed, video: 'pXRviuL6vMY', timingOnly: true }) });
+  assert.deepEqual(out, { done: 1, failed: 0, asked: 1 });
+  await sync(p, remote);
+  const so = [...p.songs.values()].filter((s) => s.title === 'Stressed Out');
+  assert.deepEqual([so.length, so[0].kind, so[0].want, so[0].syncPoints[0][1]], [1, 'gp', undefined, 453], 'delivered, with its sync, the placeholder replaced');
+  await p.store.putSong(wantRecord({ title: 'Believer', artist: 'Imagine Dragons' }));
+  await sync(p, remote);
+  out = await round({ store, remote, runner: async () => ({ verdict: 'LISTEN', file: tabFile, video: 'x' }) });
+  assert.deepEqual(out, { done: 0, failed: 1, asked: 1 }, 'a LISTEN that needs a listen stays on the computer');
+  await sync(p, remote);
+  assert.equal(wantOf([...p.songs.values()].find((s) => s.title === 'Believer')).state, 'failed');
+  await p.store.deleteSong([...p.songs.values()].find((s) => s.title === 'Believer').id);
+  await sync(p, remote);
+
   // paused and dry rounds fetch nothing
   await p.store.putSong(wantRecord({ title: 'Pompeii', artist: 'Bastille' }));
   await sync(p, remote);

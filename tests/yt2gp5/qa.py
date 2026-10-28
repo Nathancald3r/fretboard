@@ -9,6 +9,10 @@ PASS    the tab is the recording, all the way through, on one steady tempo (or o
         that changes speed), within 15 ms. Ship it.
 LISTEN  it passes, but a person should hear some bars (the tab's rhythm half a beat out there, parts left out).
 FAIL    don't ship: the wrong recording, a sync that is off, drifts, jumps, or runs past the recording.
+TIMING ONLY (a LISTEN with "deliver": true, 2026-10-28, asked by the user: "timing is the goal, not notes"): the match check
+        says the tab isn't the band's version (other chords, an extra intro), but every timing check below passes and
+        the mean chord distance is at most TIMING_DIST_MAX. The sync is right, so the worker delivers it. Any other
+        fail, or a listen about a step or a half beat, keeps it from being delivered.
 
 The checks (all from the recording itself, none from Beat This!, which can sit on the off-beats):
   match    real.whole_match said the recording is this tab all the way through (listen.py's info "ok"). A
@@ -55,6 +59,7 @@ END_S = 1.0       # the last bar may start at most this far past the recording's
 SECTION_JUMP_PCT = 2 * syncqa.SECTION_PCT  # a tempo change where a section starts (one tempo per section)
 FREE_INTRO_S = 20.0         # a free intro: the match may fail only in this much of the tab's start
 FREE_INTRO_LONGER_S = 10.0  # and the band may take this much longer over it
+TIMING_DIST_MAX = 0.2       # timing-only: the tab's chords may differ from the recording's by at most this (mean chord distance; real songs 0.09-0.16)
 
 
 def free_intro(info):
@@ -125,10 +130,11 @@ def judge(s, points=None, env=None, rec_c=None):
     length = len(env) * HOP / SR
     fails, listens = [], []
     intro = None if info.get("ok") else free_intro(info)
+    differs = None  # the tab isn't the recording all the way through: judged last, once the timing checks are in
     if intro:
         listens.append(f"match: a free intro, listen to the first {intro:.0f} s (the rest is this tab all the way through)")
     elif not info.get("ok"):
-        fails.append(f"match: the recording isn't this tab all the way through (chord distance {info.get('dist')}, worst {info.get('worst')})")
+        differs = f"the recording isn't this tab all the way through (chord distance {info.get('dist')}, worst {info.get('worst')})"
     ps = sorted(points)
     have = {p for p, _ in ps}
     if len(have) < len(bars):
@@ -138,7 +144,7 @@ def judge(s, points=None, env=None, rec_c=None):
     if ps and ps[-1][1] / 1000 > length + END_S:
         fails.append(f"points: the last bar starts {ps[-1][1] / 1000 - length:.1f} s after the recording ends")
     if len(ps) < 2:
-        return {"verdict": "FAIL", "fails": fails or ["points: no sync"], "listen": []}
+        return {"verdict": "FAIL", "fails": ([f"match: {differs}"] if differs else []) + (fails or ["points: no sync"]), "listen": [], "deliver": False}
     sync = Sync.from_points([b[0] for b in bars], ps)
     # speed: each bar's tempo in the video (bars with a point at both ends)
     x = np.array([bars[p][0] for p, _ in ps])
@@ -206,8 +212,18 @@ def judge(s, points=None, env=None, rec_c=None):
     out_parts = info.get("left_out") or []
     if out_parts:
         listens.append(f"parts left out (wrong bar count): {', '.join(out_parts)}")
+    # Timing is the goal, not notes (the user, 2026-10-28; Stressed Out sounds synced, its tab has other chords): a tab that
+    # differs from the recording is no sync failure when every timing check above passed and the recording is still plainly
+    # this song. Then it is a LISTEN that the worker delivers; any other fail keeps it a FAIL, as before.
+    timing_only = bool(differs) and not fails and (info.get("dist") or 0) <= TIMING_DIST_MAX
+    if differs and timing_only:
+        listens.insert(0, f"match: the tab's chords differ from the recording, but every timing check passes {differs[differs.index('(') :]}")
+    elif differs:
+        fails.insert(0, f"match: {differs}")
     verdict = "FAIL" if fails else "LISTEN" if listens else "PASS"
-    return {"verdict": verdict, "fails": fails, "listen": listens, "notes": notes, "off_ms": off, "lock": round(lock, 3),
+    # delivered: a PASS, or a timing-only LISTEN whose other listens only say a check can't tell (the drum clock), never a step or a half beat out
+    deliver = verdict == "PASS" or (timing_only and all(l.startswith(("match:", "drums:")) for l in listens))
+    return {"verdict": verdict, "deliver": deliver, "timing_only": timing_only, "fails": fails, "listen": listens, "notes": notes, "off_ms": off, "lock": round(lock, 3),
             "drum_level_ms": clock and clock["level_ms"], "drum_clear": clock and clock["clear"],
             "half_beat_bars": st["half_beat_bars"], "drift_bars": st["drift_bars"], "differences": diffs}
 
@@ -260,6 +276,22 @@ def selftest(names):
         ok &= passed
         rows.append({"song": n, "case": "as made", "want": "pass", "got": good["verdict"], "right": passed, "why": good["fails"] + good["listen"]})
         other = next((load(m) for m in ready() if m != n), None)
+        # the timing-only verdict: the same song, told its tab's chords differ. Right sync: a LISTEN the worker delivers (or a PASS
+        # for a song that matches anyway); the wrong recording with those chords must still fail (the chords can't excuse it)
+        odd = {**s, "info": {**s["info"], "ok": False, "dist": 0.14, "worst": 0.2, "head_s": 0.0, "tail_s": 0.0, "parts": []}}
+        v = judge(odd)
+        # delivered only where the song's own listens say nothing but "the chords differ" or "the drum clock can't tell";
+        # a step, a half beat, a part left out or an intro the gate already listed keeps it for a person (How Great, Trust In God, Believer)
+        plain = all(l.startswith(("match:", "drums:")) for l in good["listen"])
+        right = v["verdict"] != "FAIL" and v["deliver"] == plain
+        ok &= right
+        rows.append({"song": n, "case": "the tab's chords differ", "want": "deliver", "got": f"{v['verdict']}{'+d' if v['deliver'] else ''}", "right": right,
+                     "why": v["fails"] + v["listen"]})
+        if other is not None:
+            v = judge(odd, env=other["env"], rec_c=other["rec_c"])
+            right = v["verdict"] == "FAIL" and not v["deliver"]
+            ok &= right
+            rows.append({"song": n, "case": "wrong recording, chords differ", "want": "FAIL", "got": v["verdict"], "right": right, "why": v["fails"]})
         for case, pts in breaks(s, other).items():
             got = (judge(s, env=pts[1], rec_c=pts[2]) if isinstance(pts, tuple) and pts[0] == "env" else
                    judge(s, points=pts[1], env=pts[2], rec_c=pts[3]) if isinstance(pts, tuple) else judge(s, points=pts))
@@ -293,6 +325,8 @@ def show(name, v):
         print(f"         listen to {f}")
     for f in v.get("notes", []):
         print(f"         ok: {f}")
+    if v["verdict"] == "LISTEN" and v.get("deliver"):
+        print("         timing only: the worker delivers this (the sync is right; the tab just isn't the band's version)")
 
 
 def main():

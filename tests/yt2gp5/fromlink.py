@@ -15,7 +15,8 @@ What it does, each step skipped when it's done already:
 Prints the .fretboard file at the end: open it in Fretboard (Import files).
 --tab-only --title T [--artist A] [--ug URL]: no link, no video, no line-up: steps 2-4 only, and the official tab as a
 .fretboard (the user chose not to sync a video). Prints "Done: <file>", exit 0.
-Exit codes: 0 PASS, 1 failed, 2 LISTEN (made, but have a listen), 3 FAIL (made, sync is off).
+Exit codes: 0 PASS, 1 failed, 2 LISTEN (made, but have a listen), 3 FAIL (made, sync is off),
+4 LISTEN, timing only (made; the sync checks pass and only the tab's chords differ from the recording: the worker delivers it).
 """
 import argparse
 import json
@@ -294,10 +295,12 @@ def main():
     fb = next(iter(sorted(out.glob("*.fretboard"), key=lambda p: p.stat().st_mtime, reverse=True)), None)
     verdict = json.loads((out / "qa.json").read_text(encoding="utf-8")) if (out / "qa.json").exists() else {}
     v_ = str(verdict.get("verdict") or verdict.get("result") or "").upper()
-    say(f"\nDone: {fb}\nOpen it in Fretboard (Import files). Sync check: {v_ or '?'}")
+    timing = v_ == "LISTEN" and bool(verdict.get("deliver"))  # the sync is right; the tab just isn't the band's version
+    say(f"\nDone: {fb}\nOpen it in Fretboard (Import files). Sync check: {v_ or '?'}"
+        + (" (timing only: every timing check passes, the tab's chords differ from the recording)" if timing else ""))
     if v_ in ("LISTEN", "FAIL"):
         say(f'To line it up by eye: python tools/aligner.py "{name}"')
-    sys.exit({"PASS": 0, "LISTEN": 2, "FAIL": 3}.get(v_, 0))
+    sys.exit(4 if timing else {"PASS": 0, "LISTEN": 2, "FAIL": 3}.get(v_, 0))
 
 
 if __name__ == "__main__":

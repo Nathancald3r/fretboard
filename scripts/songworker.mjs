@@ -91,11 +91,11 @@ export async function round({ store, remote, runner, device = DEVICE, log = () =
     let result;
     try { result = await runner({ title: song.title, artist: song.artist || '', sync: wantSync(song) }); } catch (e) { result = { verdict: 'ERROR', reason: String(e?.message || e) }; }
     let made = null;
-    if (result.verdict === 'PASS') {
+    if (result.verdict === 'PASS' || result.timingOnly) {
       try { made = readFretboardFile(readFileSync(result.file, 'utf8'))?.songs[0] || null; } catch { /* reported below */ }
       if (!made) result = { verdict: 'ERROR', reason: 'the finished song file could not be read' };
     }
-    if (made) { await store.putSong(wantDone(song, made)); out.done++; log(`${name}: PASS, delivered`); }
+    if (made) { await store.putSong(wantDone(song, made)); out.done++; log(`${name}: ${result.timingOnly ? 'timing only (the tab’s chords differ from the video), delivered' : 'PASS, delivered'}`); }
     else { await store.putSong(wantFailed(song, reasonOf(result))); out.failed++; log(`${name}: ${result.verdict}: ${reasonOf(result)}`); }
     await pull();
   }
@@ -149,8 +149,10 @@ export function pipelineRunner({ python = 'python', log = () => {} } = {}) {
       log(`  trying ${c.title} (${c.author})`);
       const r = await exec(python, ['tests/yt2gp5/fromlink.py', `https://www.youtube.com/watch?v=${c.id}`, ...(title ? ['--title', title] : []), ...(artist ? ['--artist', artist] : [])], { log });
       const file = /^Done: (.+)$/m.exec(r.text)?.[1]?.trim();
-      const verdict = { 0: 'PASS', 2: 'LISTEN', 3: 'FAIL' }[r.code] || 'ERROR';
+      const verdict = { 0: 'PASS', 2: 'LISTEN', 3: 'FAIL', 4: 'LISTEN' }[r.code] || 'ERROR';
       if (verdict === 'PASS' && file) return { verdict, file, video: c.id };
+      // exit 4: the sync checks pass and only the tab's chords differ from the recording. Another video of the song would differ the same way, so deliver it
+      if (r.code === 4 && file) return { verdict, file, video: c.id, timingOnly: true };
       if (verdict === 'ERROR') {
         if (/no Official tab/i.test(r.text)) return { verdict, reason: 'no official tab on Ultimate Guitar' }; // another video won't change that
         best ||= { verdict, reason: lastLine(r.text) };
