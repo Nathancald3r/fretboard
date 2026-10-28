@@ -4,6 +4,7 @@
 // ChordPro written inline is read too, with [G] or {G}. A repeated section (a chorus written out
 // again) is shown once, and its repeats as one-line markers ("↻ Chorus ×2"). Pure (no DOM): tested in
 // tests/chordsheetview.test.mjs.
+import { clock } from './ytapi.js';
 
 // A chord name: G, Em, C#m7, G7sus, F2(no3), D/F#, also in brackets "(G)" for an optional one.
 export const CHORD = /^\(?[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d?|add\d+|b\d+|#\d+|\((?:no|add)?\d+\))*(\/[A-G][#b]?)?\)?$/;
@@ -156,16 +157,17 @@ const lyricPeek = (b) => {
 /**
  * The sections with repeats folded: [{ name, lines, times, key }] in full, and
  * [{ marker: true, name, of, times, key, peek }] for a section whose lines were already shown.
+ * Each also has src: the numbers of the sections it stands for (more than one when a repeat in a row was folded in).
  * Two in a row with the same name become one with ×2. A name alone with no lines ([Chorus] after the
  * chorus was written out) counts as a repeat too. collapse = false keeps every section in full.
  */
 export function foldRepeats(blocks, collapse = true) {
-  if (!collapse) return blocks.map((b) => ({ ...b, times: 1, key: blockKey(b) }));
+  if (!collapse) return blocks.map((b, bi) => ({ ...b, times: 1, key: blockKey(b), src: [bi] }));
   const items = [];
   const seen = new Map(); // lines → the name of the first section that has them
   const named = new Map(); // lower-case name → the first section's name, for sections that have lines
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();
-  for (const b of blocks) {
+  blocks.forEach((b, bi) => {
     const empty = !b.lines.length;
     const key = empty ? `ref:${b.name.toLowerCase()}` : blockKey(b);
     const prev = items[items.length - 1];
@@ -173,13 +175,13 @@ export function foldRepeats(blocks, collapse = true) {
     if (empty) { if (b.name && named.has(b.name.toLowerCase())) first = named.get(b.name.toLowerCase()); }
     else if (seen.has(key) && (b.lines.length >= 2 || (b.name && same(seen.get(key), b.name)))) first = seen.get(key);
     if (first === null) {
-      items.push({ ...b, times: 1, key });
+      items.push({ ...b, times: 1, key, src: [bi] });
       if (!empty) { seen.set(key, b.name); if (b.name && !named.has(b.name.toLowerCase())) named.set(b.name.toLowerCase(), b.name); }
-      continue;
+      return;
     }
-    if (prev && same(prev.name, b.name) && (prev.key === key || empty)) { prev.times++; continue; }
-    items.push({ marker: true, name: b.name, of: first, times: 1, key, peek: b.name ? '' : lyricPeek(b) });
-  }
+    if (prev && same(prev.name, b.name) && (prev.key === key || empty)) { prev.times++; prev.src.push(bi); return; }
+    items.push({ marker: true, name: b.name, of: first, times: 1, key, peek: b.name ? '' : lyricPeek(b), src: [bi] });
+  });
   return items;
 }
 
@@ -220,20 +222,23 @@ const noteColor = (n) => (NOTE_COLORS.includes(n?.color) ? n.color : 'yellow');
 const noteHtml = (n) => (n.text ? `<div class="an c-${noteColor(n)}" data-an="${esc(n.k)}"><span class="ai">✎</span> ${esc(n.text)}</div>` : '');
 
 // notes: Map of line id → { k, text, color }; a line with one is tinted, and its words sit under it
-const lineHtml = (l, rename, played, notes) => {
+// times: Map of line number (the line's `u`, see js/sheetsync.js) → { t, bad }, shown as a badge; next: the line to tap next
+const lineHtml = (l, rename, played, notes, times, next) => {
   if (l.t === 'note') return `<div class="ln note">${esc(l.s)}</div>`;
   const k = lineHash(l);
   const n = notes?.get(k);
-  const at = ` data-k="${k}"${n ? ` data-an="${esc(n.k)}"` : ''}`;
-  const hl = n ? ` hl c-${noteColor(n)}` : '';
+  const tm = l.u != null && l.uf ? times?.get(l.u) : null;
+  const badge = tm ? `<span class="tm${tm.bad ? ' bad' : ''}" data-u="${l.u}" title="${tm.bad ? 'This time does not fit the lines around it. ' : ''}Tap to remove">${clock(tm.t)}</span>` : '';
+  const at = ` data-k="${k}"${n ? ` data-an="${esc(n.k)}"` : ''}${l.u != null ? ` data-i="${l.u}"` : ''}`;
+  const hl = (n ? ` hl c-${noteColor(n)}` : '') + (next != null && l.u === next ? ' next' : '');
   let html;
   if (l.t === 'w') {
     const hasChord = l.words.some((w) => w.some((p) => p.c));
-    html = `<div class="ln${hasChord ? ' hc' : ''}${hl}"${at}>${l.words.map((w) => wordHtml(w, rename, played)).join(' ')}</div>`;
-  } else if (l.t === 'c') html = `<div class="ln co${hl}"${at}>${l.items.map((x) => (x.c ? chordHtml(x.c, rename, played) : `<span class="x">${esc(x.x)}</span>`)).join(' ')}</div>`;
-  else if (l.t === 'tab') html = `<div class="pre tab-line${hl}"${at}>${esc(l.s)}</div>`;
-  else if (l.t === 'pre') html = `<div class="pre${hl}"${at}>${esc(l.s)}</div>`;
-  else html = `<div class="ln${hl}"${at}>${esc(l.s)}</div>`;
+    html = `<div class="ln${hasChord ? ' hc' : ''}${hl}"${at}>${l.words.map((w) => wordHtml(w, rename, played)).join(' ')}${badge}</div>`;
+  } else if (l.t === 'c') html = `<div class="ln co${hl}"${at}>${l.items.map((x) => (x.c ? chordHtml(x.c, rename, played) : `<span class="x">${esc(x.x)}</span>`)).join(' ')}${badge}</div>`;
+  else if (l.t === 'tab') html = `<div class="pre tab-line${hl}"${at}>${esc(l.s)}${badge}</div>`;
+  else if (l.t === 'pre') html = `<div class="pre${hl}"${at}>${esc(l.s)}${badge}</div>`;
+  else html = `<div class="ln${hl}"${at}>${esc(l.s)}${badge}</div>`;
   return n ? html + noteHtml(n) : html;
 };
 
@@ -241,19 +246,19 @@ const lineHtml = (l, rename, played, notes) => {
  * Sections and markers as HTML. rename: chord name → name to show; played: → name for its shapes;
  * notes: Map of id → note (see lineHash); orphans: notes whose line is gone, listed at the end.
  */
-export function viewHtml(items, { rename = null, played = null, notes = null, orphans = [] } = {}) {
+export function viewHtml(items, { rename = null, played = null, notes = null, orphans = [], times = null, next = null } = {}) {
   return items.map((it) => {
     if (it.marker) {
       const label = it.name || (it.of ? `Repeat of ${it.of}` : 'Repeat');
       const note = it.name && it.of && it.of.toLowerCase() !== it.name.toLowerCase() ? ` <span class="of">same as ${esc(it.of)}</span>`
         : it.peek ? ` <span class="of">“${esc(it.peek)}”</span>` : '';
-      return `<div class="tx-rep"><span class="ic">↻</span> ${esc(label)}${it.times > 1 ? ` <span class="rep">×${it.times}</span>` : ''}${note}</div>`;
+      return `<div class="tx-rep"${it.src ? ` data-b="${it.src.join(' ')}"` : ''}><span class="ic">↻</span> ${esc(label)}${it.times > 1 ? ` <span class="rep">×${it.times}</span>` : ''}${note}</div>`;
     }
     const sk = it.name ? sectionHash(it.name) : '';
     const sn = sk && notes?.get(sk);
     const head = it.name || it.times > 1
       ? `<div class="sh${sn ? ` hl c-${noteColor(sn)}` : ''}"${sk ? ` data-k="${sk}"${sn ? ` data-an="${esc(sn.k)}"` : ''}` : ''}>${esc(it.name)}${it.times > 1 ? `${it.name ? ' ' : ''}<span class="rep">×${it.times}</span>` : ''}</div>${sn ? noteHtml(sn) : ''}` : '';
-    return `<section class="tx-sec">${head}${it.lines.map((l) => lineHtml(l, rename, played, notes)).join('')}</section>`;
+    return `<section class="tx-sec">${head}${it.lines.map((l) => lineHtml(l, rename, played, notes, times, next)).join('')}</section>`;
   }).join('') + (orphans.length
     ? `<section class="tx-sec tx-orphans"><div class="sh">Notes on lines you changed</div>${orphans.map((n) => `<div class="an c-${noteColor(n)}" data-an="${esc(n.k)}"><span class="ai">✎</span> ${n.label ? `<i>${esc(n.label)}</i> · ` : ''}${esc(n.text) || 'highlight'}</div>`).join('')}</section>` : '');
 }

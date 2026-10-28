@@ -115,7 +115,7 @@ assert.match(html, /<div class="sh" data-k="\w+">Chorus <span class="rep">×2<\/
 assert.ok(html.includes('<span class="chord" data-chord="G">F</span>'), 'moved down two: shown F');
 assert.ok(html.includes('<span class="cs">'));
 const marker = viewHtml(foldRepeats(readSections('[Chorus]\nC\nHey\n\n[Verse]\nG\nHo\n\n[Chorus]\nC\nHey')));
-assert.ok(marker.includes('<div class="tx-rep"><span class="ic">↻</span> Chorus</div>'));
+assert.ok(marker.includes('<div class="tx-rep" data-b="2"><span class="ic">↻</span> Chorus</div>'));
 assert.ok(!/<img/i.test(viewHtml(foldRepeats(readSections('G\n<img src=x onerror=1> hey')))), 'words are escaped');
 
 /* ---------- ChordPro: {G} read like [G]; a sheet survives the trip out and back ---------- */

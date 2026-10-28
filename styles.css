@@ -2719,3 +2719,14 @@ body.annotating .chordview .hl:hover { background-color: var(--hlc); }
 .card-menu .mi { width: 1.25rem; height: 1.25rem; color: var(--muted); }
 .card-menu button.has-icon:hover .mi, .card-menu button.has-icon:focus-visible .mi { color: var(--text); }
 .card-menu button.danger .mi { color: inherit; }
+/* the sheet follows the video: the line being sung is lit (js/sheetfollow.js); the stopwatch times the lines (tap each as it is sung) */
+.chordview [data-i], .chordview .tx-rep { position: relative; transition: background-color .25s var(--ease), box-shadow .25s var(--ease); }
+.chordview .now { background: #f2a54133; box-shadow: -.35em 0 0 #f2a54133, .35em 0 0 #f2a54133; border-radius: 3px; }
+.chordview .tx-rep.now { box-shadow: none; }
+.tm { display: none; }
+body.timing .chordview .tm { display: inline-block; position: absolute; right: 0; top: 0; z-index: 1; padding: .1em .55em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font: 700 11px/1.4 var(--mono); white-space: nowrap; width: max-content; text-indent: 0; overflow-wrap: normal; letter-spacing: 0; cursor: pointer; }
+body.timing .chordview .tm.bad { background: #e5484d; color: #fff; }
+body.timing .chordview [data-i] { cursor: pointer; outline: 1px dashed #ffffff26; outline-offset: 1px; }
+body.timing .chordview [data-i]:hover { outline-color: var(--accent); }
+body.timing .chordview .next { outline: 2px solid var(--accent); }
+#view-text:not(.has-vid) .tx-tile.vidonly { display: none; }

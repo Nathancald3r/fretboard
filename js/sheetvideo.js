@@ -5,7 +5,7 @@ import { loadYouTubeApi, clock, nextRate } from './ytapi.js';
 const $ = (id) => document.getElementById(id);
 const FOLD_KEY = 'fretboard-tx-vid-fold';
 
-export function initVideoBar({ onFold = () => {} } = {}) {
+export function initVideoBar({ onFold = () => {}, onState = () => {}, onSeek = () => {} } = {}) {
   let player = null;
   let loaded = ''; // the video id the player holds
   let want = ''; // what the panel was last asked to show (a close while it loads cancels the open)
@@ -36,6 +36,16 @@ export function initVideoBar({ onFold = () => {} } = {}) {
     clearInterval(timer);
     if (playing()) timer = setInterval(paint, 250);
     paint();
+    onState(playing());
+  }
+
+  // the video's time in seconds. YouTube reports it in steps of about a quarter second, so between two reports it is carried on by the clock.
+  let reported = -1, reportedAt = 0;
+  function now() {
+    if (!player?.getCurrentTime) return 0;
+    const t = player.getCurrentTime(), w = performance.now();
+    if (t !== reported) { reported = t; reportedAt = w; }
+    return playing() ? t + Math.min(0.3, (w - reportedAt) / 1000) * (player.getPlaybackRate?.() || 1) : t;
   }
 
   function paintFold() {
@@ -99,8 +109,8 @@ export function initVideoBar({ onFold = () => {} } = {}) {
     player.seekTo(Number($('tx-vid-seek').value) / 1000 * d, ahead);
   };
   const seek = $('tx-vid-seek');
-  seek.addEventListener('input', () => { dragging = true; $('tx-vid-seek').style.setProperty('--p', `${seek.value / 10}%`); seekTo(false); paint(); });
-  seek.addEventListener('change', () => { seekTo(true); dragging = false; setTimeout(paint, 80); });
+  seek.addEventListener('input', () => { dragging = true; $('tx-vid-seek').style.setProperty('--p', `${seek.value / 10}%`); seekTo(false); paint(); onSeek(Number(seek.value) / 1000 * total()); });
+  seek.addEventListener('change', () => { seekTo(true); dragging = false; const at = Number(seek.value) / 1000 * total(); setTimeout(() => { paint(); onSeek(at); }, 80); });
   $('tx-vid-play').addEventListener('click', () => {
     if (!player) return;
     if (playing()) player.pauseVideo(); else player.playVideo();
@@ -118,7 +128,7 @@ export function initVideoBar({ onFold = () => {} } = {}) {
     close,
     setFolded,
     get folded() { return folded; },
-    now: () => (player?.getCurrentTime?.() || 0),
+    now,
     get playing() { return playing(); },
   };
 }

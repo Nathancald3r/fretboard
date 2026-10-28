@@ -16,6 +16,8 @@ import { CHORD, TAB_LINE, chordTokens, cleanTabText, readSections, foldRepeats, 
 import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords } from './sheettools.js';
 import { startClick, stopClick, setClickBpm, clicking, countIn, cancelCount, counting } from './sheetclick.js';
 import { initVideoBar } from './sheetvideo.js';
+import { numberUnits, displayTargets, setMark, dropMark, chainOf, marksMap, nextUnit } from './sheetsync.js';
+import { createFollower } from './sheetfollow.js';
 import { backingTex, STYLES } from './backing.js';
 
 export { cleanTabText };
@@ -28,6 +30,12 @@ let performing = false;
 let tempo = 100;
 let sizeStep = () => {}; // set by initText: the magnifier's step (1 bigger, -1 smaller)
 let vbar = null; // the video panel's player and bar (js/sheetvideo.js), made by initText
+let follower = null; // lights the line being sung and scrolls with the video (js/sheetfollow.js)
+let units = []; // the sheet's lines in the order they are sung (js/sheetsync.js)
+let timing = false; // the stopwatch is on: tap a line to give it the video's time
+const TAP_LEAD = 0.3; // seconds: a tap comes this long after the line was sung
+let followOn = true;
+try { followOn = localStorage.getItem('fretboard-tx-follow') !== '0'; } catch { /* ignore */ }
 let lastFrame = 0;
 let carry = 0;
 
@@ -158,6 +166,7 @@ function render() {
   // a combined song shows each tab in turn, under its instrument's name
   const text = [head.body ?? song.data, ...(song.parts || []).map((p) => `[${p.name} tab]\n${p.data}`)].join('\n\n');
   const sections = readSections(text);
+  units = numberUnits(sections);
   const chords = chordsOf(sections);
   // the shapes' key: the page's Key: minus its capo, guessed from the chords only with no key line
   const detected = shapesKey(head.key, head.capo, chords);
@@ -186,14 +195,19 @@ function render() {
   const played = plan.move ? (c) => shiftChordName(c, plan.move, shapes ? flatKey(shapes) : false) : null;
   const rename = numbers && key ? (c) => numbers(c, key) : played;
   const fold = song.fold !== false;
-  items = foldRepeats(sections, fold);
+  items = foldRepeats(sections, fold && !timing); // timing shows every line, repeats too
   lastSections = sections;
-  $('tx-body').innerHTML = viewHtml(items, { rename, played, notes: notesMap(song.annotations), orphans: orphanNotes(song.annotations, sections) });
+  const marks = activeMarks();
+  $('tx-body').innerHTML = viewHtml(items, {
+    rename, played, notes: notesMap(song.annotations), orphans: orphanNotes(song.annotations, sections),
+    times: timing ? marksMap(marks, units) : null, next: timing ? nextUnit(marks, units) : null,
+  });
   $('tx-fold').checked = fold;
   hidePop();
   drawShapes();
   tuckChords();
   fit();
+  prepFollow();
   $('tx-shift').textContent = `Tr ${shift > 0 ? '+' : ''}${shift}`;
   $('tx-capo').textContent = capo ? `Capo ${capo}` : 'No capo';
   $('tx-keychip').innerHTML = sounds ? `Key <b>${keyName(sounds)}</b>${capo && shapes ? `<small> · ${keyName(shapes)} shapes</small>` : ''}` : '';
@@ -492,9 +506,11 @@ function showVideo(on) {
   const id = videoId();
   if (on && !id) { findVideo(); return; }
   $('view-text').classList.toggle('has-vid', on); // docked beside the song (wide) or under it (narrow), never over the chords
+  if (!on && timing) setTiming(false);
   if (on) vbar.open(id); else vbar.close();
   videoLabel();
   fit();
+  prepFollow();
 }
 
 // No video from UG: the best match on YouTube, kept as the song's recording.
@@ -652,13 +668,81 @@ let annotating = false;
 let noteFor = null; // { k, label }
 let noteColor = 'yellow';
 
+function hint(text) {
+  $('tx-hint').hidden = !text;
+  if (text) $('tx-hint').textContent = text;
+}
+
 function setAnnotating(on) {
+  if (on && timing) setTiming(false);
   annotating = on;
   document.body.classList.toggle('annotating', on);
   $('tx-t-notes').setAttribute('aria-pressed', String(on));
-  $('tx-hint').hidden = !on;
+  hint(on ? 'Tap a line to write on it' : null);
   if (!on) hideNote();
 }
+
+/* ---------- the sheet follows the video: tap each line as it is sung, then the lit line and the scroll go with it ---------- */
+
+// the times tapped for this song's video (a different video makes them meaningless)
+const activeMarks = () => (song?.timing?.video && song.timing.video === videoId() ? song.timing.marks || [] : []);
+
+function prepFollow() {
+  if (!follower) return;
+  const { chain } = chainOf(activeMarks(), units);
+  follower.set({ chain, targets: displayTargets(units, items), last: units.length - 1 });
+  const ready = chain.length > 1;
+  follower.enable(followOn && !timing && ready && !$('tx-vid').hidden);
+  $('tx-t-follow').setAttribute('aria-pressed', String(followOn));
+  $('tx-t-follow').title = ready ? 'Follow the video: light the line being sung and scroll with it' : 'Follow the video (first tap the lines’ times with the stopwatch)';
+  $('tx-timing-clear').hidden = !activeMarks().length;
+  syncFollow();
+}
+
+function syncFollow(playing = vbar?.playing) {
+  if (!follower?.active) return;
+  if (playing) { setScrolling(false); follower.start(); } else { follower.stop(); follower.update(true); }
+}
+
+function setFollow(on) {
+  followOn = on;
+  try { localStorage.setItem('fretboard-tx-follow', on ? '1' : '0'); } catch { /* ignore */ }
+  prepFollow();
+}
+
+function setTiming(on) {
+  if (on && $('tx-vid').hidden) return; // it needs the video
+  if (timing === on) return;
+  timing = on;
+  document.body.classList.toggle('timing', on);
+  $('tx-t-sync').setAttribute('aria-pressed', String(on));
+  if (on) { setAnnotating(false); hint('Tap each line as it is sung'); } else hint(null);
+  if (song) render();
+}
+
+async function saveMarks(marks) {
+  if (!song) return;
+  const t = { video: videoId(), marks };
+  const id = song.id;
+  song = { ...song, timing: t }; // taps come fast: the next one has to see this one
+  render();
+  const saved = await updateSong(id, { timing: t });
+  if (song?.id === id) song = { ...saved, timing: song.timing };
+}
+
+function markUnit(u) {
+  const id = units[u]?.id;
+  if (!id || !videoId()) return;
+  saveMarks(setMark(activeMarks(), id, Math.max(0, vbar.now() - (vbar.playing ? TAP_LEAD : 0))));
+  // keep the next line in sight
+  const nx = $('tx-body').querySelector('.next');
+  if (nx) {
+    const r = nx.getBoundingClientRect();
+    if (r.bottom > innerHeight - 90 || r.top < $('tx-top').offsetHeight + 20) nx.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+const removeMark = (u) => { const id = units[u]?.id; if (id) saveMarks(dropMark(activeMarks(), id)); };
 
 function labelOf(el) {
   const copy = el.cloneNode(true);
@@ -723,6 +807,9 @@ function initTools() {
   tap('tx-t-zin', () => sizeStep(1));
   tap('tx-t-zout', () => sizeStep(-1));
   tap('tx-t-notes', () => setAnnotating(!annotating));
+  tap('tx-t-sync', () => setTiming(!timing));
+  tap('tx-t-follow', () => setFollow(!followOn));
+  tap('tx-timing-clear', () => saveMarks([]));
   tap('tx-t-click', toggleClick);
   tap('tx-t-scroll', () => setScrolling(!scrolling));
   tap('tx-t-fast', () => bumpSpeed(1));
@@ -738,6 +825,12 @@ function initTools() {
   document.addEventListener('pointerdown', (e) => { if (!$('tx-vidpick').hidden && !e.target.closest('#tx-vidpick, #tx-t-video')) pickVideo(false); });
   // capture: with ✎ on, a tap on a line is for writing on it, not for the chord pop-up under it
   $('tx-body').addEventListener('click', (e) => {
+    if (timing) { // a tap gives the line the video's time; the time's badge takes it away
+      const badge = e.target.closest('.tm');
+      const unit = e.target.closest('[data-i]');
+      if (badge || unit) { e.stopPropagation(); if (badge) removeMark(Number(badge.dataset.u)); else markUnit(Number(unit.dataset.i)); }
+      return;
+    }
     const callout = e.target.closest('.an');
     const line = e.target.closest('[data-k]');
     if (callout) {
@@ -788,6 +881,7 @@ export function closeText() {
   stopClick();
   cancelCount();
   setAnnotating(false);
+  setTiming(false);
   pickVideo(false);
   setScrolling(false);
   showVideo(false);
@@ -798,7 +892,8 @@ export function closeText() {
 export function initText({ onEdit }) {
   initShapes();
   initTools();
-  vbar = initVideoBar({ onFold: fit });
+  follower = createFollower({ body: $('tx-body'), now: () => vbar.now(), canScroll: () => !scrolling });
+  vbar = initVideoBar({ onFold: fit, onState: syncFollow, onSeek: (t) => follower.update(true, t) });
   $('tx-strum').addEventListener('click', (e) => {
     const b = e.target.closest('[data-strum]');
     if (b) toggleStrum(Number(b.dataset.strum), b.dataset.mode);
@@ -871,6 +966,7 @@ export function initText({ onEdit }) {
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('tx-note').hidden) { hideNote(); return; }
+    if (e.key === 'Escape' && timing) { setTiming(false); return; }
     if (e.key === 'Escape' && pop) { hidePop(); return; }
     if (e.key === 'Escape' && !$('tx-menu').hidden) { menu(false); return; }
     if (e.key === 'Escape' && performing) { setPerform(false); return; }

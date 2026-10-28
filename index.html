@@ -741,6 +741,7 @@
         <button id="tx-shapes-btn" class="ghost small" aria-pressed="false" title="The song's chords as diagrams. Tap one (or any chord in the song) for other ways to play it">Chord shapes</button>
         <button id="tx-play" class="ghost small" title="Turn the tab lines into a playable score (rhythm is guessed from spacing)">Play as tab</button>
         <button id="tx-perform" class="ghost small" title="Just the song, big: key, transpose, auto-scroll and video (Esc to leave)">Perform</button>
+        <button id="tx-timing-clear" class="ghost small" hidden title="Forget the times you tapped for the lines (the sheet stops following the video)">Clear line times</button>
       </div>
       <div class="tx-foot"><span id="tx-time" class="mono muted"></span><span class="tx-nav"><a href="#library">Songs</a><a href="#practice">Practice</a><a href="#log">Log</a></span></div>
     </div>
@@ -763,6 +764,12 @@
       <button id="tx-t-notes" class="tx-tile" title="Notes: tap a line to write on it or colour it" aria-label="Notes" aria-pressed="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16.6 4.2a1.6 1.6 0 0 1 2.3 0l.9.9a1.6 1.6 0 0 1 0 2.3L8.4 18.8z M14.5 6.4l3.1 3.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
       </button>
+      <button id="tx-t-sync" class="tx-tile vidonly" title="Time the lines: play the video and tap each line as it is sung" aria-label="Time the lines" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 13.5V9.6M9.6 3h4.8M18.2 6.2l1.3-1.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="tx-t-follow" class="tx-tile vidonly" title="Follow the video: light the line being sung and scroll with it" aria-label="Follow the video" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/><path d="M3.5 12h17" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg>
+      </button>
       <div class="tx-tgrp">
         <button id="tx-t-click" class="tx-tile" title="Metronome at the song's tempo (change the tempo in ⋯)" aria-label="Metronome" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3h7l3 18h-13z M12 16.5 15.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="12.6" cy="14" r="1.4" fill="currentColor"/></svg><small id="tx-t-bpm"></small>
@@ -778,7 +785,7 @@
       <button id="tx-pick-video" class="ghost small">▶ Video</button>
       <button id="tx-pick-backing" class="ghost small" title="Drums, bass and guitar playing this song's chords, one bar each, in the player">♫ Backing track</button>
     </div>
-    <div id="tx-hint" class="tx-hint" hidden>Tap a line to write on it · ✎ again to finish</div>
+    <div id="tx-hint" class="tx-hint" hidden>Tap a line to write on it</div>
     <div id="tx-note" class="tx-note" hidden>
       <div class="tx-note-head"><b id="tx-note-for"></b><button id="tx-note-close" class="ghost small" aria-label="Close">✕</button></div>
       <textarea id="tx-note-text" rows="3" maxlength="400" placeholder="Your note (leave it empty to just colour the line)"></textarea>
