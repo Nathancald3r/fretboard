@@ -134,7 +134,7 @@ const S = {
   bx: [], by: [], sec: [{ i: 0, s: 0 }], sec0: null,
   view: { t0: 0, span: 60 }, level: 1, marker: 0, hover: null,
   overlay: true, boost: true, auto: true, split: true, mute: { tab: false, rec: false },
-  play: null, dirty: false, undo: [], lastPush: 0, saved: false, follow: false, selSec: null,
+  play: null, dirty: false, undo: [], lastPush: 0, saved: false, follow: false, zoomHead: false, selSec: null,
   mix: { tab: { g: 1, rows: [], bufs: {}, active: false }, rec: { g: 1, rows: [], bufs: {}, active: false } }, tabDraw: null, recDraw: null,
 };
 let ctx = null, dirty = true;
@@ -346,11 +346,14 @@ function reset() {
 }
 
 /* ---------- view ---------- */
-function setLevel(k) {
+// Zoom into what is on screen (the middle of the view), or, with "Zoom on playhead" (Z), around the playhead (the marker when stopped).
+// `at` forces the centre (opening a song, Ctrl+wheel at the pointer).
+function setLevel(k, at) {
+  const c = at ?? (S.zoomHead ? headT() : S.view.t0 + S.view.span / 2);
   S.level = k;
   const span = k === 1 ? S.total : Math.min(S.total, SPANS[k - 1]);
   S.view.span = span;
-  S.view.t0 = k === 1 ? 0 : clamp(headT() - span / 2, 0, S.total - span); // zooms around the playhead while playing, else the marker
+  S.view.t0 = k === 1 ? 0 : clamp(c - span / 2, 0, S.total - span);
   dirty = true;
 }
 function panTo(t0) { S.view.t0 = clamp(t0, 0, Math.max(0, S.total - S.view.span)); dirty = true; }
@@ -685,7 +688,7 @@ async function openSong(slug) {
     S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
     S.noteT = [...new Set(S.notes)].sort((a, b) => a - b);
     S.marker = S.noteT.length ? S.noteT[0] : 0; // opens on the tab's first note: the start of the guitar
-    setLevel(S.noteT.length ? 4 : 1); hint('');
+    setLevel(S.noteT.length ? 4 : 1, S.marker); hint('');
     say(d.aligned ? `Opened at the first note. Last aligned ${d.aligned.at}.` : 'Opened at the tab’s first note (blue lines are note starts). Drag or ← → until the orange peaks line up with the blue ones.');
   } catch (e) { hint(''); say(String(e.message || e), 'err'); }
 }
@@ -718,13 +721,14 @@ const TOGGLES = [
   { code: 'KeyE', key: 'E', label: 'One ear each', on: () => S.split, run: () => { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); } },
   { code: 'KeyO', key: 'O', label: 'Overlay', on: () => S.overlay, run: () => { S.overlay = !S.overlay; dirty = true; say(S.overlay ? 'Both waveforms on top of each other.' : 'Waveforms stacked.'); } },
   { code: 'KeyL', key: 'L', label: 'Auto level', on: () => S.auto, run: () => { S.auto = !S.auto; dirty = true; say(S.auto ? 'Auto level on: each lane is scaled to its loudest part on screen.' : 'Auto level off: true loudness between the lanes.'); } },
+  { code: 'KeyZ', key: 'Z', label: 'Zoom on playhead', on: () => S.zoomHead, run: () => { S.zoomHead = !S.zoomHead; say(S.zoomHead ? 'Zoom keys now centre on the playhead (the marker when stopped).' : 'Zoom keys now zoom into what is on screen.'); } },
   { code: 'KeyG', key: 'G', label: 'Boost quiet parts', on: () => S.boost, run: () => { S.boost = !S.boost; dirty = true; say(S.boost ? 'Quiet parts boosted.' : 'True loudness.'); } },
 ];
 const ZOOMS = [['Song', 1], ['45 s', 2], ['12 s', 3], ['3 s', 4], ['0.6 s', 5]];
 // A leading "@" marks a mouse action (shown in orange), everything else is a key.
 const HELP = [
   ['Play and scrub', [['Space', 'Play or stop both'], ['@Song strip (top)', 'Click or drag: scrub, you hear it'], ['@Marker’s tab', 'Drag it to scrub'], ['P', 'Centre the view on the playhead'], ['F', 'Follow: keep the playhead in view while playing'], ['↑ / ↓', 'Marker to the previous / next bar (Shift: 4 bars)'], ['N / Shift N', 'Marker to the next / previous note start'], ['Home / End', 'Marker to the start / end']]],
-  ['Zoom and scroll', [['1 2 3 4 5', 'Whole song, 45 s, 12 s, 3 s, 0.6 s'], ['+ / −', 'Zoom in / out around the playhead'], ['@Ctrl + wheel', 'Zoom at the pointer'], ['@Wheel, Shift + drag', 'Scroll the view'], [', / .', 'Scroll back / forward']]],
+  ['Zoom and scroll', [['1 2 3 4 5', 'Whole song, 45 s, 12 s, 3 s, 0.6 s'], ['+ / −', 'Zoom in / out one level'], ['Z', 'Zoom on the playhead: on = zoom keys centre on it; off = zoom into what is on screen'], ['@Ctrl + wheel', 'Zoom at the pointer'], ['@Wheel, Shift + drag', 'Scroll the view'], [', / .', 'Scroll back / forward']]],
   ['Move the video', [['@Drag the waveform', 'Moves the section under the pointer'], ['← / →', 'Nudge 10 ms (Shift 100 ms, Ctrl 1 ms)'], ['M', 'Match here by the note starts (±1 s)']]],
   ['Sections and squeeze', [['A', 'Cut at the bar nearest the marker'], ['@Double-click', 'Cut at the bar nearest the pointer'], ['Delete', 'Join with the section before'], ['@Section’s name', 'Click to pick that section'], ['[ / ]', 'Squeeze / stretch the picked section (Shift 100 ms, Ctrl 1 ms)'], ['K', 'Lock it back to the tab’s tempo'], ['@Pink cut line', 'Drag: moves the boundary, squeezing both sides']]],
   ['Sound and look', [['T / V', 'Tab / video sound on or off'], ['E', 'One ear each'], ['O', 'Overlay or stacked'], ['L', 'Auto level (quiet notes get tall)'], ['G', 'Boost quiet parts'], ['@Loudness panel', 'A slider per instrument; M mutes, S solos; double-click = 100%']]],
@@ -844,7 +848,7 @@ cv.addEventListener('mouseleave', () => { S.hover = null; dirty = true; });
 cv.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (!S.tab) return;
-  if (e.ctrlKey || e.metaKey) { const at = timeAtX(e.clientX); const lv = clamp(S.level + (e.deltaY < 0 ? 1 : -1), 1, 5); if (lv !== S.level) { S.marker = clamp(at, 0, S.total); setLevel(lv); } return; }
+  if (e.ctrlKey || e.metaKey) { const at = timeAtX(e.clientX); const lv = clamp(S.level + (e.deltaY < 0 ? 1 : -1), 1, 5); if (lv !== S.level) { S.marker = clamp(at, 0, S.total); setLevel(lv, S.marker); } return; }
   panTo(S.view.t0 + ((e.deltaX || e.deltaY) / cv.getBoundingClientRect().width) * S.view.span);
 }, { passive: false });
 
