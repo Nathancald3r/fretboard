@@ -247,8 +247,8 @@ c('compare','fix','One song two ways, to compare by ear',PY+T+'compare.py "Ho He
 c('anchors','fix','Key points by synctoolbox',PY+T+'anchors.py "Ho Hey"',R+'\\tests\\yt2gp5\\anchors.py',
   'Key points at each section start with one steady tempo between them.','Tried on 2026-10-24 and beaten by wavefit; kept for comparison.',{venv:true});
 c('aligner','fix','Wave aligner: line the video up by eye and ear','python tools\\aligner.py "Ho Hey"',R+'\\tools\\aligner.py',
-  'Two waveforms on the tab\'s time with bar lines and note ticks. Drag to move the video, S saves, ? lists the shortcuts. Options: --port N, --no-open.',
-  'The by-hand fix when wavefit cannot. Save writes new syncPoints into the song\'s .fretboard (first version kept as .before-aligner); import with "Replace it". Needs numpy.',{open:'http://127.0.0.1:8433',writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\'});
+  'Two waveforms on the tab\'s time with bar lines and note ticks. Drag to move the video, Ctrl S saves, ? lists the shortcuts (with a filter). X / Shift X drop "around here" / "exactly here" markers, / opens the command box (@15-51 makes a region; cut, squeeze, stretch, lock1, lock2, retry). Options: --port N, --no-open.',
+  'The by-hand fix when wavefit cannot. Save writes new syncPoints into the song\'s .fretboard (first version kept as .before-aligner); import with "Replace it". Markers are kept in out/listen/<song>/aligner/markers.json; Retry asks Python for the shift around each marker. Needs numpy.',{open:'http://127.0.0.1:8433',writes:R+'\\tests\\yt2gp5\\out\\listen\\<song>\\'});
 c('drumclock','fix','Drum clock: how far the beat sits from the sync',PY+T+'drumclock.py "Ho Hey"',R+'\\tests\\yt2gp5\\drumclock.py',
   'Splits the recording once into drums, bass, other and vocals (Demucs) and measures the beat\'s offset every 4 bars, to a few ms.','Feeds the gate\'s drum check. --selftest moves stretches 30, 60 and 90 ms and each must be found.',{venv:true,heavy:true});
 c('synctest','fix','Prove the sync on a known answer',PY+T+'synctest.py',R+'\\tests\\yt2gp5\\synctest.py',

@@ -74,6 +74,33 @@
   #help .row .k { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
   #help .row .m { color: var(--vid); }
   #help .row .d { color: var(--dim); }
+  #help .top input { background: #14161a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font: inherit; width: 14em; }
+  #help .row[hidden], #help .grid > div[hidden] { display: none; }
+  .grp.marks button.mk-a { border-color: #ffb347; }
+  .grp.marks button.mk-p { border-color: #7be39a; }
+  #modebar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 6px 12px; background: #17302e; border-bottom: 1px solid var(--mark); color: var(--text); font-size: 14px; }
+  #modebar[hidden], #cmd[hidden], #sugg[hidden] { display: none; }
+  #modebar b { color: var(--mark); }
+  #modebar .grow { flex: 1; }
+  #modebar button, #sugg button { background: #272c35; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; font: inherit; cursor: pointer; }
+  #cmd { position: fixed; inset: 0 0 auto 0; z-index: 9; display: flex; justify-content: center; padding: 64px 12px 0; pointer-events: none; }
+  #cmd .box { pointer-events: auto; width: min(760px, 100%); background: var(--panel); border: 1px solid var(--mark); border-radius: 12px; box-shadow: 0 14px 44px rgba(0, 0, 0, .6); overflow: hidden; }
+  #cmd input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--text); font: 17px ui-monospace, Consolas, monospace; padding: 12px 14px; outline: none; }
+  #cmdghost { padding: 6px 14px; min-height: 2em; color: var(--mark); font-size: 13px; border-bottom: 1px solid var(--line); }
+  #cmdghost.err { color: #ff8a8a; }
+  #cmdlist { max-height: 46vh; overflow: auto; }
+  .cr { display: grid; grid-template-columns: 9em 1fr auto; gap: 10px; align-items: center; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+  .cr.sel { background: #2a3340; }
+  .cr .n { font: 13px ui-monospace, Consolas, monospace; color: var(--text); }
+  .cr .n i { color: var(--dim); font-style: normal; }
+  .cr .d { color: var(--dim); }
+  .cr .k { display: flex; gap: 3px; }
+  #cmdfoot { padding: 5px 14px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); }
+  #sugg { position: fixed; right: 12px; bottom: 12px; z-index: 8; width: min(480px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--vid); border-radius: 10px; padding: 8px 12px; box-shadow: 0 10px 34px rgba(0, 0, 0, .55); font-size: 13px; }
+  #sugg h4 { margin: 0 0 4px; font-size: 13px; color: var(--vid); display: flex; align-items: center; gap: 8px; }
+  #sugg h4 span { flex: 1; }
+  #sugg .sr { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 3px 0; border-top: 1px solid #262b33; }
+  #sugg .sr.weak { opacity: .6; }
 </style>
 </head>
 <body>
@@ -99,11 +126,19 @@
     <button id="undo" title="Undo (Ctrl+Z)">Undo<kbd>Ctrl Z</kbd></button>
     <button id="reset" title="Go back to the sync as it was opened">Reset</button>
   </div>
+  <div class="grp marks" title="Note where an error is. Amber = around here (±3 s), green = exactly here (±0.25 s). Retry sends them to Python"><span class="gl">Markers</span>
+    <button id="mka" class="mk-a" title="Drop an approximate marker: around here. While playing it lands 0.3 s back, for your reaction time (X)">Around<kbd>X</kbd></button>
+    <button id="mkp" class="mk-p" title="Drop a precise marker: exactly here. On an amber marker it refines it (Shift+X)">Exact<kbd>⇧X</kbd></button>
+    <button id="mkn" title="Next marker (Tab, Shift+Tab = previous)">Next<kbd>Tab</kbd></button>
+    <button id="mkr" title="Send the markers to Python: it looks for the shift around each one (/retry)">Retry</button>
+  </div>
+  <button id="cmdbtn" title="Open the command box: @15-51, cut, squeeze, lock1, lock2, retry … (/)">Commands<kbd>/</kbd></button>
   <span class="grow"></span>
   <button id="helpbtn" title="All the shortcuts (?)">Shortcuts<kbd>?</kbd></button>
   <button id="save" class="primary" title="Write the sync into the song's .fretboard file (Ctrl+S)">Save<kbd>Ctrl S</kbd></button>
 </header>
 <div id="toggles"><span>Sound and look:</span><span class="grow"></span><span id="status"></span></div>
+<div id="modebar" hidden></div>
 <main>
   <canvas id="c"></canvas>
   <div id="hint"></div>
@@ -117,10 +152,19 @@
 </footer>
 <div id="help" hidden>
   <div class="card" role="dialog" aria-label="Shortcuts">
-    <div class="top"><h3>Shortcuts</h3><span class="d" style="color:var(--dim);font-size:13px">orange = mouse</span><button class="x" id="helpx">Close <kbd>Esc</kbd></button></div>
+    <div class="top"><h3>Shortcuts</h3><input id="helpq" placeholder="Filter: squeeze, marker, zoom…" aria-label="Filter the shortcuts" autocomplete="off"><span class="d" style="color:var(--dim);font-size:13px">orange = mouse</span><button class="x" id="helpx">Close <kbd>Esc</kbd></button></div>
     <div class="grid" id="helpgrid"></div>
   </div>
 </div>
+<div id="cmd" hidden>
+  <div class="box" role="dialog" aria-label="Commands">
+    <input id="cmdin" placeholder="Type a command, or @15-51 for a region, @15 to go to bar 15…" autocomplete="off" spellcheck="false">
+    <div id="cmdghost"></div>
+    <div id="cmdlist"></div>
+    <div id="cmdfoot"><kbd>↑</kbd> <kbd>↓</kbd> pick · <kbd>Tab</kbd> complete · <kbd>Enter</kbd> run · <kbd>;</kbd> several in a row · <kbd>Esc</kbd> close · the sound keeps playing</div>
+  </div>
+</div>
+<div id="sugg" hidden></div>
 <script>
 'use strict';
 const $ = (s) => document.querySelector(s);
@@ -135,6 +179,7 @@ const S = {
   view: { t0: 0, span: 60 }, level: 1, marker: 0, hover: null,
   overlay: true, boost: true, auto: true, split: true, mute: { tab: false, rec: false },
   play: null, dirty: false, undo: [], lastPush: 0, saved: false, follow: false, zoomHead: false, selSec: null,
+  marks: [], selMark: null, region: null, lock: null, audition: true, // markers (tab time), the @a-b region, the lock1/lock2 mode
   mix: { tab: { g: 1, rows: [], bufs: {}, active: false }, rec: { g: 1, rows: [], bufs: {}, active: false } }, tabDraw: null, recDraw: null,
 };
 let ctx = null, dirty = true;
@@ -276,14 +321,20 @@ function matchHere() {
 }
 
 /* ---------- undo, sections ---------- */
-const snap = () => JSON.stringify(S.sec);
+const snap = () => JSON.stringify({ sec: S.sec, marks: S.marks, region: S.region }); // one undo step covers the sections and the markers
 function pushUndo(force) {
   const now = performance.now();
   if (force || now - S.lastPush > 700) S.undo.push(snap());
   S.lastPush = now;
   if (S.undo.length > 200) S.undo.shift();
 }
-function undo() { const s = S.undo.pop(); if (!s) return; S.sec = JSON.parse(s); changed(); say('Undone.'); }
+function undo() {
+  if (S.lock) { lockEnd(false); return; } // Ctrl+Z in a lock takes back what the lock moved
+  const s = S.undo.pop(); if (!s) return;
+  const o = JSON.parse(s); S.sec = o.sec; S.marks = o.marks || []; S.region = o.region || null;
+  if (S.selMark !== null && !S.marks.some((m) => m.id === S.selMark)) S.selMark = null;
+  changed(); marksChanged(); say('Undone.');
+}
 function changed() { S.dirty = true; dirty = true; S.saved = false; if (S.play) restartSoon(); else warmSoon(); }
 const fmtMs = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(Math.round(ms)) + ' ms';
 
@@ -316,14 +367,27 @@ function lockTempo() {
   changed();
   say(`Section ${k + 1}: back to the tab’s tempo (the video only moves).`);
 }
+// A cut at bar j that leaves the map exactly as it was (the left part ends where the new part starts). False when there is one already.
+function splitAt(j) {
+  if (j <= 0 || j >= S.bars.length || S.sec.some((x) => x.i === j)) return false;
+  const L = S.sec[secAt(barT(j) - 1e-4)], sq = L.sq || 0, frac = (barT(j) - barT(L.i)) / (secEnd(S.sec.indexOf(L)) - barT(L.i) || 1);
+  const sj = L.s + sq * frac, endL = L.s + sq;
+  L.sq = sj - L.s;
+  S.sec.push({ i: j, s: sj, sq: endL - sj }); S.sec.sort((a, b) => a.i - b.i);
+  return true;
+}
+const secIdx = (i) => S.sec.findIndex((x) => x.i === i);
+// The video at the start of section k moves by ms (+ = later) and the section before it is squeezed or stretched to follow, the
+// section itself keeps its far end: a pink cut line dragged. Section 0 has no section before it, so only its far end stays.
+function moveBoundary(k, ms) {
+  if (k <= 0) { S.sec[0].s += ms; S.sec[0].sq = (S.sec[0].sq || 0) - ms; return; }
+  S.sec[k - 1].sq = (S.sec[k - 1].sq || 0) + ms; S.sec[k].s += ms; S.sec[k].sq = (S.sec[k].sq || 0) - ms;
+}
 function cutHere(at) {
   const j = nearestBar(at ?? S.marker);
   if (j === 0 || S.sec.some((x) => x.i === j)) { say(j === 0 ? 'The song starts there already.' : 'There is a cut at this bar already.'); return; }
   pushUndo(true);
-  const L = S.sec[secAt(barT(j) - 1e-4)], sq = L.sq || 0, frac = (barT(j) - barT(L.i)) / (secEnd(S.sec.indexOf(L)) - barT(L.i) || 1);
-  const sj = L.s + sq * frac, endL = L.s + sq; // the map stays as it was: the left part ends where the new part starts
-  L.sq = sj - L.s;
-  S.sec.push({ i: j, s: sj, sq: endL - sj }); S.sec.sort((a, b) => a.i - b.i);
+  splitAt(j);
   S.selSec = S.sec.findIndex((x) => x.i === j);
   if (at === undefined) S.marker = barT(j);
   changed();
@@ -342,7 +406,7 @@ function joinHere() {
 }
 function reset() {
   if (!S.sec0) return;
-  pushUndo(true); S.sec = JSON.parse(S.sec0); S.selSec = null; changed(); say('Back to the sync as it was opened.');
+  pushUndo(true); S.sec = JSON.parse(S.sec0).sec; S.selSec = null; S.lock = null; modebar(); changed(); say('Back to the sync as it was opened (the markers stay).');
 }
 
 /* ---------- view ---------- */
@@ -480,6 +544,23 @@ function draw() {
     g.fillText(`section ${k + 1}: ${fmtMs(S.sec[k].s)}${sq ? ' → ' + fmtMs(S.sec[k].s + sq) : ''}`, Math.max(xa, 0) + 8 * d, top + 15 * d);
     if (k > 0 && X(a) >= 0 && X(a) <= W) { g.fillStyle = '#ff6b9a'; g.fillRect(X(a) - d, top, 3 * d, Hh); } // a cut: drag it to move the boundary and squeeze both sides
   }
+  // the @a-b region, then the markers: amber band + dashed line = "around here", green line = "exactly here"
+  if (S.region) {
+    const xa = X(barT(S.region.ia)), xb = X(barT(S.region.ib));
+    g.fillStyle = S.lock ? 'rgba(63,224,208,.10)' : 'rgba(63,224,208,.05)'; g.fillRect(Math.max(0, xa), mTop, Math.min(W, xb) - Math.max(0, xa), Hh);
+  }
+  for (const m of S.marks) {
+    if (m.t + m.tol < t0 || m.t - m.tol > t0 + span) continue;
+    const x = X(m.t), ap = m.kind === 'approx', sel = S.selMark === m.id, col = ap ? '#ffb347' : '#7be39a';
+    g.fillStyle = ap ? 'rgba(255,179,71,.13)' : 'rgba(123,227,154,.13)'; g.fillRect(X(m.t - m.tol), mTop, X(m.t + m.tol) - X(m.t - m.tol), Hh);
+    g.fillStyle = col;
+    if (ap) { for (let y = mTop; y < Hh; y += 10 * d) g.fillRect(x - d, y, 2 * d, 6 * d); } else g.fillRect(x - d, mTop, 2 * d, Hh);
+    const fy = mTop + 14 * d;
+    g.beginPath(); g.moveTo(x, fy); g.lineTo(x + 12 * d, fy + 5 * d); g.lineTo(x, fy + 10 * d); g.closePath();
+    if (ap) { g.lineWidth = 1.5 * d; g.strokeStyle = col; g.stroke(); } else g.fill();
+    if (sel) { g.strokeStyle = '#fff'; g.lineWidth = 1.5 * d; g.strokeRect(x - 3 * d, fy - 3 * d, 22 * d + g.measureText(markLabel(m)).width, 16 * d); }
+    g.font = `${11 * d}px system-ui`; g.fillStyle = col; g.fillText(markLabel(m), x + 15 * d, fy + 9 * d);
+  }
   // the marker, the hover, the playhead
   const mx = X(S.marker);
   if (mx >= 0 && mx <= W) { g.fillStyle = '#3fe0d0'; g.fillRect(mx - d, mTop, 2 * d, Hh); g.beginPath(); g.moveTo(mx - 7 * d, mTop); g.lineTo(mx + 7 * d, mTop); g.lineTo(mx, mTop + 11 * d); g.fill(); }
@@ -496,6 +577,8 @@ function draw() {
   }
   if (W / S.bars.length > 3 * d) { g.fillStyle = 'rgba(255,255,255,.22)'; for (let i = 0; i < S.bars.length; i++) g.fillRect(OX(barT(i)), top - 5 * d, d, 4 * d); }
   g.strokeStyle = '#e8eaee'; g.lineWidth = d; g.strokeRect(OX(t0) + d / 2, 1.5 * d, Math.max(3 * d, OX(t0 + span) - OX(t0)), top - 3 * d);
+  for (const m of S.marks) { g.fillStyle = m.kind === 'approx' ? '#ffb347' : '#7be39a'; g.fillRect(OX(m.t) - d / 2, top * 0.45, Math.max(d, 1.5 * d), top * 0.55); }
+  if (S.region) { g.fillStyle = 'rgba(63,224,208,.35)'; g.fillRect(OX(barT(S.region.ia)), top - 3 * d, Math.max(2 * d, OX(barT(S.region.ib)) - OX(barT(S.region.ia))), 3 * d); }
   const oh = OX(S.marker); g.fillStyle = '#3fe0d0'; g.fillRect(oh - d, 0, 2 * d, top);
   if (S.play) { g.fillStyle = '#fff'; g.fillRect(OX(S.play.t) - d, 0, 2 * d, top); }
   g.fillStyle = '#9aa3b0'; g.font = `${11 * d}px system-ui`; g.fillText(fmtClock(headT()), Math.min(W - 48 * d, oh + 6 * d), top - 7 * d);
@@ -774,6 +857,7 @@ function paintMixer() {
   }
 }
 async function openSong(slug) {
+  if (markPending) persistMarks(); // the old song's markers are written before this one replaces them
   stopPlay();
   S.slug = slug; S.tab = S.rec = null; dirty = true; hint('Loading…');
   try {
@@ -788,7 +872,10 @@ async function openSong(slug) {
     S.total = S.tab.buf.duration;
     S.rate = S.tab.buf.sampleRate; // the browser resamples to its own rate (48000 here), not the file's 22050
     S.onTab = onsets(S.tab.x, S.rate); S.onRec = onsets(S.rec.x, S.rate);
-    S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
+    S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.undo = []; S.dirty = false; S.saved = false; S.lock = null; modebar(); closeSugg();
+    S.marks = (d.marks?.marks || []).filter((m) => Number.isFinite(m.t)); S.region = d.marks?.region || null; S.selMark = null;
+    if (S.region && !(S.region.ia >= 0 && S.region.ib < S.bars.length)) S.region = null;
+    S.sec0 = snap();
     S.noteT = [...new Set(S.notes)].sort((a, b) => a - b);
     S.marker = S.noteT.length ? S.noteT[0] : 0; // opens on the tab's first note: the start of the guitar
     setLevel(S.noteT.length ? 4 : 1, S.marker); hint(''); warmSoon();
@@ -811,10 +898,344 @@ async function save() {
   const d = await r.json();
   if (d.error) { say(d.error, 'err'); return; }
   // the file now holds the new times: they become the starting point, with no shift left
-  S.pts = savePoints(); buildBase(); S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = true; dirty = true;
+  S.pts = savePoints(); buildBase(); S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.lock = null; modebar(); S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = true; dirty = true;
   $('#status').title = d.file;
   say(`Saved ${d.file.split(/[\\/]/).pop()}. Import it in Fretboard and choose “Replace it”.`, 'ok');
 }
+
+/* ---------- markers: where the error is ---------- */
+// A marker sits in the tab's time, so it stays put when the video moves. "approx" (amber band, ±3 s) says "around here",
+// "precise" (green line, ±0.25 s) says "exactly here". X / Shift+X drop them, they are kept beside the song as you go, and
+// Retry sends them to Python, which looks for the shift around each one. The two markers of an @15-51 region are marks too.
+const TOL = { approx: 3, precise: 0.25 }, LEAD = 0.3, MERGE = 0.3; // LEAD: your reaction time when a marker is dropped while playing
+let markTimer = 0, markPending = false;
+const nextMarkId = () => Math.max(0, ...S.marks.map((m) => m.id)) + 1;
+const markLabel = (m) => m.label || `b${S.bars[barAtTime(m.t)][1]}`;
+const sortMarks = () => S.marks.sort((a, b) => a.t - b.t);
+const selectMark = (id) => { S.selMark = id; dirty = true; };
+function marksChanged() { dirty = true; markPending = true; clearTimeout(markTimer); markTimer = setTimeout(persistMarks, 400); }
+async function persistMarks() {
+  clearTimeout(markTimer); markPending = false;
+  if (!S.slug) return;
+  try { await fetch(`/api/markers/${S.slug}`, { method: 'POST', body: JSON.stringify({ marks: S.marks, region: S.region }) }); } catch { /* the page works without the file */ }
+}
+function dropMark(kind) {
+  if (!S.tab) return;
+  const live = !!S.play && !snippet;
+  let t = live ? Math.max(0, S.play.t - LEAD) : S.marker;
+  if (kind === 'precise' && !live) { // a deliberate drop: onto the tab's note start within 120 ms, if there is one
+    let best = null;
+    for (const n of S.noteT) if (Math.abs(n - t) <= 0.12 && (best === null || Math.abs(n - t) < Math.abs(best - t))) best = n;
+    if (best !== null) t = best;
+  }
+  t = clamp(t, 0, S.total);
+  const same = S.marks.find((m) => Math.abs(m.t - t) < MERGE && m.kind === kind);
+  if (same) { selectMark(same.id); say(`Marker ${markLabel(same)} is already here.`); return; }
+  pushUndo(true);
+  const near = kind === 'precise' ? S.marks.filter((m) => m.kind === 'approx' && !m.region && Math.abs(m.t - t) <= m.tol).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0] : null;
+  let m = near;
+  if (near) { near.kind = 'precise'; near.tol = TOL.precise; near.t = t; } else { m = { id: nextMarkId(), t, kind, tol: TOL[kind] }; S.marks.push(m); }
+  sortMarks(); selectMark(m.id); marksChanged();
+  const open = S.marks.filter((x) => x.kind === 'approx' && !x.region).length;
+  say(`${near ? 'Refined' : kind === 'approx' ? 'Around-here' : 'Exact'} marker ${markLabel(m)} at tab ${t.toFixed(2)} s${live ? ` (${LEAD} s back from the playhead)` : ''}. ${open ? open + ' still only around.' : ''}`, 'ok');
+}
+function stepMark(d) {
+  const L = S.marks;
+  if (!L.length) { say('No markers yet: X drops one.'); return; }
+  const cur = L.find((m) => m.id === S.selMark);
+  let i = cur && Math.abs(cur.t - S.marker) < 1e-3 ? L.indexOf(cur) + d : d > 0 ? L.findIndex((m) => m.t > S.marker + 1e-3) : L.findLastIndex((m) => m.t < S.marker - 1e-3);
+  i = d > 0 && i < 0 ? 0 : ((i % L.length) + L.length) % L.length;
+  const m = L[i];
+  selectMark(m.id); S.marker = m.t;
+  if (S.view.span > (m.kind === 'approx' ? 14 : 4)) setLevel(m.kind === 'approx' ? 3 : 4, m.t); else showMarker();
+  say(`Marker ${markLabel(m)} (${i + 1} of ${L.length}, ${m.kind === 'approx' ? 'around here' : 'exact'}): Shift X refines it, D deletes it.`);
+}
+function delMark() {
+  const m = S.marks.find((x) => x.id === S.selMark) || S.marks.filter((x) => Math.abs(x.t - S.marker) <= Math.max(x.tol, 0.3)).sort((a, b) => Math.abs(a.t - S.marker) - Math.abs(b.t - S.marker))[0];
+  if (!m) { say('No marker to delete: click its flag or press Tab to pick one.', 'err'); return false; }
+  pushUndo(true);
+  if (m.region) { S.marks = S.marks.filter((x) => !x.region); S.region = null; if (S.lock) { S.lock = null; modebar(); } } else S.marks = S.marks.filter((x) => x !== m);
+  S.selMark = null; marksChanged();
+  say(m.region ? 'Region removed.' : `Marker ${markLabel(m)} deleted.`);
+  return true;
+}
+function clearMarks() {
+  if (!S.marks.length) { say('No markers.'); return; }
+  pushUndo(true); S.marks = []; S.region = null; S.selMark = null; S.lock = null; modebar(); marksChanged(); say('All markers removed (Ctrl Z brings them back).');
+}
+
+/* ---------- the @a-b region and lock1 / lock2 ---------- */
+// @15-51 puts two markers on bar 15 and bar 51: the region. Squeeze / stretch / shift act on it, and a lock holds one mark on the
+// grid while ← → move the other one's video: the tab between the two is squeezed or stretched (the video itself always plays at 1×).
+const barIndex = (n) => S.bars.findIndex((b) => Number(b[1]) === n);
+const barNo = (i) => S.bars[i][1];
+function fitView(a, b) { // the closest zoom that shows t = a..b
+  const len = b - a;
+  let lv = 1;
+  for (let k = 5; k >= 2; k--) if (SPANS[k - 1] >= len * 1.15) { lv = k; break; }
+  setLevel(lv, (a + b) / 2);
+}
+function gotoBar(n) {
+  const i = barIndex(n);
+  if (i < 0) { say(`There is no bar ${n}: the song has bars ${barNo(0)}–${barNo(S.bars.length - 1)}.`, 'err'); return false; }
+  S.marker = barT(i); panTo(S.marker - S.view.span / 2); dirty = true;
+  say(`Bar ${n}: tab ${barT(i).toFixed(2)} s, video ${rec(barT(i)).toFixed(2)} s.`);
+  return true;
+}
+function gotoTime(t) { S.marker = clamp(t, 0, S.total); panTo(S.marker - S.view.span / 2); dirty = true; say(`Tab ${fmtClock(S.marker)}.`); return true; }
+function setRegion(a, b) {
+  let ia = barIndex(a), ib = barIndex(b);
+  if (ia < 0 || ib < 0) { say(`There is no bar ${ia < 0 ? a : b}: the song has bars ${barNo(0)}–${barNo(S.bars.length - 1)}.`, 'err'); return false; }
+  if (ia > ib) [ia, ib] = [ib, ia];
+  if (ia === ib) { say('A region needs two different bars.', 'err'); return false; }
+  pushUndo(true);
+  S.marks = S.marks.filter((m) => !m.region);
+  for (const [n, i] of [[1, ia], [2, ib]]) S.marks.push({ id: nextMarkId(), t: barT(i), kind: 'precise', tol: TOL.precise, region: true, label: `${n}·b${barNo(i)}` });
+  sortMarks(); S.region = { ia, ib }; S.selMark = null; S.marker = barT(ia);
+  fitView(barT(ia), barT(ib)); marksChanged();
+  say(`Region: bar ${barNo(ia)} → bar ${barNo(ib)} (${(barT(ib) - barT(ia)).toFixed(1)} s of tab). Now cut, squeeze, stretch, shift, lock1 or lock2.`, 'ok');
+  return true;
+}
+const needRegion = () => { if (S.region) return true; say('No region yet: type @15-51 (two bar numbers) first.', 'err'); return false; };
+// what: 'end' (the 2nd mark's video moves, the 1st stays), 'start' (the other way), 'both' (the whole region moves, its neighbours give way)
+function regionOp(what, ms) {
+  if (!needRegion()) return false;
+  const R = S.region;
+  pushUndo(true); splitAt(R.ia); splitAt(R.ib);
+  const ka = secIdx(R.ia), ke = secIdx(R.ib);
+  if (what === 'end') moveBoundary(ke, ms);
+  else if (what === 'start') moveBoundary(ka, ms);
+  else {
+    for (let k = ka; k < ke; k++) S.sec[k].s += ms;
+    if (ka > 0) S.sec[ka - 1].sq = (S.sec[ka - 1].sq || 0) + ms;
+    S.sec[ke].s += ms; S.sec[ke].sq = (S.sec[ke].sq || 0) - ms;
+  }
+  S.selSec = ka; changed();
+  return true;
+}
+function tabRate() { // how much slower (+) or faster (−) the tab plays between the region's marks than its own tempo, in %
+  const R = S.region, v = rec(barT(R.ib)) - rec(barT(R.ia)), t = barT(R.ib) - barT(R.ia);
+  return (v / t - 1) * 100;
+}
+const rateText = (p) => (Math.abs(p) < 0.005 ? 'between the marks the tab plays at its written tempo' : `between the marks the tab plays ${Math.abs(p).toFixed(2)}% ${p > 0 ? 'slower' : 'faster'} than written`);
+function lockStart(mode) {
+  if (!needRegion()) return;
+  const R = S.region;
+  pushUndo(true); splitAt(R.ia); splitAt(R.ib);
+  S.lock = { mode, snap: snap(), moved: 0 };
+  S.selSec = secIdx(R.ia);
+  S.marker = barT(mode === 1 ? R.ib : R.ia); showMarker();
+  changed(); modebar(); lockInfo();
+  say(`Lock ${mode}: ← → now move bar ${barNo(mode === 1 ? R.ib : R.ia)}. Enter keeps it, Esc takes it back.`, 'ok');
+}
+function lockInfo() {
+  const el = $('#lockinfo'); if (!el || !S.lock) return;
+  el.textContent = `moved ${fmtMs(S.lock.moved)} · ${rateText(tabRate())}`;
+}
+function lockMove(ms) {
+  const R = S.region, L = S.lock;
+  splitAt(R.ia); splitAt(R.ib);
+  moveBoundary(secIdx(L.mode === 1 ? R.ib : R.ia), ms);
+  L.moved += ms; S.selSec = secIdx(R.ia); changed(); lockInfo();
+  const free = L.mode === 1 ? R.ib : R.ia;
+  S.marker = barT(free); showMarker();
+  auditionSoon();
+}
+function lockEnd(keep) {
+  if (!S.lock) return;
+  const L = S.lock;
+  if (!keep) { S.sec = JSON.parse(L.snap).sec; changed(); }
+  S.lock = null; modebar(); clearTimeout(audTimer);
+  say(keep ? `Lock ${L.mode} kept (${fmtMs(L.moved)}, ${rateText(tabRate())}).` : `Lock ${L.mode} taken back.`, keep ? 'ok' : '');
+}
+let audTimer = 0, audStop = 0;
+function auditionSoon() { // a short burst around the end that moved, so each step is heard
+  if (!S.lock || !S.audition || S.play) return;
+  clearTimeout(audTimer);
+  audTimer = setTimeout(async () => {
+    if (!S.lock || S.play) return;
+    await startPlay(Math.max(0, S.marker - 1.2));
+    clearTimeout(audStop); audStop = setTimeout(() => { if (S.play && !snippet) stopPlay(); }, 2800);
+  }, 450);
+}
+function modebar() {
+  const el = $('#modebar');
+  el.textContent = '';
+  if (!S.lock) { el.hidden = true; return; }
+  const R = S.region, mk = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text; if (cls) e.className = cls; return e; };
+  el.hidden = false;
+  const held = barNo(S.lock.mode === 1 ? R.ia : R.ib), free = barNo(S.lock.mode === 1 ? R.ib : R.ia);
+  const info = mk('span', '', ''); info.id = 'lockinfo';
+  const aud = mk('button', `Hear each step: ${S.audition ? 'on' : 'off'}`); aud.onclick = () => { S.audition = !S.audition; modebar(); lockInfo(); };
+  const ok = mk('button', 'Keep  Enter'), no = mk('button', 'Take back  Esc'); ok.onclick = () => lockEnd(true); no.onclick = () => lockEnd(false);
+  el.append(mk('b', `Lock ${S.lock.mode}`), mk('span', `bar ${held} is held on the grid. ← → move bar ${free}’s video 10 ms (Shift 100, Ctrl 1): the tab between them is squeezed or stretched.`), info, mk('span', '', '')); el.lastChild.className = 'grow';
+  el.append(aud, ok, no);
+}
+
+/* ---------- Retry: the markers go to Python, which looks for the shift around each one ---------- */
+async function retry() {
+  const marks = S.marks.filter((m) => !m.region); // the region's marks are places to hold, not errors
+  if (!S.tab) return;
+  if (!marks.length) { say('No markers to send: X drops one where it sounds wrong, Shift X where exactly.', 'err'); return; }
+  say(`Python is looking around ${marks.length} marker${marks.length > 1 ? 's' : ''}…`);
+  await persistMarks();
+  let d;
+  try {
+    const r = await fetch(`/api/retry/${S.slug}`, { method: 'POST', body: JSON.stringify({ points: savePoints(), marks: marks.map((m) => ({ id: m.id, t: m.t, kind: m.kind, tol: m.tol })) }) });
+    d = await r.json();
+  } catch (e) { say(`Retry failed: ${e.message || e}`, 'err'); return; }
+  if (d.error) { say(d.error, 'err'); return; }
+  showSugg(d.results);
+}
+function closeSugg() { const el = $('#sugg'); el.hidden = true; el.textContent = ''; }
+function showSugg(results) {
+  const el = $('#sugg'), mk = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text; if (cls) e.className = cls; return e; };
+  el.textContent = ''; el.hidden = false;
+  const good = results.filter((r) => r.ok && Math.abs(r.later_ms) >= 5);
+  const h = mk('h4', ''); h.append(mk('span', `Python’s answer for ${results.length} marker${results.length > 1 ? 's' : ''}`));
+  if (good.length > 1) { const all = mk('button', `Apply all ${good.length}`); all.onclick = () => { for (const r of good) applySugg(r, true); closeSugg(); }; h.append(all); }
+  const x = mk('button', '×'); x.onclick = closeSugg; h.append(x); el.append(h);
+  for (const r of results) {
+    const m = S.marks.find((q) => q.id === r.id); if (!m) continue;
+    const row = mk('div', '', 'sr'); row.className = 'sr' + (r.ok ? '' : ' weak');
+    const txt = r.ok ? (Math.abs(r.later_ms) < 5 ? `already lines up (match ${r.conf.toFixed(2)})` : `move the video ${fmtMs(-r.later_ms)} here (match ${r.conf.toFixed(2)}${r.alias ? ', nearest of several beat matches' : ''})`) : `no clear match (${r.conf.toFixed(2)}): ${r.why || 'try a part with a clear beat'}`;
+    row.append(mk('span', `${markLabel(m)} ${m.kind === 'approx' ? '≈' : '●'} ${txt}`));
+    if (r.ok && Math.abs(r.later_ms) >= 5) { const b = mk('button', 'Apply'); b.onclick = () => { applySugg(r); row.remove(); }; row.append(b); } else row.append(mk('span', ''));
+    el.append(row);
+  }
+  el.append(mk('div', 'Apply cuts a section around the marker and moves it; blend the edges with @a-b and lock1 after. Under about 70 ms the tab’s synth attack makes this unreliable: trust your ear.', 'mixnote'));
+  say('Python answered: apply what you want, then listen.', 'ok');
+}
+function applySugg(r, quiet) {
+  const m = S.marks.find((x) => x.id === r.id); if (!m) return;
+  const w = m.kind === 'approx' ? m.tol : 1.5;
+  const ia = nearestBar(Math.max(0, m.t - w));
+  let ib = nearestBar(Math.min(S.total, m.t + w));
+  if (ib <= ia) ib = Math.min(S.bars.length - 1, ia + 1);
+  if (ib <= ia) return;
+  pushUndo(true); splitAt(ia); splitAt(ib);
+  for (const x of S.sec) if (x.i >= ia && x.i < ib) x.s = Math.round(x.s - r.later_ms);
+  S.selSec = secIdx(ia); changed();
+  if (!quiet) say(`Bars ${barNo(ia)}–${barNo(ib)}: video moved ${fmtMs(-r.later_ms)}. Listen, then /lock1 to blend the edges.`, 'ok');
+}
+
+/* ---------- the command box ( / ) ---------- */
+const num = (a, d) => { const v = parseFloat(a); return Number.isFinite(v) ? v : d; };
+const CMDS = [
+  { name: 'mark', alias: ['x', 'around', 'approx'], desc: 'Drop an “around here” marker (amber, ±3 s)', keys: 'X', run: () => dropMark('approx') },
+  { name: 'exact', alias: ['precise', 'pin'], desc: 'Drop an “exactly here” marker (green, ±0.25 s); on an amber one it refines it', keys: 'Shift X', run: () => dropMark('precise') },
+  { name: 'next', alias: ['marker'], desc: 'Go to the next marker (prev: the one before)', keys: 'Tab', run: () => stepMark(1) },
+  { name: 'prev', desc: 'Go to the previous marker', keys: 'Shift Tab', run: () => stepMark(-1) },
+  { name: 'del', alias: ['delete', 'unmark'], desc: 'Delete the picked marker', keys: 'D', run: () => delMark() },
+  { name: 'clear', desc: 'Remove every marker and the region', keys: '', run: clearMarks },
+  { name: 'retry', alias: ['send', 'python'], desc: 'Send the markers to Python: it looks for the shift around each one', keys: '', run: retry },
+  { name: 'region', args: '15-51', desc: 'Two markers on bar 15 and bar 51 (the same as @15-51)', keys: '@15-51', run: (a) => { const m = /(\d+)\D+(\d+)/.exec(a); if (m) setRegion(+m[1], +m[2]); else say('Say two bars: region 15-51', 'err'); } },
+  { name: 'goto', args: '15', alias: ['go', 'bar'], desc: 'Move the marker to bar 15 (or 1:23 for a time)', keys: '@15', run: (a) => { const t = /^(\d+):(\d+(?:\.\d+)?)$/.exec(a); if (t) gotoTime(+t[1] * 60 + +t[2]); else if (/^\d+$/.test(a)) gotoBar(+a); else say('Say a bar or a time: goto 15, goto 1:23', 'err'); } },
+  { name: 'cut', desc: 'Cut at the region’s two bars, else at the bar nearest the marker', keys: 'A', run: () => { if (S.region) { pushUndo(true); const a = splitAt(S.region.ia), b = splitAt(S.region.ib); S.selSec = secIdx(S.region.ia); changed(); say(a || b ? `Cut at bar ${barNo(S.region.ia)} and bar ${barNo(S.region.ib)}.` : 'Cuts at both bars already.'); } else cutHere(); } },
+  { name: 'join', desc: 'Join the section at the marker to the one before it', keys: 'Delete', run: joinHere },
+  { name: 'squeeze', args: '20', alias: ['sq'], desc: 'Region: its 2nd mark’s video 20 ms earlier (tab squeezed). No region: the picked section', keys: '[', run: (a) => { const n = Math.abs(num(a, 10)); if (S.region) { if (regionOp('end', -n)) say(`Bar ${barNo(S.region.ib)} moved −${n} ms: ${rateText(tabRate())}.`); } else squeeze(-n); } },
+  { name: 'stretch', args: '20', alias: ['st'], desc: 'Region: its 2nd mark’s video 20 ms later (tab stretched). No region: the picked section', keys: ']', run: (a) => { const n = Math.abs(num(a, 10)); if (S.region) { if (regionOp('end', n)) say(`Bar ${barNo(S.region.ib)} moved +${n} ms: ${rateText(tabRate())}.`); } else squeeze(n); } },
+  { name: 'shift', args: '-30', alias: ['move'], desc: 'Move the whole region’s video 30 ms later (negative = earlier); its neighbours give way', keys: '← →', run: (a) => { const n = num(a, 10); if (S.region) { if (regionOp('both', n)) say(`Region moved ${fmtMs(n)}.`); } else nudge(n); } },
+  { name: 'lock1', alias: ['l1'], desc: 'Hold the 1st mark on the grid; ← → move the 2nd (Enter keeps, Esc takes back)', keys: '', run: () => lockStart(1) },
+  { name: 'lock2', alias: ['l2'], desc: 'Hold the 2nd mark on the grid; ← → move the 1st', keys: '', run: () => lockStart(2) },
+  { name: 'lock', args: '1 | 2 | off', desc: 'Same as lock1 / lock2; “lock off” keeps what the lock moved', keys: '', run: (a) => { if (a === '1') lockStart(1); else if (a === '2') lockStart(2); else if (a === 'off' || a === '') lockEnd(true); else say('lock 1, lock 2 or lock off', 'err'); } },
+  { name: 'audition', args: 'on | off', desc: 'In a lock: play a short burst after each step', keys: '', run: (a) => { S.audition = a ? a !== 'off' : !S.audition; if (S.lock) modebar(); say(`Hear each step: ${S.audition ? 'on' : 'off'}.`); } },
+  { name: 'match', desc: 'Find the shift at the marker by the note starts', keys: 'M', run: matchHere },
+  { name: 'play', alias: ['stop'], desc: 'Play or stop both', keys: 'Space', run: togglePlay },
+  { name: 'zoom', args: '1-5', desc: 'Zoom: 1 song, 2 = 45 s, 3 = 12 s, 4 = 3 s, 5 = 0.6 s', keys: '1 2 3 4 5', run: (a) => { const n = num(a, 0); if (n >= 1 && n <= 5) setLevel(Math.round(n)); else say('zoom 1 … 5', 'err'); } },
+  { name: 'save', desc: 'Write the sync into the song’s .fretboard file', keys: 'Ctrl S', run: save },
+  { name: 'undo', desc: 'Undo the last step (markers too)', keys: 'Ctrl Z', run: undo },
+  { name: 'reset', desc: 'Go back to the sync as it was opened (markers stay)', keys: '', run: reset },
+  { name: 'shortcuts', alias: ['help', '?', 'keys'], desc: 'Every shortcut, searchable', keys: '?', run: () => toggleHelp(true) },
+];
+const cmd = { sel: 0, rows: [], recent: [] };
+try { cmd.recent = JSON.parse(localStorage.getItem('aligner-recent') || '[]'); } catch { /* none yet */ }
+function findCmd(word) {
+  const w = word.toLowerCase();
+  const exact = CMDS.find((x) => x.name === w || x.alias?.includes(w));
+  if (exact) return exact;
+  const pre = CMDS.filter((x) => x.name.startsWith(w) || x.alias?.some((a) => a.startsWith(w)));
+  return pre.length === 1 ? pre[0] : null;
+}
+function remember(c) {
+  cmd.recent = [c.name, ...cmd.recent.filter((n) => n !== c.name)].slice(0, 8);
+  try { localStorage.setItem('aligner-recent', JSON.stringify(cmd.recent)); } catch { /* fine without */ }
+}
+// One command: the @ forms, or a name and its argument. Returns false when it could not be understood.
+function runOne(text, fallback) {
+  text = text.trim().replace(/^\/+/, '');
+  if (!text) return false;
+  let m;
+  if ((m = /^@\s*(\d+)\s*(?:-|–|to)\s*(\d+)$/i.exec(text))) return setRegion(+m[1], +m[2]);
+  if ((m = /^@\s*(\d+):(\d+(?:\.\d+)?)$/.exec(text))) return gotoTime(+m[1] * 60 + +m[2]);
+  if ((m = /^@\s*(\d+)$/.exec(text))) return gotoBar(+m[1]);
+  m = /^([^\s\d@-]+\d?)\s*(.*)$/.exec(text) || /^(\S+)\s*(.*)$/.exec(text);
+  const c = findCmd(m[1]) || fallback;
+  if (!c) { say(`I don’t know “${m[1]}”. Type / and pick from the list.`, 'err'); return false; }
+  remember(c); c.run((findCmd(m[1]) ? m[2] : text.replace(/^\S+\s*/, '')).trim());
+  return true;
+}
+function cmdScore(c, q) {
+  if (!q) return cmd.recent.includes(c.name) ? 100 - cmd.recent.indexOf(c.name) : 1;
+  const a = c.alias || [];
+  if (c.name === q || a.includes(q)) return 1000;
+  if (c.name.startsWith(q)) return 500;
+  if (a.some((x) => x.startsWith(q))) return 400;
+  if (c.name.includes(q)) return 200;
+  if (a.some((x) => x.includes(q))) return 150;
+  return c.desc.toLowerCase().includes(q) ? 50 : 0;
+}
+function ghostFor(text) { // what pressing Enter would do, said before it does it
+  const t = text.trim().replace(/^\/+/, ''); let m;
+  if ((m = /^@\s*(\d+)\s*(?:-|–|to)\s*(\d+)$/i.exec(t))) {
+    const a = barIndex(+m[1]), b = barIndex(+m[2]);
+    if (a < 0 || b < 0) return { err: true, text: `No bar ${a < 0 ? m[1] : m[2]} (the song has bars ${barNo(0)}–${barNo(S.bars.length - 1)}).` };
+    return { text: `two markers: bar ${m[1]} = ${barT(a).toFixed(1)} s and bar ${m[2]} = ${barT(b).toFixed(1)} s, a region of ${Math.abs(barT(b) - barT(a)).toFixed(1)} s` };
+  }
+  if ((m = /^@\s*(\d+)$/.exec(t))) { const i = barIndex(+m[1]); return i < 0 ? { err: true, text: `No bar ${m[1]}.` } : { text: `go to bar ${m[1]} (tab ${barT(i).toFixed(1)} s)` }; }
+  if (t.startsWith('@')) return { text: 'Say bars: @15-51 (a region) or @15 (go there)' };
+  const w = /^\S+/.exec(t)?.[0], c = (w && findCmd(w)) || cmd.rows[cmd.sel];
+  return c ? { text: `${c.name}${c.args ? ' ' + c.args : ''}: ${c.desc}` } : { err: true, text: 'No command like that.' };
+}
+function paintCmd() {
+  const q = $('#cmdin').value.trim().replace(/^\/+/, '').split(/\s+/)[0].toLowerCase(), list = $('#cmdlist');
+  cmd.rows = q.startsWith('@') ? [] : CMDS.map((c, i) => ({ c, i, s: cmdScore(c, q) })).filter((r) => r.s > 0).sort((a, b) => b.s - a.s || a.i - b.i).map((r) => r.c);
+  cmd.sel = clamp(cmd.sel, 0, Math.max(0, cmd.rows.length - 1));
+  list.textContent = '';
+  cmd.rows.forEach((c, i) => {
+    const row = document.createElement('div'), n = document.createElement('span'), d = document.createElement('span'), k = document.createElement('span');
+    row.className = 'cr' + (i === cmd.sel ? ' sel' : ''); n.className = 'n'; d.className = 'd'; k.className = 'k';
+    n.textContent = c.name; if (c.args) { const a = document.createElement('i'); a.textContent = ' ' + c.args; n.append(a); }
+    d.textContent = c.desc;
+    for (const part of (c.keys || '').split(' / ').filter(Boolean)) { const kb = document.createElement('kbd'); kb.textContent = part; k.append(kb); }
+    row.append(n, d, k);
+    row.onmousedown = (e) => { e.preventDefault(); if (c.args) { $('#cmdin').value = c.name + ' '; cmd.sel = 0; paintCmd(); $('#cmdin').focus(); } else { closeCmd(); remember(c); c.run(''); } };
+    list.append(row);
+  });
+  list.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+  const gh = ghostFor($('#cmdin').value), el = $('#cmdghost');
+  el.textContent = gh.text || ''; el.className = gh.err ? 'err' : '';
+}
+function openCmd(prefill = '') { $('#cmd').hidden = false; const i = $('#cmdin'); i.value = prefill; cmd.sel = 0; i.focus(); paintCmd(); }
+function closeCmd() { $('#cmd').hidden = true; $('#cmdin').blur(); }
+function enterCmd() {
+  const text = $('#cmdin').value.trim();
+  if (!text) { const c = cmd.rows[cmd.sel]; if (c?.args) { $('#cmdin').value = c.name + ' '; paintCmd(); return; } closeCmd(); if (c) { remember(c); c.run(''); } return; }
+  const parts = text.split(';').map((p) => p.trim()).filter(Boolean);
+  const first = /^[^\s\d@-]+\d?/.exec(parts[0].replace(/^\/+/, ''))?.[0];
+  let ok = true;
+  parts.forEach((p, i) => { if (ok) ok = runOne(p, i === 0 && !parts[0].startsWith('@') && first && !findCmd(first) ? cmd.rows[cmd.sel] : null); });
+  if (ok) closeCmd(); else { const el = $('#cmdghost'); el.textContent = $('#status').textContent; el.className = 'err'; }
+}
+$('#cmdin').addEventListener('input', () => { cmd.sel = 0; paintCmd(); });
+$('#cmdin').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeCmd(); e.preventDefault(); }
+  else if (e.key === 'Enter') { enterCmd(); e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { cmd.sel = Math.min(cmd.rows.length - 1, cmd.sel + 1); paintCmd(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { cmd.sel = Math.max(0, cmd.sel - 1); paintCmd(); e.preventDefault(); }
+  else if (e.key === 'Tab') { const c = cmd.rows[cmd.sel]; if (c) { $('#cmdin').value = c.name + (c.args ? ' ' : ''); paintCmd(); } e.preventDefault(); }
+});
+$('#cmdin').addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== $('#cmdin')) $('#cmd').hidden = true; }, 120));
 
 /* ---------- shortcuts on screen: the zoom and toggle bars, and the list ---------- */
 // The six switches, one definition for the key and the chip that shows its state.
@@ -834,6 +1255,8 @@ const HELP = [
   ['Zoom and scroll', [['1 2 3 4 5', 'Whole song, 45 s, 12 s, 3 s, 0.6 s'], ['+ / −', 'Zoom in / out one level'], ['Z', 'Zoom on the playhead: on = zoom keys centre on it; off = zoom into what is on screen'], ['@Ctrl + wheel', 'Zoom at the pointer'], ['@Wheel, Shift + drag', 'Scroll the view'], [', / .', 'Scroll back / forward']]],
   ['Move the video', [['@Drag the waveform', 'Moves the section under the pointer'], ['← / →', 'Nudge 10 ms (Shift 100 ms, Ctrl 1 ms)'], ['M', 'Match here by the note starts (±1 s)']]],
   ['Sections and squeeze', [['A', 'Cut at the bar nearest the marker'], ['@Double-click', 'Cut at the bar nearest the pointer'], ['Delete', 'Join with the section before'], ['@Section’s name', 'Click to pick that section'], ['[ / ]', 'Squeeze / stretch the picked section (Shift 100 ms, Ctrl 1 ms)'], ['K', 'Lock it back to the tab’s tempo'], ['@Pink cut line', 'Drag: moves the boundary, squeezing both sides']]],
+  ['Markers: note where it is wrong', [['X', 'Drop an “around here” marker (amber, ±3 s). While playing it lands 0.3 s back, for your reaction time'], ['Shift X', 'Drop an “exactly here” marker (green, ±0.25 s); on an amber one it refines it'], ['Tab / Shift Tab', 'Next / previous marker (zooms to it)'], ['D', 'Delete the picked marker'], ['@Marker’s flag', 'Click to pick it'], ['/retry', 'Send the markers to Python: it looks for the shift around each; you apply what you like']]],
+  ['Command box ( / )', [['/', 'Open it: type, Enter runs, Esc closes; the sound keeps playing'], ['@15-51', 'Two markers on bars 15 and 51 = the region'], ['@15 / @1:23', 'Go to bar 15 / to 1:23'], ['cut', 'Cut at the region’s two bars (or at the marker)'], ['squeeze 20 / stretch 20', 'Region: the 2nd mark’s video 20 ms earlier / later, so the tab between the marks is squeezed / stretched'], ['shift -30', 'Move the whole region’s video 30 ms earlier'], ['lock1 / lock2', 'Hold the 1st / 2nd mark on the grid; ← → move the other (Shift 100 ms, Ctrl 1 ms); Enter keeps it, Esc takes it back'], ['a; b', 'Several commands in a row']]],
   ['Sound and look', [['T / V', 'Tab / video sound on or off'], ['E', 'One ear each'], ['O', 'Overlay or stacked'], ['L', 'Auto level (quiet notes get tall)'], ['G', 'Boost quiet parts'], ['@Loudness panel', 'A slider per instrument; M mutes, S solos; double-click = 100%']]],
   ['File', [['Ctrl S', 'Save'], ['Ctrl Z', 'Undo'], ['?', 'Open or close this list'], ['Esc', 'Close this list']]],
 ];
@@ -854,8 +1277,8 @@ function buildChrome() {
     const box = document.createElement('div'), h = document.createElement('h4'); h.textContent = title; box.append(h);
     for (const [keys, what] of rows) {
       const row = document.createElement('div'), k = document.createElement('span'), d = document.createElement('span');
-      row.className = 'row'; k.className = 'k'; d.className = 'd'; d.textContent = what;
-      if (keys[0] === '@') { k.classList.add('m'); k.textContent = keys.slice(1); }
+      row.className = 'row'; k.className = 'k'; d.className = 'd'; d.textContent = what; row.dataset.q = `${keys} ${what} ${title}`.toLowerCase();
+      if (/^@\D/.test(keys)) { k.classList.add('m'); k.textContent = keys.slice(1); } // "@Drag it" is a mouse action; "@15-51" is typed
       else for (const part of keys.split(' / ')) { const kb = document.createElement('kbd'); kb.textContent = part; k.append(kb); }
       row.append(k, d); box.append(row);
     }
@@ -866,7 +1289,19 @@ function paintChrome() {
   for (const b of $('#zoom').children) b.classList.toggle('on', Number(b.dataset.z) === S.level);
   for (const b of $('#toggles').querySelectorAll('.chip')) b.classList.toggle('on', TOGGLES.find((t) => t.code === b.dataset.t).on());
 }
-function toggleHelp(show) { $('#help').hidden = !show; }
+function helpFilter() {
+  const q = $('#helpq').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  for (const box of $('#helpgrid').children) {
+    let any = false;
+    for (const row of box.querySelectorAll('.row')) { const hit = q.every((w) => row.dataset.q.includes(w)); row.hidden = !hit; any ||= hit; }
+    box.hidden = !any;
+  }
+}
+function toggleHelp(show) {
+  $('#help').hidden = !show;
+  if (show) { $('#helpq').value = ''; helpFilter(); setTimeout(() => $('#helpq').focus(), 0); } else $('#helpq').blur();
+}
+$('#helpq').addEventListener('input', helpFilter);
 
 /* ---------- input ---------- */
 const timeAtX = (clientX) => { const r = cv.getBoundingClientRect(); return S.view.t0 + ((clientX - r.left) / r.width) * S.view.span; };
@@ -886,7 +1321,14 @@ function zoneAt(e) { // what the pointer is over: 'strip', 'band', 'handle' (the
   if (y < TOP + 22) return 'band';
   const mx = r.left + ((S.marker - S.view.t0) / S.view.span) * r.width;
   if (y < TOP + 36 && Math.abs(e.clientX - mx) <= 10) return 'handle';
+  if (y >= TOP + 34 && y < TOP + 54 && markAtX(e.clientX)) return 'flag';
   return 'wave';
+}
+function markAtX(clientX) { // the marker whose flag is within 14 px right of, or 6 px left of, the pointer
+  const r = cv.getBoundingClientRect();
+  let best = null, bd = 1e9;
+  for (const m of S.marks) { const dx = clientX - (r.left + ((m.t - S.view.t0) / S.view.span) * r.width); if (dx >= -6 && dx <= 40 && Math.abs(dx - 8) < bd) { bd = Math.abs(dx - 8); best = m; } }
+  return best;
 }
 cv.addEventListener('mousedown', (e) => {
   if (!S.tab) return;
@@ -897,6 +1339,7 @@ cv.addEventListener('mousedown', (e) => {
     if (zone === 'strip') panTo(S.marker - S.view.span / 2);
     return;
   }
+  if (zone === 'flag') { const m = markAtX(e.clientX); selectMark(m.id); S.marker = m.t; say(`Marker ${markLabel(m)} picked (${m.kind === 'approx' ? 'around here' : 'exact'}): D deletes it, Shift X refines it.`); drag = { special: true }; return; }
   if (zone === 'cut') {
     const k = cutAtX(e.clientX);
     drag = { special: true, cut: k, x: e.clientX, sqL: S.sec[k - 1].sq || 0, sR: S.sec[k].s, sqR: S.sec[k].sq || 0, pushed: false };
@@ -939,7 +1382,7 @@ window.addEventListener('mousemove', (e) => {
   const r = cv.getBoundingClientRect();
   const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   S.hover = inside ? clamp(timeAtX(e.clientX), 0, S.total) : null;
-  if (inside && S.tab && !drag) { const z = zoneAt(e); cv.style.cursor = z === 'cut' ? 'ew-resize' : z === 'strip' || z === 'band' ? 'pointer' : z === 'handle' ? 'grab' : 'crosshair'; }
+  if (inside && S.tab && !drag) { const z = zoneAt(e); cv.style.cursor = z === 'cut' ? 'ew-resize' : z === 'strip' || z === 'band' || z === 'flag' ? 'pointer' : z === 'handle' ? 'grab' : 'crosshair'; }
   dirty = true;
 });
 window.addEventListener('mouseup', (e) => {
@@ -956,10 +1399,12 @@ cv.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 document.addEventListener('keydown', (e) => {
-  if (!$('#help').hidden) { if (e.code === 'Escape' || e.key === '?') { toggleHelp(false); e.preventDefault(); } return; }
+  if (!$('#cmd').hidden) return; // the command box has its own keys
+  if (!$('#help').hidden) { if (e.code === 'Escape' || (e.key === '?' && e.target.id !== 'helpq')) { toggleHelp(false); e.preventDefault(); } return; }
   if (e.target.matches?.('select, input, textarea')) { if (e.code !== 'Space') return; e.target.blur(); }
   else if (e.target.matches?.('button')) e.target.blur(); // a clicked button must not swallow Space or Enter: the shortcuts keep working
   if (e.key === '?') { toggleHelp(true); e.preventDefault(); return; }
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { openCmd(); e.preventDefault(); return; }
   if (!S.tab) return;
   const key = e.code;
   const step = e.shiftKey ? 100 : e.ctrlKey || e.altKey ? 1 : 10;
@@ -968,8 +1413,14 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && key === 'KeyS') save();
   else if (e.ctrlKey && key === 'KeyZ') undo();
   else if (digit && !e.ctrlKey) setLevel(Number(digit[2]));
+  else if (S.lock && (key === 'ArrowLeft' || key === 'ArrowRight')) lockMove(key === 'ArrowLeft' ? -step : step);
+  else if (S.lock && (key === 'Enter' || key === 'NumpadEnter')) lockEnd(true);
+  else if (S.lock && key === 'Escape') lockEnd(false);
   else if (key === 'ArrowLeft') nudge(-step);
   else if (key === 'ArrowRight') nudge(step);
+  else if (key === 'KeyX' && !e.ctrlKey && !e.metaKey) { if (!e.repeat) dropMark(e.shiftKey ? 'precise' : 'approx'); }
+  else if (key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) stepMark(e.shiftKey ? -1 : 1);
+  else if (key === 'KeyD' && !e.ctrlKey && !e.metaKey) delMark();
   else if (key === 'BracketLeft') squeeze(-step);
   else if (key === 'BracketRight') squeeze(step);
   else if (key === 'KeyK') lockTempo();
@@ -999,6 +1450,8 @@ function toggleFollow() {
 }
 $('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = () => cutHere(); $('#uncut').onclick = joinHere;
 $('#head').onclick = toPlayhead; $('#follow').onclick = toggleFollow;
+$('#mka').onclick = () => dropMark('approx'); $('#mkp').onclick = () => dropMark('precise'); $('#mkn').onclick = () => stepMark(1); $('#mkr').onclick = retry;
+$('#cmdbtn').onclick = () => openCmd();
 $('#helpbtn').onclick = () => toggleHelp(true); $('#helpx').onclick = () => toggleHelp(false);
 $('#help').addEventListener('mousedown', (e) => { if (e.target === $('#help')) toggleHelp(false); });
 $('#sq').onclick = (e) => squeeze(e.shiftKey ? -100 : -10); $('#st').onclick = (e) => squeeze(e.shiftKey ? 100 : 10); $('#lock').onclick = lockTempo;

@@ -9,6 +9,10 @@ rendered tracks and the video's audio from tests/yt2gp5/cache/real/. Nudge the v
 song into sections that each get their own shift, zoom with the number keys, play both to hear it. Save
 writes the new bar times into the song's .fretboard file (the old one is kept as .before-aligner), then
 import that file into Fretboard ("Replace it"). Everything stays on this PC. Needs numpy.
+
+Markers (X "around here", Shift+X "exactly here"), the / command box (@15-51, lock1, lock2, squeeze, retry ...) and Retry are
+described in CLAUDE.md. The markers are kept in out/listen/<song>/aligner/markers.json; Retry (POST /api/retry/<song>) finds the
+shift around each marker by the note starts, and the page applies the ones you pick.
 """
 import argparse
 import datetime
@@ -222,7 +226,111 @@ def song_data(slug):
         "tracks": [t["name"] for t in info.get("tracks", [])],
         "mixer": mixer_data(info),
         "aligned": (entry.get("autoSync") or {}).get("aligned"),
+        "marks": read_json(d / "aligner" / "markers.json", {}),
     }
+
+
+def save_markers(slug, marks, region):
+    """The page's markers (tab time) and its @a-b region, kept beside the song so Python and Claude can read them."""
+    clean = []
+    for m in marks:
+        t = float(m["t"])
+        if not np.isfinite(t) or t < 0:
+            continue
+        item = {"id": int(m["id"]), "t": round(t, 3), "kind": "precise" if m.get("kind") == "precise" else "approx", "tol": float(m.get("tol", 3))}
+        if m.get("label"):
+            item["label"] = str(m["label"])[:20]
+        if m.get("region"):
+            item["region"] = True
+        clean.append(item)
+    reg = {"ia": int(region["ia"]), "ib": int(region["ib"])} if region else None
+    out = LISTEN / slug / "aligner"
+    out.mkdir(parents=True, exist_ok=True)
+    tmp = out / "markers.json.tmp"
+    tmp.write_text(json.dumps({"marks": clean, "region": reg, "at": datetime.datetime.now().isoformat(timespec="seconds")}, indent=1), encoding="utf-8")
+    tmp.replace(out / "markers.json")
+    return {"ok": True, "marks": len(clean)}
+
+
+HOP5 = 110  # 5 ms at 22050 Hz, the page's note-start step
+SURE = 0.25  # a match below this is shown greyed, with no Apply (the page's M key needs 0.2, and acts at once; this one asks first)
+_env_cache = {}
+
+
+def read_wav(path):
+    with wave.open(str(path), "rb") as w:
+        raw = w.readframes(w.getnframes())
+        ch = w.getnchannels()
+    x = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    return x.reshape(-1, ch).mean(axis=1) if ch > 1 else x
+
+
+def note_starts(slug, which):
+    """The sound's note starts (a rise in the square-rooted loudness, blurred ±10 ms), 5 ms apart: what the page's M key matches too."""
+    wav = audio_file(slug, which)
+    key = (str(wav), wav.stat().st_mtime_ns)
+    if key not in _env_cache:
+        x = read_wav(wav)
+        n = len(x) // HOP5
+        env = np.sqrt(np.sqrt((x[: n * HOP5].reshape(n, HOP5) ** 2).mean(axis=1)))
+        on = np.maximum(0.0, np.diff(env, prepend=env[0]))
+        k = np.array([1, 2, 3, 2, 1], float)
+        _env_cache.clear()
+        _env_cache[key] = np.convolve(on, k / k.sum(), mode="same")
+    return _env_cache[key]
+
+
+def retry(slug, points, marks):
+    """For each marker: how far the video would have to move, here, to line up with the tab best, by the note starts in a window
+    around it (±3 s for an "around here" marker, ±1.5 s for an exact one). The map is the page's current one. Among peaks nearly as
+    good as the best, the one nearest 0 wins (a steady beat matches at every beat). Nothing is written: the page applies what you pick."""
+    info = read_json(LISTEN / slug / "info.json")
+    bars_t = np.array([b[0] for b in info["bars"]], float)
+    px = np.array([bars_t[int(i)] for i, _ in points], float)
+    py = np.array([ms / 1000 for _, ms in points], float)
+    if len(px) < 2:
+        raise ValueError("The sync map needs at least two bars.")
+
+    def video_at(t):
+        y = np.interp(t, px, py)
+        y = np.where(t < px[0], py[0] + (t - px[0]), y)
+        return np.where(t > px[-1], py[-1] + (t - px[-1]), y)
+
+    tab, rec = note_starts(slug, "tab"), note_starts(slug, "rec")
+    step = HOP5 / RATE
+    out = []
+    for m in marks:
+        t, approx = float(m["t"]), m.get("kind") != "precise"
+        half, reach = (3.0, 1.0) if approx else (1.5, 0.5)
+        ts = np.arange(max(0.0, t - half), t + half, step)
+        a = np.clip((ts / step).astype(int), 0, len(tab) - 1)
+        tv = tab[a]
+        if len(ts) < 100 or tv.std() < 1e-6:
+            out.append({"id": m["id"], "ok": False, "conf": 0.0, "later_ms": 0.0, "why": "the tab is silent or too close to an end here"})
+            continue
+        tv = (tv - tv.mean()) / tv.std()
+        lags = np.arange(-round(reach / step), round(reach / step) + 1)
+        base_i = video_at(ts) / step
+        scores = np.zeros(len(lags))
+        for j, l in enumerate(lags):
+            r = np.interp(base_i + l, np.arange(len(rec)), rec, left=0.0, right=0.0)
+            sd = r.std()
+            scores[j] = float(np.mean(tv * (r - r.mean()) / sd)) if sd > 1e-9 else 0.0
+        best = int(np.argmax(scores))
+        top = scores[best]
+        alias = False
+        for j in range(1, len(scores) - 1):  # the peak nearest 0 among those nearly as good
+            if scores[j] >= top * 0.85 and scores[j] >= scores[j - 1] and scores[j] >= scores[j + 1] and abs(lags[j]) < abs(lags[best]):
+                best, alias = j, True
+        c = float(scores[best])
+        edge = best in (0, len(scores) - 1)
+        d = 0.0
+        if not edge:
+            lo, mid, hi = scores[best - 1], scores[best], scores[best + 1]
+            d = (lo - hi) / (2 * (lo - 2 * mid + hi) or 1)
+        out.append({"id": m["id"], "ok": bool(c >= SURE and not edge), "conf": c, "later_ms": round(float((lags[best] + d) * step * 1000), 1), "alias": alias,
+                    "why": "the best match is at the edge of what it looks at (±%.1f s): nudge closer first" % reach if edge else ("" if c >= SURE else "no clear beat here")})
+    return {"results": out}
 
 
 def save(slug, points, note, by="aligner", sections=None):
@@ -290,6 +398,12 @@ class H(BaseHTTPRequestHandler):
             if len(parts) == 3 and parts[:2] == ["api", "save"] and SAFE.match(parts[2]):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
                 return self.js(save(parts[2], body["points"], body.get("note", "")))
+            if len(parts) == 3 and parts[:2] == ["api", "markers"] and SAFE.match(parts[2]):
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                return self.js(save_markers(parts[2], body.get("marks", []), body.get("region")))
+            if len(parts) == 3 and parts[:2] == ["api", "retry"] and SAFE.match(parts[2]):
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                return self.js(retry(parts[2], body["points"], body.get("marks", [])))
             self.send(b"not found", "text/plain", 404)
         except (ConnectionError, BrokenPipeError):
             pass

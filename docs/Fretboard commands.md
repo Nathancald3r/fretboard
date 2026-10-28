@@ -497,8 +497,8 @@ cd -LiteralPath "C:\Users\natha\Desktop\[4] Project Database\Claude\Song star"; 
 
 - Run from: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song star`
 - Script: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song star\tools\aligner.py`
-- What it does: Two waveforms on the tab's time with bar lines and note ticks. Drag to move the video, S saves, ? lists the shortcuts. Options: --port N, --no-open.
-- How it fits: The by-hand fix when wavefit cannot. Save writes new syncPoints into the song's .fretboard (first version kept as .before-aligner); import with "Replace it". Needs numpy.
+- What it does: Two waveforms on the tab's time with bar lines and note ticks. Drag to move the video, Ctrl S saves, ? lists the shortcuts (with a filter). X / Shift X drop "around here" / "exactly here" markers, / opens the command box (@15-51 makes a region; cut, squeeze, stretch, lock1, lock2, retry). Options: --port N, --no-open.
+- How it fits: The by-hand fix when wavefit cannot. Save writes new syncPoints into the song's .fretboard (first version kept as .before-aligner); import with "Replace it". Markers are kept in out/listen/<song>/aligner/markers.json; Retry asks Python for the shift around each marker. Needs numpy.
 - Writes: `C:\Users\natha\Desktop\[4] Project Database\Claude\Song star\tests\yt2gp5\out\listen\<song>\`
 - Opens: http://127.0.0.1:8433
 
