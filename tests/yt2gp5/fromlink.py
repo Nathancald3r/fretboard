@@ -13,6 +13,8 @@ What it does, each step skipped when it's done already:
   5. lines the tab up with the video: one steady tempo and the start (listen.py --export), then the
      QA gate says PASS, LISTEN or FAIL
 Prints the .fretboard file at the end: open it in Fretboard (Import files).
+--tab-only --title T [--artist A] [--ug URL]: no link, no video, no line-up: steps 2-4 only, and the official tab as a
+.fretboard (the user chose not to sync a video). Prints "Done: <file>", exit 0.
 Exit codes: 0 PASS, 1 failed, 2 LISTEN (made, but have a listen), 3 FAIL (made, sync is off).
 """
 import argparse
@@ -197,25 +199,8 @@ def add_song(gp, v, ug_url):
     return hit["name"]
 
 
-def main():
-    for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8", errors="replace")
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("link")
-    ap.add_argument("--ug", default="")
-    ap.add_argument("--title", default="")
-    ap.add_argument("--artist", default="")
-    ap.add_argument("--again", action="store_true")
-    a = ap.parse_args()
-
-    say("1. the video")
-    v = video(a.link)
-    title, artist = song_name(v)
-    title, artist = a.title or title, a.artist or artist
-    say(f"  {v['title']} ({v['channel']}, {v['seconds'] // 60}:{v['seconds'] % 60:02d}) → {artist} - {title}")
-
-    say("2. the official tab on UG")
-    ug = a.ug
+def pick_official(ug, title, artist):
+    """The Official tab's link and UG's spelling of the title and artist: given with --ug, else searched on UG."""
     if not ug:
         hit = find_official(title, artist)
         if not hit:
@@ -226,6 +211,62 @@ def main():
         say(f"  {hit['name']}: {ug}")
     if not re.search(r"-official-\d+", ug):
         sys.exit("--ug must be an Official tab (its link has -official- in it).")
+    return ug, title, artist
+
+
+def tab_only(a):
+    """The official tab alone as a .fretboard, no video and no line-up. Its file."""
+    import base64
+    import datetime
+    import run
+    if not a.title:
+        sys.exit("--tab-only needs --title (and --artist).")
+    say("1. the official tab on UG")
+    ug, title, artist = pick_official(a.ug, a.title, a.artist)
+    say("2. its tracks")
+    folder = None if a.again else saved_folder(title, artist)
+    if folder:
+        say(f"  saved before: {folder.name}")
+    else:
+        folder = collect(ug)
+    say("3. the .gp")
+    gp = to_gp(folder, a.again)
+    entry = {"kind": "gp", "title": title, "artist": artist, "fileName": gp.name,
+             "data": {"$bytes": base64.b64encode(gp.read_bytes()).decode()}, "version": {"type": "official"}, "sourceUrl": ug}
+    out = HERE / "out" / "tabs" / run.slug(f"{artist} - {title}")
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{run.slug(title)}.fretboard"
+    path.write_text(json.dumps({"format": "fretboard-songs", "version": 1, "created": datetime.datetime.now().isoformat(),
+                                "songs": [entry]}), encoding="utf-8")
+    say(f"\nDone: {path}\nThe official tab, no video (tab only).")
+    return path
+
+
+def main():
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("link", nargs="?", default="")
+    ap.add_argument("--tab-only", action="store_true")
+    ap.add_argument("--ug", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--artist", default="")
+    ap.add_argument("--again", action="store_true")
+    a = ap.parse_args()
+    if a.tab_only:
+        tab_only(a)
+        sys.exit(0)
+    if not a.link:
+        ap.error("give a YouTube link (or --tab-only --title T)")
+
+    say("1. the video")
+    v = video(a.link)
+    title, artist = song_name(v)
+    title, artist = a.title or title, a.artist or artist
+    say(f"  {v['title']} ({v['channel']}, {v['seconds'] // 60}:{v['seconds'] % 60:02d}) → {artist} - {title}")
+
+    say("2. the official tab on UG")
+    ug, title, artist = pick_official(a.ug, title, artist)
 
     say("3. its tracks")
     folder = None if a.again else saved_folder(title, artist)

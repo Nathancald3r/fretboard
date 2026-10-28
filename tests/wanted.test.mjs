@@ -1,6 +1,6 @@
 // Run: node tests/wanted.test.mjs
 import assert from 'node:assert/strict';
-import { wantRecord, wantOf, wantLabel, nextWanted, wantWorking, wantFailed, wantRetry, wantDone, cleanWant } from '../js/wanted.js';
+import { wantRecord, wantOf, wantLabel, wantSync, nextWanted, wantWorking, wantFailed, wantRetry, wantDone, cleanWant } from '../js/wanted.js';
 import { songFromRecord, songRecord } from '../js/sync.js';
 
 const t0 = 1_000_000;
@@ -8,6 +8,16 @@ const w = wantRecord({ title: ' Ho Hey ', artist: 'The Lumineers' }, t0);
 assert.deepEqual([w.kind, w.title, w.artist, w.data, w.want], ['text', 'Ho Hey', 'The Lumineers', '', { state: 'asked', at: t0 }]);
 assert.equal(wantLabel(w), 'Asked: your computer will get it');
 assert.equal(wantLabel({ kind: 'gp', title: 'x' }), '');
+
+// the choice made when asking: official tab only (no video, no line-up) survives every state change
+const tabOnly = { ...wantRecord({ title: 'Ho Hey', sync: false }, t0), uid: 't' };
+assert.deepEqual(tabOnly.want, { state: 'asked', at: t0, sync: false });
+assert.deepEqual([wantSync(w), wantSync(tabOnly), wantSync({ kind: 'gp' })], [true, false, true], 'sync is the default');
+assert.equal(wantLabel(tabOnly), 'Asked: your computer will get the tab (no video)');
+assert.equal(wantOf(wantWorking(tabOnly, 'PC', t0 + 1)).sync, false);
+assert.equal(wantOf(wantFailed(tabOnly, 'x', t0 + 2)).sync, false);
+assert.equal(wantOf(wantRetry(wantFailed(tabOnly, 'x', t0 + 2), t0 + 3)).sync, false);
+assert.equal('sync' in wantOf(wantRetry(w, t0 + 3)), false, 'a normal request carries no flag');
 
 // the queue: oldest asked first; a "working" one only when it has been stuck for hours
 const a = { ...wantRecord({ title: 'A' }, t0 + 50), uid: 'a' };

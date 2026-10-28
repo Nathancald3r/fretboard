@@ -57,7 +57,7 @@ try {
   };
   let out = await round({ store, remote, runner: pass });
   assert.deepEqual(out, { done: 1, failed: 0, asked: 1 });
-  assert.deepEqual(asked, [{ title: 'Ho Hey', artist: 'The Lumineers' }]);
+  assert.deepEqual(asked, [{ title: 'Ho Hey', artist: 'The Lumineers', sync: true }]);
   assert.equal(seen, 'working', 'the phone shows the song as being fetched');
   const uid = only(p).uid;
   await sync(p, remote);
@@ -91,6 +91,20 @@ try {
   assert.deepEqual(out, { done: 0, failed: 1, asked: 1 }, 'a crashing runner is a reason, not a crash');
   await sync(p, remote);
   assert.equal(wantOf([...p.songs.values()].find((s) => s.title === 'Riptide')).reason, 'boom');
+
+  // the user chose "tab only" when asking: the runner is told so (no video search, no line-up) and the tab is delivered
+  const tabEntry = { kind: 'gp', title: 'Count On Me', artist: 'Bruno Mars', fileName: 'Count On Me.gp', data: { $bytes: Buffer.from([9, 8]).toString('base64') }, version: { type: 'official' } };
+  const tabFile = join(tmp, 'Count_On_Me.fretboard');
+  writeFileSync(tabFile, JSON.stringify({ format: 'fretboard-songs', version: 1, songs: [tabEntry] }));
+  await p.store.putSong(wantRecord({ title: 'Count On Me', artist: 'Bruno Mars', sync: false }));
+  await sync(p, remote);
+  const jobs = [];
+  out = await round({ store, remote, runner: async (job) => { jobs.push(job); return { verdict: 'PASS', file: tabFile }; } });
+  assert.deepEqual(out, { done: 1, failed: 0, asked: 1 });
+  assert.deepEqual(jobs, [{ title: 'Count On Me', artist: 'Bruno Mars', sync: false }]);
+  await sync(p, remote);
+  const tabSong = [...p.songs.values()].find((s) => s.title === 'Count On Me');
+  assert.deepEqual([tabSong.kind, tabSong.want, tabSong.recording, tabSong.syncPoints], ['gp', undefined, undefined, undefined], 'the tab, with no video or sync');
 
   // paused and dry rounds fetch nothing
   await p.store.putSong(wantRecord({ title: 'Pompeii', artist: 'Bastille' }));

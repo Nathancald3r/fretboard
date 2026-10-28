@@ -22,7 +22,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { syncLibrary, githubRemote, songRecord, songFromRecord } from '../js/sync.js';
-import { nextWanted, wantWorking, wantFailed, wantDone } from '../js/wanted.js';
+import { nextWanted, wantWorking, wantFailed, wantDone, wantSync } from '../js/wanted.js';
 import { readFretboardFile } from '../js/sharecore.js';
 import { rankResults, songQuery } from '../js/ytsearch.js';
 
@@ -67,7 +67,7 @@ const REASONS = {
 const reasonOf = (o) => o.reason || REASONS[o.verdict] || 'something went wrong on the computer';
 
 /**
- * Takes every asked song, one at a time. runner({ title, artist }) → { verdict: 'PASS'|'LISTEN'|'FAIL'|'ERROR',
+ * Takes every asked song, one at a time. runner({ title, artist, sync }) (sync false = tab only) → { verdict: 'PASS'|'LISTEN'|'FAIL'|'ERROR',
  * file?, reason? }. The phone sees "working" while a song runs and the finished song (or the reason) after.
  * @returns {{ done: number, failed: number, asked: number }}
  */
@@ -89,7 +89,7 @@ export async function round({ store, remote, runner, device = DEVICE, log = () =
     await store.putSong(wantWorking(song, device));
     await pull(); // the phone shows "your computer is getting it…"
     let result;
-    try { result = await runner({ title: song.title, artist: song.artist || '' }); } catch (e) { result = { verdict: 'ERROR', reason: String(e?.message || e) }; }
+    try { result = await runner({ title: song.title, artist: song.artist || '', sync: wantSync(song) }); } catch (e) { result = { verdict: 'ERROR', reason: String(e?.message || e) }; }
     let made = null;
     if (result.verdict === 'PASS') {
       try { made = readFretboardFile(readFileSync(result.file, 'utf8'))?.songs[0] || null; } catch { /* reported below */ }
@@ -132,7 +132,13 @@ export function candidates(found, { title, artist }) {
 
 /** The real runner: find the videos, try them in order until one lines up (PASS), else report the best try. */
 export function pipelineRunner({ python = 'python', log = () => {} } = {}) {
-  return async ({ title, artist }) => {
+  return async ({ title, artist, sync = true }) => {
+    if (!sync) { // the user chose no video when asking: the official tab alone, nothing to line up
+      const r = await exec(python, ['tests/yt2gp5/fromlink.py', '--tab-only', '--title', title, ...(artist ? ['--artist', artist] : [])], { log });
+      const file = /^Done: (.+)$/m.exec(r.text)?.[1]?.trim();
+      if (r.code === 0 && file) return { verdict: 'PASS', file };
+      return { verdict: 'ERROR', reason: /no Official tab/i.test(r.text) ? 'no official tab on Ultimate Guitar' : lastLine(r.text) };
+    }
     const search = await exec(python, ['tests/yt2gp5/ytfind.py', `${artist} ${title} official audio`], { timeoutMs: 120000 });
     let found;
     try { found = JSON.parse(search.text.slice(search.text.indexOf('['))); } catch { return { verdict: 'ERROR', reason: 'YouTube search failed: ' + lastLine(search.text) }; }

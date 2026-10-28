@@ -275,13 +275,13 @@ async function onLibraryClick(e) {
 async function askComputer(query = '') {
   const { songQuery } = await import('./ytsearch.js');
   const q = songQuery({ title: query.trim() });
-  const f = await ask({ title: 'Ask my computer for a song', text: 'It finds the official Ultimate Guitar tab and the official video, lines them up and sends the song here (a few minutes, when the computer is on).', ok: 'Ask', fields: { title: q.title, artist: q.artist } });
+  const f = await ask({ title: 'Ask my computer for a song', text: 'It finds the official Ultimate Guitar tab and sends the song here (a few minutes, when the computer is on). You choose now, then it all happens by itself.', ok: 'Ask', fields: { title: q.title, artist: q.artist, sync: true } });
   const title = f?.title.trim();
   if (!title) return;
   if (!syncIsOn()) { toast('Turn on Sync and backup first: that is how the request reaches your computer.', 6000); $('sync-dialog').showModal(); return; }
-  await putSong(wantRecord({ title, artist: f.artist.trim() }));
+  await putSong(wantRecord({ title, artist: f.artist.trim(), sync: f.sync }));
   $('find-query').value = '';
-  toast(`Asked for “${title}”. It shows here when your computer has it.`, 6000);
+  toast(f.sync ? `Asked for “${title}”, with its official video lined up. It shows here when your computer has it.` : `Asked for the tab of “${title}” (no video). It shows here when your computer has it.`, 6000);
   renderLibrary();
 }
 
@@ -342,13 +342,15 @@ function ask({ title, text = '', ok = 'OK', fields = null, single = false }) {
   $('ask-artist').hidden = single;
   $('ask-name').placeholder = single ? 'Name' : 'Title';
   if (fields) { $('ask-name').value = fields.title; $('ask-artist').value = fields.artist; }
+  $('ask-sync-row').hidden = typeof fields?.sync !== 'boolean'; // the "also sync a video?" choice, only where the caller offers it
+  if (!$('ask-sync-row').hidden) $('ask-sync').checked = fields.sync;
   dialog.returnValue = '';
   dialog.showModal();
   (fields ? $('ask-name') : $('ask-ok')).focus();
   return new Promise((resolve) => {
     dialog.addEventListener('close', () => {
       if (dialog.returnValue !== 'ok') resolve(fields ? null : false);
-      else resolve(fields ? { title: $('ask-name').value, artist: $('ask-artist').value } : true);
+      else resolve(fields ? { title: $('ask-name').value, artist: $('ask-artist').value, sync: $('ask-sync').checked } : true);
     }, { once: true });
   });
 }
