@@ -32,6 +32,7 @@ CACHE = ROOT / "tests" / "yt2gp5" / "cache" / "real"
 PAGE = Path(__file__).with_name("aligner.html")
 RATE = 22050  # the page's audio: mono, half the pipeline's rate (plenty for note starts)
 SAFE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+AUDIO = re.compile(r"^(tab|rec|tab-\d{1,3}|rec-(drums|bass|other|vocals))\.wav$")
 _lock = threading.Lock()
 
 
@@ -98,11 +99,8 @@ def make_tab_wav(info, path):
     to_wav(mixed * (0.9 / max(1e-6, float(np.abs(mixed).max()))), path)
 
 
-def make_rec_wav(info, path):
-    vid = video_id(info)
-    src = CACHE / info["slug"] / f"recording-{vid}.wav"
-    if not vid or not src.exists():
-        raise FileNotFoundError(f"The video's audio is not saved ({src.name}). Run listen.py or fromlink.py again.")
+def read_mono(src):
+    """A 16-bit wav as mono float32 at RATE."""
     with wave.open(str(src)) as w:
         if w.getsampwidth() != 2:
             raise ValueError("The video's audio is not 16-bit.")
@@ -113,20 +111,98 @@ def make_rec_wav(info, path):
         y = half(y)
     elif rate != RATE:
         y = np.interp(np.arange(0, len(y) / rate, 1 / RATE), np.arange(len(y)) / rate, y)
+    return y
+
+
+def rec_source(info):
+    vid = video_id(info)
+    src = CACHE / info["slug"] / f"recording-{vid}.wav"
+    if not vid or not src.exists():
+        raise FileNotFoundError(f"The video's audio is not saved ({src.name}). Run listen.py or fromlink.py again.")
+    return src
+
+
+def make_rec_wav(info, path):
+    y = read_mono(rec_source(info))
     to_wav(y * (0.9 / max(1e-6, float(np.abs(y).max()))), path)
 
 
+# The separate instruments, for the page's loudness sliders. Each is scaled by the same factor as the whole mix,
+# so the tab's tracks add up to tab.wav and the video's stems add up (about) to rec.wav.
+STEMS = ("drums", "bass", "other", "vocals")  # the video's stems, when drumclock.py has split it
+_scales = {}
+
+
+def stems_dir(info):
+    vid = video_id(info)
+    d = CACHE / info["slug"] / f"stems-{vid}"
+    return d if vid and all((d / f"{s}.wav").exists() for s in STEMS) else None
+
+
+def tab_files(info):
+    found = tab_tracks(info)
+    if not found:
+        return []
+    meta, _ = found
+    sub = CACHE / info["slug"] / f"gp-{info['gp_sha']}" / "tracks"
+    return [(t["index"], t["name"], sub / f"track{t['index']}.f32") for t in meta["tracks"] if (sub / f"track{t['index']}.f32").exists()]
+
+
+def tab_mono(f):
+    return half(np.fromfile(f, dtype=np.float32).reshape(-1, 2).mean(axis=1))
+
+
+def scale_of(kind, info):
+    key = (kind, info["gp_sha"] if kind == "tab" else video_id(info))
+    if key not in _scales:
+        if kind == "tab":
+            mixed = None
+            for _, _, f in tab_files(info):
+                y = tab_mono(f)
+                mixed = y if mixed is None else mixed[:len(y)] + y[:len(mixed)]
+        else:
+            mixed = read_mono(rec_source(info))
+        _scales[key] = 0.9 / max(1e-6, float(np.abs(mixed).max()))
+    return _scales[key]
+
+
+def make_tab_track(info, index, path):
+    f = next((f for i, _, f in tab_files(info) if i == index), None)
+    if f is None:
+        raise FileNotFoundError(f"The tab's track {index} is not saved.")
+    to_wav(tab_mono(f) * scale_of("tab", info), path)
+
+
+def make_rec_stem(info, stem, path):
+    d = stems_dir(info)
+    if stem not in STEMS or d is None:
+        raise FileNotFoundError("This song's video has not been split into instruments (drumclock.py does that).")
+    to_wav(read_mono(d / f"{stem}.wav") * scale_of("rec", info), path)
+
+
+def mixer_data(info):
+    """What the page's loudness panel can offer: the tab's tracks, and the video's stems when they exist."""
+    return {"tab": [{"id": i, "name": n} for i, n, _ in tab_files(info)], "rec": list(STEMS) if stems_dir(info) else []}
+
+
 def audio_file(slug, which):
-    """tab.wav or rec.wav for a song, made on first ask and kept (renewed when the tab or the video changed)."""
+    """tab.wav, rec.wav, tab-<track>.wav or rec-<stem>.wav for a song, made on first ask and kept (renewed when the tab or the video changed)."""
     d = LISTEN / slug
     info = read_json(d / "info.json")
-    key = info["gp_sha"] if which == "tab" else video_id(info)
+    key = info["gp_sha"] if which.startswith("tab") else video_id(info)
     out = d / "aligner"
     out.mkdir(exist_ok=True)
     wav, stamp = out / f"{which}.wav", out / f"{which}.key"
     with _lock:
         if not wav.exists() or not stamp.exists() or stamp.read_text() != str(key):
-            (make_tab_wav if which == "tab" else make_rec_wav)(info, wav)
+            if which == "tab":
+                make_tab_wav(info, wav)
+            elif which == "rec":
+                make_rec_wav(info, wav)
+            elif which.startswith("tab-"):
+                make_tab_track(info, int(which[4:]), wav)
+            else:
+                make_rec_stem(info, which[4:], wav)
             stamp.write_text(str(key))
     return wav
 
@@ -142,6 +218,7 @@ def song_data(slug):
         "points": entry.get("syncPoints") or [],  # [bar index, video ms]
         "notes": [round(n[1], 3) for n in info.get("notes", [])],  # where the tab's notes start (tab time)
         "tracks": [t["name"] for t in info.get("tracks", [])],
+        "mixer": mixer_data(info),
         "aligned": (entry.get("autoSync") or {}).get("aligned"),
     }
 
@@ -197,8 +274,8 @@ class H(BaseHTTPRequestHandler):
                 return self.js(songs())
             if len(parts) == 3 and parts[:2] == ["api", "song"] and SAFE.match(parts[2]):
                 return self.js(song_data(parts[2]))
-            if len(parts) == 3 and parts[0] == "audio" and SAFE.match(parts[1]) and parts[2] in ("tab.wav", "rec.wav"):
-                return self.send(audio_file(parts[1], parts[2][:3]).read_bytes(), "audio/wav")
+            if len(parts) == 3 and parts[0] == "audio" and SAFE.match(parts[1]) and AUDIO.match(parts[2]):
+                return self.send(audio_file(parts[1], parts[2][:-4]).read_bytes(), "audio/wav")
             self.send(b"not found", "text/plain", 404)
         except (ConnectionError, BrokenPipeError):
             pass

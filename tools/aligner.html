@@ -27,6 +27,17 @@
   footer b { color: var(--text); font-weight: 600; }
   #readout { color: var(--text); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
   #hint { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--dim); font-size: 17px; pointer-events: none; }
+  #mixbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 4px 28px; margin: 4px 0 8px; }
+  .mixcol h4 { margin: 0 0 2px; font-size: 13px; color: var(--text); }
+  .mixrow { display: grid; grid-template-columns: 8.5em 1fr 3.4em 1.9em 1.9em; gap: 6px; align-items: center; }
+  .mixrow.master { border-bottom: 1px solid var(--line); padding-bottom: 3px; margin-bottom: 3px; }
+  .mixrow input[type=range] { width: 100%; margin: 0; }
+  .mixrow .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mixrow .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .mixrow button { background: #272c35; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0; font: 11px ui-monospace, Consolas, monospace; cursor: pointer; height: 20px; }
+  .mixrow button.on { background: #b3472f; color: #fff; border-color: #b3472f; }
+  .mixrow button.solo.on { background: #2b6fd6; border-color: #2b6fd6; }
+  .mixnote { color: var(--dim); font-size: 12px; }
   kbd { background: #2a2f38; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: 12px ui-monospace, Consolas, monospace; color: var(--text); }
 </style>
 </head>
@@ -34,9 +45,14 @@
 <header>
   <select id="song" aria-label="Song"></select>
   <button id="play" title="Play from the marker (Space)">▶ Play</button>
+  <button id="head" title="Centre the view on the playhead (P)">To playhead</button>
+  <button id="follow" title="Keep the playhead in the middle while playing (F)">Follow</button>
   <button id="match" title="Find the shift here by matching the note starts (M)">Match here</button>
   <button id="cut" title="Start a new section at the nearest bar line (A)">Cut here</button>
   <button id="uncut" title="Join this section to the one before it (Delete)">Join</button>
+  <span title="Pick a section by clicking its name above the waveform, then squeeze or stretch the video across it">
+    <button id="sq" title="Squeeze the picked section: the video's end moves toward its start ( [ ). Shift = 100 ms">Squeeze</button><button id="st" title="Stretch the picked section ( ] ). Shift = 100 ms">Stretch</button><button id="lock" title="Back to the tab's tempo: the section only moves, it is not squeezed (K)">Lock tempo</button>
+  </span>
   <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
   <button id="reset" title="Go back to the sync as it was opened">Reset</button>
   <span class="grow"></span>
@@ -49,13 +65,19 @@
 </main>
 <footer>
   <div id="readout"></div>
+  <details id="mix"><summary>Loudness: the whole mix and each instrument</summary>
+    <div id="mixbox"></div>
+  </details>
   <details id="keys"><summary>Keys and mouse</summary>
   <div>
     <b>Nudge the video</b> <kbd>←</kbd> <kbd>→</kbd> 10 ms · <kbd>Shift</kbd> 100 ms · <kbd>Ctrl</kbd> 1 ms &nbsp;|&nbsp;
     <b>Zoom</b> <kbd>1</kbd> whole song · <kbd>2</kbd> 45 s · <kbd>3</kbd> 12 s · <kbd>4</kbd> 3 s · <kbd>5</kbd> 0.6 s (number row or numpad) &nbsp;|&nbsp;
+    <b>Scrub</b> click or drag in the song strip at the top, or drag the marker's tab (you hear it) · <kbd>P</kbd> view to playhead · <kbd>F</kbd> follow · <kbd>+</kbd> <kbd>−</kbd> zoom around the playhead &nbsp;|&nbsp;
+    <b>Squeeze</b> click a section's name to pick it · <kbd>[</kbd> squeeze · <kbd>]</kbd> stretch (Shift 100 ms, Ctrl 1 ms) · <kbd>K</kbd> lock to the tab's tempo · drag a pink cut line = move that boundary, squeezing both sides · double-click = cut at the bar nearest the pointer &nbsp;|&nbsp;
     <b>Move</b> click = marker · <b>drag = move the video</b> · <kbd>Shift</kbd>+drag, wheel or <kbd>,</kbd> <kbd>.</kbd> = scroll the view · <kbd>↑</kbd> <kbd>↓</kbd> = bar · <kbd>N</kbd> <kbd>Shift+N</kbd> = next / previous note start · <kbd>Home</kbd> <kbd>End</kbd><br>
     <kbd>Space</kbd> play both · <kbd>T</kbd> tab on/off · <kbd>V</kbd> video on/off · <kbd>E</kbd> one ear each · <kbd>O</kbd> overlay / stacked · <kbd>L</kbd> auto level (quiet notes get tall) · <kbd>G</kbd> boost quiet parts ·
-    <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save
+    <kbd>A</kbd> cut here · <kbd>Delete</kbd> join · <kbd>M</kbd> match here · <kbd>Ctrl+S</kbd> save<br>
+    <b>Loudness</b> open the panel above: a slider for the whole tab and the whole video, and one for each instrument (the tab's tracks; the video's drums, bass, other, vocals once it is split). M mutes, S solos, double-click a slider for 100%. The waveform shows what the sliders leave.
   </div>
   </details>
 </footer>
@@ -72,7 +94,8 @@ const S = {
   bx: [], by: [], sec: [{ i: 0, s: 0 }], sec0: null,
   view: { t0: 0, span: 60 }, level: 1, marker: 0, hover: null,
   overlay: true, boost: true, auto: true, split: true, mute: { tab: false, rec: false },
-  play: null, dirty: false, undo: [], lastPush: 0, saved: false,
+  play: null, dirty: false, undo: [], lastPush: 0, saved: false, follow: false, selSec: null,
+  mix: { tab: { g: 1, rows: [], bufs: {}, active: false }, rec: { g: 1, rows: [], bufs: {}, active: false } }, tabDraw: null, recDraw: null,
 };
 let ctx = null, dirty = true;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -111,7 +134,15 @@ const base = (t) => lerpMap(S.bx, S.by, t);
 const slopeAt = (t) => { const n = S.bx.length; if (n < 2) return 1; const k = seg(S.bx, t); return (S.by[k + 1] - S.by[k]) / (S.bx[k + 1] - S.bx[k]); };
 const barT = (i) => S.bars[i][0];
 function secAt(t) { let k = 0; for (let j = 1; j < S.sec.length; j++) if (barT(S.sec[j].i) <= t + 1e-6) k = j; return k; }
-const shiftAt = (t) => S.sec[secAt(t)].s; // ms: how far the video picture is moved right
+// A section is { i: first bar, s: shift at its start (ms), sq: how much further the shift is by its end (ms) }.
+// sq = 0 is "locked to the tab's tempo": the video only moves. A squish (sq ≠ 0) stretches the video across the section.
+const secEnd = (k) => (k + 1 < S.sec.length ? barT(S.sec[k + 1].i) : S.total);
+function shiftAt(t) { // ms: how far the video picture is moved right
+  const k = secAt(t), x = S.sec[k], sq = x.sq || 0;
+  if (!sq) return x.s;
+  const a = barT(x.i), b = secEnd(k);
+  return x.s + sq * clamp((t - a) / (b - a || 1), 0, 1);
+}
 const rec = (t) => base(t) - shiftAt(t) / 1000; // the video time that plays with tab time t
 function barAtTime(t) { let b = 0; for (let i = 0; i < S.bars.length; i++) if (barT(i) <= t + 1e-6) b = i; return b; }
 function nearestBar(t) { let b = 0, d = 1e9; for (let i = 0; i < S.bars.length; i++) { const x = Math.abs(barT(i) - t); if (x < d) { d = x; b = i; } } return b; }
@@ -216,35 +247,62 @@ function undo() { const s = S.undo.pop(); if (!s) return; S.sec = JSON.parse(s);
 function changed() { S.dirty = true; dirty = true; S.saved = false; if (S.play) restartSoon(); }
 const fmtMs = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(Math.round(ms)) + ' ms';
 
-function nudge(ms) {
-  pushUndo(false);
-  S.sec[secAt(S.marker)].s += ms;
-  changed();
-  say(`Section ${secAt(S.marker) + 1}: video moved ${fmtMs(S.sec[secAt(S.marker)].s)} (right = later)`);
+// The section the keys and buttons act on: the one picked by clicking its name, else the one under the marker.
+const curSec = () => (S.selSec !== null && S.selSec < S.sec.length ? S.selSec : secAt(S.marker));
+// How much the video is squeezed (+) or stretched (−) across section k, against the tab's own tempo.
+function squeezeNote(k) {
+  const x = S.sec[k], a = barT(x.i), b = secEnd(k), span = base(b) - base(a) || 1, r = 1 - (x.sq || 0) / 1000 / span;
+  return Math.abs(r - 1) < 0.0005 ? 'locked to the tab’s tempo' : `video ${r > 1 ? 'squeezed' : 'stretched'} ${(Math.abs(r - 1) * 100).toFixed(1)}%`;
 }
-function cutHere() {
-  const j = nearestBar(S.marker);
+function nudge(ms) {
+  const k = curSec();
+  pushUndo(false);
+  S.sec[k].s += ms;
+  changed();
+  say(`Section ${k + 1}: video moved ${fmtMs(S.sec[k].s)} (right = later)`);
+}
+function squeeze(ms) { // ms > 0 stretches, ms < 0 squeezes: the video at the section's end moves, its start stays
+  const k = curSec();
+  pushUndo(false);
+  S.sec[k].sq = (S.sec[k].sq || 0) + ms;
+  changed();
+  say(`Section ${k + 1} (bar ${S.bars[S.sec[k].i][1]} on): ${squeezeNote(k)}.`);
+}
+function lockTempo() {
+  const k = curSec();
+  if (!S.sec[k].sq) { say(`Section ${k + 1} is already locked to the tab’s tempo.`); return; }
+  pushUndo(true);
+  S.sec[k].sq = 0;
+  changed();
+  say(`Section ${k + 1}: back to the tab’s tempo (the video only moves).`);
+}
+function cutHere(at) {
+  const j = nearestBar(at ?? S.marker);
   if (j === 0 || S.sec.some((x) => x.i === j)) { say(j === 0 ? 'The song starts there already.' : 'There is a cut at this bar already.'); return; }
   pushUndo(true);
-  const k = secAt(barT(j)), s = S.sec[secAt(barT(j) - 1e-4)].s;
-  S.sec.push({ i: j, s }); S.sec.sort((a, b) => a.i - b.i);
-  S.marker = barT(j);
+  const L = S.sec[secAt(barT(j) - 1e-4)], sq = L.sq || 0, frac = (barT(j) - barT(L.i)) / (secEnd(S.sec.indexOf(L)) - barT(L.i) || 1);
+  const sj = L.s + sq * frac, endL = L.s + sq; // the map stays as it was: the left part ends where the new part starts
+  L.sq = sj - L.s;
+  S.sec.push({ i: j, s: sj, sq: endL - sj }); S.sec.sort((a, b) => a.i - b.i);
+  S.selSec = S.sec.findIndex((x) => x.i === j);
+  if (at === undefined) S.marker = barT(j);
   changed();
-  say(`New section from bar ${S.bars[j][1]} (same shift as before: move it with ← →).`);
-  void k;
+  say(`New section ${S.selSec + 1} from bar ${S.bars[j][1]}, picked: move it with ← →, squeeze it with [ ].`);
 }
 function joinHere() {
   let k = S.sec.findIndex((x) => x.i === nearestBar(S.marker));
-  if (k < 1) k = secAt(S.marker);
+  if (k < 1) k = curSec();
   if (k < 1) { say('Nothing to join: this is the first section.'); return; }
   pushUndo(true);
-  S.sec.splice(k, 1);
+  const L = S.sec[k - 1], R = S.sec[k];
+  L.sq = R.s + (R.sq || 0) - L.s; // the joined section ends where the right one ended
+  S.sec.splice(k, 1); S.selSec = k - 1;
   changed();
   say('Joined with the section before it.');
 }
 function reset() {
   if (!S.sec0) return;
-  pushUndo(true); S.sec = JSON.parse(S.sec0); changed(); say('Back to the sync as it was opened.');
+  pushUndo(true); S.sec = JSON.parse(S.sec0); S.selSec = null; changed(); say('Back to the sync as it was opened.');
 }
 
 /* ---------- view ---------- */
@@ -252,10 +310,27 @@ function setLevel(k) {
   S.level = k;
   const span = k === 1 ? S.total : Math.min(S.total, SPANS[k - 1]);
   S.view.span = span;
-  S.view.t0 = k === 1 ? 0 : clamp(S.marker - span / 2, 0, S.total - span);
+  S.view.t0 = k === 1 ? 0 : clamp(headT() - span / 2, 0, S.total - span); // zooms around the playhead while playing, else the marker
   dirty = true;
 }
 function panTo(t0) { S.view.t0 = clamp(t0, 0, Math.max(0, S.total - S.view.span)); dirty = true; }
+const headT = () => (S.play ? S.play.t : S.marker); // the playhead: where the sound is, or the marker when stopped
+function zoomBy(d) { setLevel(clamp(S.level + d, 1, 5)); }
+function toPlayhead() { panTo(headT() - S.view.span / 2); }
+
+/* ---------- scrubbing: the playhead line at the top ---------- */
+let scrubAt = 0, scrubStop = 0, snippet = false;
+function scrubTo(t) {
+  S.marker = clamp(t, 0, S.total); dirty = true;
+  if (!S.tab) return;
+  const now = performance.now();
+  if (now - scrubAt < 90) return; // throttled: restarting the sound every pixel would crackle
+  scrubAt = now;
+  if (S.play && !snippet) { startPlay(S.marker); return; } // playing: carry on from the new place
+  snippet = true; startPlay(S.marker); // stopped: a short burst so the scrub can be heard
+  clearTimeout(scrubStop);
+  scrubStop = setTimeout(() => { if (snippet) { snippet = false; stopPlay(); } }, 260);
+}
 function showMarker() { if (S.marker < S.view.t0 || S.marker > S.view.t0 + S.view.span) panTo(S.marker - S.view.span / 2); }
 // The marker to the next (d = 1) or previous (d = -1) note start of the tab: the first one is where the guitar begins.
 function moveMarkerNote(d) {
@@ -275,7 +350,8 @@ function moveMarkerBar(d) {
 }
 
 /* ---------- drawing ---------- */
-const RULER = 60;
+const TOP = 22; // the song strip at the top: the whole song, the view window and the playhead; click or drag in it to scrub
+const RULER = 60 + TOP;
 function resize() {
   const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
   cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); dirty = true;
@@ -318,13 +394,13 @@ function draw() {
   // the waveforms
   if (S.overlay) {
     g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, lanesH);
-    lane(lanesTop, lanesH, 'tab (blue)', '#5aa9ff', S.tab, (t) => t, 0.85, 0);
-    lane(lanesTop, lanesH, 'video (orange)', '#ffb347', S.rec, rec, 0.6, 1);
+    lane(lanesTop, lanesH, 'tab (blue)', '#5aa9ff', S.tabDraw || S.tab, (t) => t, 0.85, 0);
+    lane(lanesTop, lanesH, 'video (orange)', '#ffb347', S.recDraw || S.rec, rec, 0.6, 1);
   } else {
     const h = lanesH / 2;
     g.fillStyle = '#181b21'; g.fillRect(0, lanesTop, W, h); g.fillStyle = '#1b1e25'; g.fillRect(0, lanesTop + h, W, h);
-    lane(lanesTop, h, 'tab', '#5aa9ff', S.tab, (t) => t, 0.9, 0);
-    lane(lanesTop + h, h, 'video', '#ffb347', S.rec, rec, 0.9, 0);
+    lane(lanesTop, h, 'tab', '#5aa9ff', S.tabDraw || S.tab, (t) => t, 0.9, 0);
+    lane(lanesTop + h, h, 'video', '#ffb347', S.recDraw || S.rec, rec, 0.9, 0);
   }
   // where the tab's notes start
   if (span <= 15) {
@@ -346,37 +422,55 @@ function draw() {
     g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, ruler - 18 * d, d, Hh);
     if (x - lastLabel > 26 * d) { g.fillStyle = '#c9d0da'; g.fillText(String(S.bars[i][1]), x + 3 * d, ruler - 6 * d); lastLabel = x; }
   }
-  // sections: a band with each one's shift
+  // sections: a band with each one's shift (click a name to pick that section)
+  const top = TOP * d, mTop = top + 22 * d, cur = curSec();
   for (let k = 0; k < S.sec.length; k++) {
-    const a = barT(S.sec[k].i), b = k + 1 < S.sec.length ? barT(S.sec[k + 1].i) : S.total;
+    const a = barT(S.sec[k].i), b = secEnd(k), sq = S.sec[k].sq || 0;
     const xa = Math.max(0, X(a)), xb = Math.min(W, X(b));
     if (xb <= 0 || xa >= W) continue;
-    const here = secAt(S.marker) === k;
+    const here = cur === k;
     g.fillStyle = here ? 'rgba(63,224,208,.22)' : k % 2 ? 'rgba(255,107,154,.12)' : 'rgba(255,255,255,.06)';
-    g.fillRect(xa, 0, xb - xa, 22 * d);
+    g.fillRect(xa, top, xb - xa, 22 * d);
     g.fillStyle = here ? '#3fe0d0' : '#c9d0da'; g.font = `${12 * d}px system-ui`;
-    g.fillText(`section ${k + 1}: ${fmtMs(S.sec[k].s)}`, Math.max(xa, 0) + 8 * d, 15 * d);
-    if (k > 0 && xa >= 0 && xa <= W) { g.fillStyle = '#ff6b9a'; g.fillRect(xa, 0, 2 * d, Hh); }
+    g.fillText(`section ${k + 1}: ${fmtMs(S.sec[k].s)}${sq ? ' → ' + fmtMs(S.sec[k].s + sq) : ''}`, Math.max(xa, 0) + 8 * d, top + 15 * d);
+    if (k > 0 && X(a) >= 0 && X(a) <= W) { g.fillStyle = '#ff6b9a'; g.fillRect(X(a) - d, top, 3 * d, Hh); } // a cut: drag it to move the boundary and squeeze both sides
   }
   // the marker, the hover, the playhead
   const mx = X(S.marker);
-  if (mx >= 0 && mx <= W) { g.fillStyle = '#3fe0d0'; g.fillRect(mx - d, 22 * d, 2 * d, Hh); g.beginPath(); g.moveTo(mx - 6 * d, 22 * d); g.lineTo(mx + 6 * d, 22 * d); g.lineTo(mx, 32 * d); g.fill(); }
-  if (S.hover !== null) { const hx = X(S.hover); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(hx, 22 * d, d, Hh); }
-  if (S.play) { const px = X(S.play.t); if (px >= 0 && px <= W) { g.fillStyle = '#fff'; g.fillRect(px - d, 22 * d, 2 * d, Hh); } }
+  if (mx >= 0 && mx <= W) { g.fillStyle = '#3fe0d0'; g.fillRect(mx - d, mTop, 2 * d, Hh); g.beginPath(); g.moveTo(mx - 7 * d, mTop); g.lineTo(mx + 7 * d, mTop); g.lineTo(mx, mTop + 11 * d); g.fill(); }
+  if (S.hover !== null) { const hx = X(S.hover); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(hx, mTop, d, Hh); }
+  if (S.play) { const px = X(S.play.t); if (px >= 0 && px <= W) { g.fillStyle = '#fff'; g.fillRect(px - d, mTop, 2 * d, Hh); } }
+  // the song strip: sections, the part on view, and the playhead line to scrub with
+  const OX = (t) => (t / S.total) * W;
+  g.fillStyle = '#0f1115'; g.fillRect(0, 0, W, top);
+  for (let k = 0; k < S.sec.length; k++) {
+    const xa = OX(barT(S.sec[k].i)), xb = OX(secEnd(k));
+    g.fillStyle = cur === k ? 'rgba(63,224,208,.28)' : k % 2 ? 'rgba(255,107,154,.14)' : 'rgba(255,255,255,.06)';
+    g.fillRect(xa, 2 * d, Math.max(1, xb - xa), top - 4 * d);
+    if (k > 0) { g.fillStyle = '#ff6b9a'; g.fillRect(xa, 0, d, top); }
+  }
+  if (W / S.bars.length > 3 * d) { g.fillStyle = 'rgba(255,255,255,.22)'; for (let i = 0; i < S.bars.length; i++) g.fillRect(OX(barT(i)), top - 5 * d, d, 4 * d); }
+  g.strokeStyle = '#e8eaee'; g.lineWidth = d; g.strokeRect(OX(t0) + d / 2, 1.5 * d, Math.max(3 * d, OX(t0 + span) - OX(t0)), top - 3 * d);
+  const oh = OX(S.marker); g.fillStyle = '#3fe0d0'; g.fillRect(oh - d, 0, 2 * d, top);
+  if (S.play) { g.fillStyle = '#fff'; g.fillRect(OX(S.play.t) - d, 0, 2 * d, top); }
+  g.fillStyle = '#9aa3b0'; g.font = `${11 * d}px system-ui`; g.fillText(fmtClock(headT()), Math.min(W - 48 * d, oh + 6 * d), top - 7 * d);
   readout();
 }
+const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 function readout() {
   const t = S.hover ?? S.marker, b = barAtTime(t), k = secAt(t);
   $('#readout').innerHTML = `<b>${S.name}</b> · view ${S.view.span >= 100 ? Math.round(S.view.span) + ' s' : S.view.span.toFixed(S.view.span < 5 ? 1 : 0) + ' s'} (key ${S.level}) · ` +
     `${S.hover !== null ? 'pointer' : 'marker'}: bar ${S.bars[b][1]}, tab ${t.toFixed(3)} s, video ${rec(t).toFixed(3)} s · ` +
-    `section ${k + 1} of ${S.sec.length}, shift <b>${fmtMs(S.sec[k].s)}</b>` +
+    `section ${k + 1} of ${S.sec.length}, shift <b>${fmtMs(shiftAt(t))}</b>${S.sec[k].sq ? ` (${squeezeNote(k)})` : ''}` +
+    (S.selSec !== null && curSec() !== k ? ` · picked: section ${curSec() + 1}` : '') +
     (S.dirty ? ' · <b style="color:#ffb347">not saved</b>' : S.saved ? ' · <b style="color:#7be39a">saved</b>' : '');
 }
 function loop() {
   if (S.play) {
     const t = S.play.t0 + (ctx.currentTime - S.play.startAt);
     S.play.t = Math.max(S.play.t0, t);
-    if (S.play.t > S.view.t0 + S.view.span * 0.92 && S.view.span < S.total) panTo(S.play.t - S.view.span * 0.1);
+    if (S.follow) panTo(S.play.t - S.view.span / 2);
+    else if (S.play.t > S.view.t0 + S.view.span * 0.92 && S.view.span < S.total) panTo(S.play.t - S.view.span * 0.1);
     if (t > S.total) stopPlay();
     dirty = true;
   }
@@ -387,33 +481,48 @@ function loop() {
 /* ---------- playing both ---------- */
 let gains = null, restartTimer = 0;
 function ensureCtx() { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); return ctx; }
+// What one instrument row plays at: its slider, or 0 when muted (or when another row of that side is soloed).
+function eff(side, row) { const m = S.mix[side]; return (m.rows.some((r) => r.solo) ? row.solo : !row.mute) ? row.g : 0; }
+// Play the separate instruments instead of the whole mix once a row has been touched and all of them are loaded.
+const rowsOn = (side) => { const m = S.mix[side]; return m.active && m.rows.length > 0 && m.rows.every((r) => m.bufs[r.id]); };
 function applyGains() {
   if (!gains) return;
-  gains.tab.gain.value = S.mute.tab ? 0 : 1; gains.rec.gain.value = S.mute.rec ? 0 : 1;
+  gains.tab.gain.value = S.mute.tab ? 0 : S.mix.tab.g; gains.rec.gain.value = S.mute.rec ? 0 : S.mix.rec.g;
   gains.tabPan.pan.value = S.split ? 1 : 0; gains.recPan.pan.value = S.split ? -1 : 0;
+  for (const side of ['tab', 'rec']) for (const r of S.mix[side].rows) { const gn = gains.rows[side][r.id]; if (gn) gn.gain.value = eff(side, r); }
 }
 function startPlay(from) {
   ensureCtx(); ctx.resume();
   stopPlay(true);
   const t0 = from ?? S.marker, startAt = ctx.currentTime + 0.08, nodes = [];
-  gains = { tab: ctx.createGain(), rec: ctx.createGain(), tabPan: ctx.createStereoPanner(), recPan: ctx.createStereoPanner() };
+  gains = { tab: ctx.createGain(), rec: ctx.createGain(), tabPan: ctx.createStereoPanner(), recPan: ctx.createStereoPanner(), rows: { tab: {}, rec: {} } };
   gains.tab.connect(gains.tabPan).connect(ctx.destination); gains.rec.connect(gains.recPan).connect(ctx.destination);
+  // the tab: its whole mix, or each track through its own volume
+  const tabIns = [];
+  if (rowsOn('tab')) for (const r of S.mix.tab.rows) { const gn = ctx.createGain(); gn.connect(gains.tab); gains.rows.tab[r.id] = gn; tabIns.push([gn, S.mix.tab.bufs[r.id].buf]); }
+  else tabIns.push([gains.tab, S.tab.buf]);
+  for (const [out, buf] of tabIns) { const s = ctx.createBufferSource(); s.buffer = buf; s.connect(out); s.start(startAt, t0); nodes.push(s); }
+  // the video: its whole mix, or each stem (drums, bass, other, vocals) through its own volume
+  const recIns = [];
+  if (rowsOn('rec')) for (const r of S.mix.rec.rows) { const gn = ctx.createGain(); gn.connect(gains.rec); gains.rows.rec[r.id] = gn; recIns.push([gn, S.mix.rec.bufs[r.id].buf]); }
+  else recIns.push([gains.rec, S.rec.buf]);
   applyGains();
-  const tabSrc = ctx.createBufferSource(); tabSrc.buffer = S.tab.buf; tabSrc.connect(gains.tab); tabSrc.start(startAt, t0); nodes.push(tabSrc);
-  // the video in one piece per section, each from its own place
-  let k = secAt(t0), segStart = t0;
-  while (segStart < S.total && k < S.sec.length) {
-    const segEnd = Math.min(S.total, k + 1 < S.sec.length ? barT(S.sec[k + 1].i) : S.total);
-    if (segEnd > segStart + 0.001) {
-      const rate = clamp(slopeAt(segStart + 0.001), 0.5, 2);
-      let r0 = base(segStart) - S.sec[k].s / 1000, when = startAt + (segStart - t0), len = (segEnd - segStart) * rate;
-      if (r0 < 0) { when += -r0 / rate; len += r0; r0 = 0; } // the video begins a little later than this section
-      if (len > 0.001) {
-        const src = ctx.createBufferSource(); src.buffer = S.rec.buf; src.playbackRate.value = rate; src.connect(gains.rec);
-        src.start(when, r0, len); nodes.push(src);
-      }
+  // the video in one straight piece wherever the map bends: at each section start and each of the file's sync points
+  const cuts = [t0, S.total];
+  for (const x of S.bx) if (x > t0 + 1e-3 && x < S.total) cuts.push(x);
+  for (let k = 1; k < S.sec.length; k++) { const x = barT(S.sec[k].i); if (x > t0 + 1e-3) cuts.push(x); }
+  cuts.sort((p, q) => p - q);
+  const E = 1e-4; // read each piece just inside its ends, so a section's own shift applies
+  for (let j = 0; j + 1 < cuts.length; j++) {
+    const a = cuts[j], b = cuts[j + 1];
+    if (b - a < 4 * E) continue;
+    const ra = rec(a + E), rb = rec(b - E), speed = (rb - ra) / (b - a - 2 * E), rate = clamp(speed, 0.5, 2);
+    let r0 = ra - speed * E, when = startAt + (a - t0), len = (b - a) * rate;
+    if (r0 < 0) { when += -r0 / rate; len += r0; r0 = 0; } // the video begins a little later than this piece
+    if (len > 0.001) for (const [out, buf] of recIns) {
+      const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate; src.connect(out);
+      src.start(when, r0, len); nodes.push(src);
     }
-    segStart = segEnd; k++;
   }
   S.play = { t0, t: t0, startAt, nodes };
   $('#play').textContent = '■ Stop'; $('#play').classList.add('on');
@@ -424,15 +533,98 @@ function stopPlay(quiet) {
   S.play = null; dirty = true;
   if (!quiet) { $('#play').textContent = '▶ Play'; $('#play').classList.remove('on'); }
 }
-function togglePlay() { if (S.play) stopPlay(); else startPlay(); }
+function togglePlay() {
+  if (snippet) { snippet = false; clearTimeout(scrubStop); return; } // a scrub burst is playing: let it carry on as real play
+  if (S.play) stopPlay(); else startPlay();
+}
 function restartSoon() { clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (S.play) startPlay(S.play.t); }, 160); }
 
 /* ---------- loading ---------- */
-async function loadAudio(slug, which) {
+async function loadAudio(slug, which, bare) {
   const r = await fetch(`/audio/${slug}/${which}.wav`);
   if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error; } catch { /* plain text */ } throw new Error(m); }
   const buf = await ensureCtx().decodeAudioData(await r.arrayBuffer());
-  return { buf, ...pyramid(buf.getChannelData(0)) };
+  return bare ? { buf, x: buf.getChannelData(0) } : { buf, ...pyramid(buf.getChannelData(0)) };
+}
+
+/* ---------- loudness: the whole mix, and each instrument ---------- */
+// Each side has a master volume and one row per instrument (the tab's tracks; the video's drums, bass, other, vocals).
+// The first time a row is touched its sound is fetched; from then on that side plays the separate instruments
+// (they add up to the whole mix) and its waveform shows what the sliders leave.
+const drawTimers = {};
+function rebuildDraw(side) {
+  const m = S.mix[side];
+  if (!rowsOn(side)) { S[side + 'Draw'] = null; dirty = true; return; }
+  const x = new Float32Array(Math.max(...m.rows.map((r) => m.bufs[r.id].x.length)));
+  for (const r of m.rows) { const v = eff(side, r), y = m.bufs[r.id].x; if (v) for (let i = 0; i < y.length; i++) x[i] += v * y[i]; }
+  S[side + 'Draw'] = pyramid(x); dirty = true;
+}
+function redrawSoon(side) { clearTimeout(drawTimers[side]); drawTimers[side] = setTimeout(() => rebuildDraw(side), 200); }
+function loadRows(side) {
+  const m = S.mix[side];
+  if (!m.rows.length) return Promise.resolve(false);
+  m.loading ??= (async () => {
+    for (const r of m.rows) {
+      if (m.bufs[r.id]) continue;
+      say(`Loading the ${side === 'tab' ? 'tab’s' : 'video’s'} ${r.name} (the first time takes a moment)…`);
+      m.bufs[r.id] = await loadAudio(S.slug, `${side}-${r.id}`, true);
+    }
+    return true;
+  })().catch((e) => { m.loading = null; say(String(e.message || e), 'err'); return false; });
+  return m.loading;
+}
+async function rowChanged(side) {
+  const m = S.mix[side], wasOn = rowsOn(side);
+  m.active = true; paintMixer();
+  if (!await loadRows(side)) { m.active = false; paintMixer(); return; }
+  if (!wasOn && S.play) restartSoon(); // switching from the whole mix to the separate instruments
+  applyGains(); redrawSoon(side);
+  say('Loudness set.');
+}
+function resetMixer() {
+  for (const side of ['tab', 'rec']) { const m = S.mix[side]; m.g = 1; m.active = false; for (const r of m.rows) Object.assign(r, { g: 1, mute: false, solo: false }); S[side + 'Draw'] = null; }
+  S.mute.tab = S.mute.rec = false;
+  if (S.play) restartSoon();
+  applyGains(); paintMixer(); dirty = true; say('Every volume back to 100%.');
+}
+function buildMixer(offer) {
+  const row = (id, name) => ({ id, name, g: 1, mute: false, solo: false });
+  S.mix = { tab: { g: 1, rows: offer.tab.map((t) => row(t.id, t.name)), bufs: {}, active: false }, rec: { g: 1, rows: offer.rec.map((s) => row(s, s)), bufs: {}, active: false } };
+  S.tabDraw = S.recDraw = null;
+  const box = $('#mixbox'); box.textContent = '';
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  for (const side of ['tab', 'rec']) {
+    const m = S.mix[side], col = mk('div', 'mixcol');
+    col.append(mk('h4', '', side === 'tab' ? 'Tab (blue)' : 'Video (orange)'));
+    const line = (label, cls, onSlide, mute, solo) => {
+      const el = mk('div', 'mixrow ' + cls), sl = mk('input'), v = mk('span', 'v', '100%');
+      sl.type = 'range'; sl.min = 0; sl.max = 200; sl.value = 100; sl.title = 'Double-click for 100%';
+      sl.oninput = () => { onSlide(Number(sl.value) / 100); v.textContent = sl.value + '%'; };
+      sl.ondblclick = () => { sl.value = 100; sl.oninput(); };
+      el.append(mk('span', 'nm', label), sl, v);
+      const bm = mk('button', '', 'M'); bm.title = 'Mute'; bm.onclick = mute; el.append(bm);
+      if (solo) { const bs = mk('button', 'solo', 'S'); bs.title = 'Solo: hear only the soloed ones'; bs.onclick = solo; el.append(bs); } else el.append(mk('span'));
+      col.append(el); return { el, sl, v, bm, bs: el.querySelector('.solo') };
+    };
+    m.ui = { master: line(side === 'tab' ? 'Whole tab' : 'Whole video', 'master', (g) => { m.g = g; applyGains(); },
+      () => { S.mute[side] = !S.mute[side]; applyGains(); paintMixer(); }, null), rows: {} };
+    for (const r of m.rows) {
+      m.ui.rows[r.id] = line(r.name, '', (g) => { r.g = g; rowChanged(side); },
+        () => { r.mute = !r.mute; rowChanged(side); }, () => { r.solo = !r.solo; rowChanged(side); });
+    }
+    if (!m.rows.length) col.append(mk('div', 'mixnote', side === 'tab' ? 'The tab’s separate tracks are not saved for this song.' : 'This video has not been split into instruments yet (drumclock.py does that), so only its whole volume can change.'));
+    box.append(col);
+  }
+  const reset = mk('button', '', 'All back to 100%'); reset.style.cssText = 'grid-column:1/-1;justify-self:start;background:#272c35;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer';
+  reset.onclick = resetMixer; box.append(reset);
+  paintMixer();
+}
+function paintMixer() {
+  for (const side of ['tab', 'rec']) {
+    const m = S.mix[side]; if (!m.ui) continue;
+    m.ui.master.bm.classList.toggle('on', S.mute[side]);
+    for (const r of m.rows) { const u = m.ui.rows[r.id]; u.bm.classList.toggle('on', r.mute); u.bs.classList.toggle('on', r.solo); u.el.style.opacity = eff(side, r) ? 1 : 0.45; }
+  }
 }
 async function openSong(slug) {
   stopPlay();
@@ -442,14 +634,14 @@ async function openSong(slug) {
     const d = await (await fetch(`/api/song/${slug}`)).json();
     if (d.error) throw new Error(d.error);
     Object.assign(S, { name: d.name, bars: d.bars, pts: d.points, notes: d.notes, file: d.file, rate: d.rate });
-    buildBase();
+    buildBase(); buildMixer(d.mixer || { tab: [], rec: [] });
     say('Preparing the sound (the first time takes a little while)…');
     hint('Preparing the tab’s sound and the video’s sound. The first time takes up to a minute.');
     S.tab = await loadAudio(slug, 'tab'); S.rec = await loadAudio(slug, 'rec');
     S.total = S.tab.buf.duration;
     S.rate = S.tab.buf.sampleRate; // the browser resamples to its own rate (48000 here), not the file's 22050
     S.onTab = onsets(S.tab.x, S.rate); S.onRec = onsets(S.rec.x, S.rate);
-    S.sec = [{ i: 0, s: 0 }]; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
+    S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = false;
     S.noteT = [...new Set(S.notes)].sort((a, b) => a - b);
     S.marker = S.noteT.length ? S.noteT[0] : 0; // opens on the tab's first note: the start of the guitar
     setLevel(S.noteT.length ? 4 : 1); hint('');
@@ -466,13 +658,13 @@ function savePoints() {
 }
 async function save() {
   if (!S.tab) return;
-  const shifts = S.sec.map((x, k) => `section ${k + 1} from bar ${S.bars[x.i][1]}: ${fmtMs(x.s)}`).join('; ');
+  const shifts = S.sec.map((x, k) => `section ${k + 1} from bar ${S.bars[x.i][1]}: ${fmtMs(x.s)}${x.sq ? ' → ' + fmtMs(x.s + x.sq) : ''}`).join('; ');
   say('Saving…');
   const r = await fetch(`/api/save/${S.slug}`, { method: 'POST', body: JSON.stringify({ points: savePoints(), note: shifts }) });
   const d = await r.json();
   if (d.error) { say(d.error, 'err'); return; }
   // the file now holds the new times: they become the starting point, with no shift left
-  S.pts = savePoints(); buildBase(); S.sec = [{ i: 0, s: 0 }]; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = true; dirty = true;
+  S.pts = savePoints(); buildBase(); S.sec = [{ i: 0, s: 0 }]; S.selSec = null; S.sec0 = snap(); S.undo = []; S.dirty = false; S.saved = true; dirty = true;
   $('#status').title = d.file;
   say(`Saved ${d.file.split(/[\\/]/).pop()}. Import it in Fretboard and choose “Replace it”.`, 'ok');
 }
@@ -481,15 +673,60 @@ async function save() {
 const timeAtX = (clientX) => { const r = cv.getBoundingClientRect(); return S.view.t0 + ((clientX - r.left) / r.width) * S.view.span; };
 let drag = null;
 // A plain drag moves the video (the section under the mouse gets that shift); Shift+drag or the right button scrolls the view.
+// The song strip (top): click or drag to scrub. The section names: click to pick a section. A pink cut line: drag it.
+const overT = (clientX) => { const r = cv.getBoundingClientRect(); return clamp(((clientX - r.left) / r.width) * S.total, 0, S.total); };
+function cutAtX(clientX) { // the cut line within 6 px of the pointer, as a section index (0 = none)
+  const r = cv.getBoundingClientRect();
+  for (let k = 1; k < S.sec.length; k++) if (Math.abs(r.left + ((barT(S.sec[k].i) - S.view.t0) / S.view.span) * r.width - clientX) <= 6) return k;
+  return 0;
+}
+function zoneAt(e) { // what the pointer is over: 'strip', 'band', 'handle' (the marker's tab), 'cut', or 'wave'
+  const r = cv.getBoundingClientRect(), y = e.clientY - r.top;
+  if (y < TOP) return 'strip';
+  if (cutAtX(e.clientX)) return 'cut';
+  if (y < TOP + 22) return 'band';
+  const mx = r.left + ((S.marker - S.view.t0) / S.view.span) * r.width;
+  if (y < TOP + 36 && Math.abs(e.clientX - mx) <= 10) return 'handle';
+  return 'wave';
+}
 cv.addEventListener('mousedown', (e) => {
   if (!S.tab) return;
+  const zone = e.button === 0 && !e.shiftKey ? zoneAt(e) : 'wave';
+  if (zone === 'strip' || zone === 'handle') {
+    drag = { special: true, scrub: zone, x: e.clientX };
+    scrubAt = 0; scrubTo(zone === 'strip' ? overT(e.clientX) : timeAtX(e.clientX));
+    if (zone === 'strip') panTo(S.marker - S.view.span / 2);
+    return;
+  }
+  if (zone === 'cut') {
+    const k = cutAtX(e.clientX);
+    drag = { special: true, cut: k, x: e.clientX, sqL: S.sec[k - 1].sq || 0, sR: S.sec[k].s, sqR: S.sec[k].sq || 0, pushed: false };
+    return;
+  }
+  if (zone === 'band') {
+    S.selSec = secAt(timeAtX(e.clientX)); dirty = true; drag = { special: true };
+    say(`Picked section ${S.selSec + 1}: ← → move it, [ ] squeeze or stretch it, K locks it to the tab’s tempo.`);
+    return;
+  }
   const pan = e.shiftKey || e.button !== 0, k = secAt(timeAtX(e.clientX));
   drag = { x: e.clientX, t0: S.view.t0, moved: false, pan, k, s0: S.sec[k].s, pushed: false };
   if (e.button !== 0) e.preventDefault();
 });
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
+cv.addEventListener('dblclick', (e) => { if (S.tab && zoneAt(e) === 'wave') cutHere(timeAtX(e.clientX)); }); // a cut at the bar nearest the pointer, not the marker
 window.addEventListener('mousemove', (e) => {
-  if (drag) {
+  if (drag?.scrub) {
+    scrubTo(drag.scrub === 'strip' ? overT(e.clientX) : timeAtX(e.clientX));
+    if (drag.scrub === 'strip') panTo(S.marker - S.view.span / 2);
+  } else if (drag?.cut) {
+    const r = cv.getBoundingClientRect(), ms = Math.round(((e.clientX - drag.x) / r.width) * S.view.span * 1000), k = drag.cut;
+    if (ms !== 0 && !drag.pushed) { drag.pushed = true; pushUndo(true); }
+    if (drag.pushed) { // the boundary's video moves with the pointer: the section before it is squeezed or stretched, and so is the one after
+      S.sec[k - 1].sq = drag.sqL + ms; S.sec[k].s = drag.sR + ms; S.sec[k].sq = drag.sqR - ms;
+      changed();
+      say(`Cut at bar ${S.bars[S.sec[k].i][1]} moved ${fmtMs(ms)}: section ${k}: ${squeezeNote(k - 1)}; section ${k + 1}: ${squeezeNote(k)}.`);
+    }
+  } else if (drag && !drag.special) {
     const r = cv.getBoundingClientRect(), dx = e.clientX - drag.x;
     if (Math.abs(dx) > 4) drag.moved = true;
     if (drag.moved && drag.pan) panTo(drag.t0 - (dx / r.width) * S.view.span);
@@ -501,11 +738,14 @@ window.addEventListener('mousemove', (e) => {
     }
   }
   const r = cv.getBoundingClientRect();
-  S.hover = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom ? clamp(timeAtX(e.clientX), 0, S.total) : null;
+  const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  S.hover = inside ? clamp(timeAtX(e.clientX), 0, S.total) : null;
+  if (inside && S.tab && !drag) { const z = zoneAt(e); cv.style.cursor = z === 'cut' ? 'ew-resize' : z === 'strip' || z === 'band' ? 'pointer' : z === 'handle' ? 'grab' : 'crosshair'; }
   dirty = true;
 });
 window.addEventListener('mouseup', (e) => {
-  if (drag && !drag.moved && S.tab) { S.marker = clamp(timeAtX(e.clientX), 0, S.total); dirty = true; }
+  if (drag?.scrub) { scrubAt = 0; scrubTo(S.marker); } // a last burst at the exact spot where the scrub stopped
+  else if (drag && !drag.special && !drag.moved && S.tab) { S.marker = clamp(timeAtX(e.clientX), 0, S.total); dirty = true; }
   drag = null;
 });
 cv.addEventListener('mouseleave', () => { S.hover = null; dirty = true; });
@@ -528,6 +768,13 @@ document.addEventListener('keydown', (e) => {
   else if (digit && !e.ctrlKey) setLevel(Number(digit[2]));
   else if (key === 'ArrowLeft') nudge(-step);
   else if (key === 'ArrowRight') nudge(step);
+  else if (key === 'BracketLeft') squeeze(-step);
+  else if (key === 'BracketRight') squeeze(step);
+  else if (key === 'KeyK') lockTempo();
+  else if (key === 'KeyP') toPlayhead();
+  else if (key === 'KeyF') toggleFollow();
+  else if ((key === 'Equal' || key === 'NumpadAdd') && !e.ctrlKey && !e.metaKey) zoomBy(1);
+  else if ((key === 'Minus' || key === 'NumpadSubtract') && !e.ctrlKey && !e.metaKey) zoomBy(-1);
   else if (key === 'KeyN') moveMarkerNote(e.shiftKey ? -1 : 1);
   else if (key === 'ArrowUp') moveMarkerBar(e.shiftKey ? -4 : -1);
   else if (key === 'ArrowDown') moveMarkerBar(e.shiftKey ? 4 : 1);
@@ -536,8 +783,8 @@ document.addEventListener('keydown', (e) => {
   else if (key === 'Home') { S.marker = 0; showMarker(); dirty = true; }
   else if (key === 'End') { S.marker = S.total; showMarker(); dirty = true; }
   else if (key === 'Space') togglePlay();
-  else if (key === 'KeyT') { S.mute.tab = !S.mute.tab; applyGains(); say(S.mute.tab ? 'Tab sound off.' : 'Tab sound on.'); }
-  else if (key === 'KeyV') { S.mute.rec = !S.mute.rec; applyGains(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); }
+  else if (key === 'KeyT') { S.mute.tab = !S.mute.tab; applyGains(); paintMixer(); say(S.mute.tab ? 'Tab sound off.' : 'Tab sound on.'); }
+  else if (key === 'KeyV') { S.mute.rec = !S.mute.rec; applyGains(); paintMixer(); say(S.mute.rec ? 'Video sound off.' : 'Video sound on.'); }
   else if (key === 'KeyE') { S.split = !S.split; applyGains(); say(S.split ? 'Video in the left ear, tab in the right.' : 'Both in the middle.'); }
   else if (key === 'KeyO') { S.overlay = !S.overlay; dirty = true; }
   else if (key === 'KeyL') { S.auto = !S.auto; dirty = true; say(S.auto ? 'Auto level on: each lane is scaled to its loudest part on screen.' : 'Auto level off: true loudness between the lanes.'); }
@@ -548,7 +795,14 @@ document.addEventListener('keydown', (e) => {
   else used = false;
   if (used) e.preventDefault();
 });
-$('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = cutHere; $('#uncut').onclick = joinHere;
+function toggleFollow() {
+  S.follow = !S.follow; $('#follow').classList.toggle('on', S.follow);
+  say(S.follow ? 'Follow on: the playhead stays in the middle while playing.' : 'Follow off.');
+  if (S.follow) toPlayhead();
+}
+$('#play').onclick = togglePlay; $('#match').onclick = matchHere; $('#cut').onclick = () => cutHere(); $('#uncut').onclick = joinHere;
+$('#head').onclick = toPlayhead; $('#follow').onclick = toggleFollow;
+$('#sq').onclick = (e) => squeeze(e.shiftKey ? -100 : -10); $('#st').onclick = (e) => squeeze(e.shiftKey ? 100 : 10); $('#lock').onclick = lockTempo;
 $('#undo').onclick = undo; $('#reset').onclick = reset; $('#save').onclick = save;
 $('#song').onchange = (e) => openSong(e.target.value);
 new ResizeObserver(resize).observe($('main'));
