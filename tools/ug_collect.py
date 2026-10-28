@@ -1168,11 +1168,18 @@ class TkUI:
         row.pack(fill="x", pady=(6, 0))
         if folder and Path(folder).is_dir():
             self._button(row, "Open folder", lambda: subprocess.Popen(["explorer", str(folder)]))
-        self._button(row, "Close", self._close, primary=True)
+        self._button(row, "Another song", self._another, primary=True)
+        self._button(row, "Close", self._close)
         self._on_close = self._close
         self._place()
         self.root.after(60000, self._close)  # don't wait forever when the watcher is running unattended
         ev.set()
+
+    def _another(self):
+        """The UG window comes up to pick the next song; this window closes. The helper saves every song
+        opened there, one at a time, so opening it is all the next song needs."""
+        show_chrome()  # window calls only, quick; not a thread, which would die with this process
+        self._close()
 
     def _close(self):
         cb = getattr(self, "_on_close", None)
