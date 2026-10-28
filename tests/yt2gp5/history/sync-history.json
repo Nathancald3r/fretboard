@@ -2264,5 +2264,797 @@
     "backup": false
    }
   ]
+ },
+ {
+  "time": "2026-10-28 07:40",
+  "label": "Here I Am: bars 82-85 follow the band slowing at the ending",
+  "commit": "d6e8a37",
+  "dirty": false,
+  "constants": {
+   "RATE": 22050.0,
+   "HOP": 110.0,
+   "NFFT": 1024.0,
+   "WINDOW_S": 5.0,
+   "RANGE_S": 1.5,
+   "LAG_STEP_PCT": 6.0,
+   "LAMBDA": 0.02,
+   "KNOT_TOL": 0.04,
+   "KNOT_GAP": 8.0,
+   "KNOT_GAIN": 0.01,
+   "TEMPO_PCT": 4.0,
+   "NEED_Z": 3.0,
+   "LAG_COST": 0.4,
+   "POOLED_Z": 6.0,
+   "FLOOR_Z": 1.5,
+   "REFINE_S": 0.1,
+   "HARM": 0.8,
+   "CHROMA_HOP": 512.0,
+   "POLISH_S": 8.0,
+   "POLISH_DY": 0.25,
+   "END_GAIN": 0.0,
+   "END_REACH_S": 16.0,
+   "START_RANGE_S": 40.0,
+   "START_STEP": 5.0,
+   "START_COST": 0.02,
+   "START_MIN": 0.8,
+   "START_SLOPE": 0.06,
+   "START_GAIN": 0.75,
+   "BEAT_W": 0.6,
+   "BEAT_SIGMA": 0.04,
+   "BEAT_OTHER": 0.4,
+   "GRID_IRREGULAR": 0.05,
+   "GRID_UNMATCHED": 0.5,
+   "GRID_MAX_UNMATCHED": 8.0,
+   "GRID_TOL": 0.03,
+   "GRID_SLIP_COST": 0.03,
+   "GRID_SHIFT_S": 0.1,
+   "PASS_MS": 20.0
+  },
+  "steps": [
+   {
+    "name": "plain wavefit",
+    "adds": "note starts only",
+    "src": "last-run2.json rows",
+    "c": {
+     "n": 288,
+     "good": 74,
+     "ok": 2,
+     "bad": 100,
+     "none": 112
+    },
+    "train": {
+     "n": 144,
+     "good": 43,
+     "ok": 1,
+     "bad": 58,
+     "none": 42
+    },
+    "val": {
+     "n": 144,
+     "good": 31,
+     "ok": 1,
+     "bad": 42,
+     "none": 70
+    },
+    "far": null
+   },
+   {
+    "name": "+harmony",
+    "adds": "chords in each window's evidence",
+    "src": "run1.log counts only",
+    "c": {
+     "n": 288,
+     "good": 159,
+     "ok": 45,
+     "bad": 84,
+     "none": 0
+    },
+    "train": null,
+    "val": null,
+    "far": null
+   },
+   {
+    "name": "+ending",
+    "adds": "a slow-down knot in the last bars",
+    "src": "run1.log counts only",
+    "c": {
+     "n": 288,
+     "good": 171,
+     "ok": 57,
+     "bad": 60,
+     "none": 0
+    },
+    "train": null,
+    "val": null,
+    "far": null
+   },
+   {
+    "name": "+bars",
+    "adds": "Beat This! bar lines as evidence",
+    "src": "run1.log counts only",
+    "c": {
+     "n": 288,
+     "good": 173,
+     "ok": 81,
+     "bad": 34,
+     "none": 0
+    },
+    "train": null,
+    "val": null,
+    "far": null
+   },
+   {
+    "name": "+polish",
+    "adds": "each tempo change tried at nearby bar lines",
+    "src": "last-run2.json rows",
+    "c": {
+     "n": 288,
+     "good": 247,
+     "ok": 17,
+     "bad": 24,
+     "none": 0
+    },
+    "train": {
+     "n": 144,
+     "good": 132,
+     "ok": 4,
+     "bad": 8,
+     "none": 0
+    },
+    "val": {
+     "n": 144,
+     "good": 115,
+     "ok": 13,
+     "bad": 16,
+     "none": 0
+    },
+    "far": null
+   },
+   {
+    "name": "+ending search",
+    "adds": "the ending slow-down searched, kept only if the note starts agree more",
+    "src": "last-run3.json rows",
+    "c": {
+     "n": 288,
+     "good": 264,
+     "ok": 13,
+     "bad": 11,
+     "none": 0
+    },
+    "train": {
+     "n": 144,
+     "good": 135,
+     "ok": 4,
+     "bad": 5,
+     "none": 0
+    },
+    "val": {
+     "n": 144,
+     "good": 129,
+     "ok": 9,
+     "bad": 6,
+     "none": 0
+    },
+    "far": null
+   },
+   {
+    "name": "+wide start",
+    "adds": "the start searched +-40 s (chords + bar lines), adopted when it wins by START_GAIN",
+    "src": "last.json rows",
+    "c": {
+     "n": 288,
+     "good": 264,
+     "ok": 13,
+     "bad": 11,
+     "none": 0
+    },
+    "train": {
+     "n": 144,
+     "good": 135,
+     "ok": 4,
+     "bad": 5,
+     "none": 0
+    },
+    "val": {
+     "n": 144,
+     "good": 129,
+     "ok": 9,
+     "bad": 6,
+     "none": 0
+    },
+    "far": {
+     "n": 144,
+     "good": 128,
+     "ok": 6,
+     "bad": 10,
+     "none": 0
+    }
+   }
+  ],
+  "groups": {
+   "plain wavefit": {
+    "clock": {
+     "steady": {
+      "n": 96,
+      "good": 45,
+      "ok": 0,
+      "bad": 28,
+      "none": 23
+     },
+     "slow3": {
+      "n": 32,
+      "good": 15,
+      "ok": 0,
+      "bad": 10,
+      "none": 7
+     },
+     "fast3": {
+      "n": 32,
+      "good": 14,
+      "ok": 0,
+      "bad": 8,
+      "none": 10
+     },
+     "step": {
+      "n": 64,
+      "good": 0,
+      "ok": 0,
+      "bad": 19,
+      "none": 45
+     },
+     "hohey": {
+      "n": 64,
+      "good": 0,
+      "ok": 2,
+      "bad": 35,
+      "none": 27
+     }
+    },
+    "content": {
+     "full": {
+      "n": 160,
+      "good": 46,
+      "ok": 2,
+      "bad": 52,
+      "none": 60
+     },
+     "partial": {
+      "n": 64,
+      "good": 11,
+      "ok": 0,
+      "bad": 20,
+      "none": 33
+     },
+     "wrong": {
+      "n": 64,
+      "good": 17,
+      "ok": 0,
+      "bad": 28,
+      "none": 19
+     }
+    },
+    "start": {
+     "good": {
+      "n": 144,
+      "good": 65,
+      "ok": 2,
+      "bad": 27,
+      "none": 50
+     },
+     "bad": {
+      "n": 144,
+      "good": 9,
+      "ok": 0,
+      "bad": 73,
+      "none": 62
+     }
+    }
+   },
+   "+polish": {
+    "clock": {
+     "steady": {
+      "n": 96,
+      "good": 95,
+      "ok": 1,
+      "bad": 0,
+      "none": 0
+     },
+     "slow3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "fast3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "step": {
+      "n": 64,
+      "good": 61,
+      "ok": 0,
+      "bad": 3,
+      "none": 0
+     },
+     "hohey": {
+      "n": 64,
+      "good": 27,
+      "ok": 16,
+      "bad": 21,
+      "none": 0
+     }
+    },
+    "content": {
+     "full": {
+      "n": 160,
+      "good": 140,
+      "ok": 8,
+      "bad": 12,
+      "none": 0
+     },
+     "partial": {
+      "n": 64,
+      "good": 63,
+      "ok": 0,
+      "bad": 1,
+      "none": 0
+     },
+     "wrong": {
+      "n": 64,
+      "good": 44,
+      "ok": 9,
+      "bad": 11,
+      "none": 0
+     }
+    },
+    "start": {
+     "good": {
+      "n": 144,
+      "good": 125,
+      "ok": 8,
+      "bad": 11,
+      "none": 0
+     },
+     "bad": {
+      "n": 144,
+      "good": 122,
+      "ok": 9,
+      "bad": 13,
+      "none": 0
+     }
+    }
+   },
+   "+ending search": {
+    "clock": {
+     "steady": {
+      "n": 96,
+      "good": 94,
+      "ok": 0,
+      "bad": 2,
+      "none": 0
+     },
+     "slow3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "fast3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "step": {
+      "n": 64,
+      "good": 57,
+      "ok": 1,
+      "bad": 6,
+      "none": 0
+     },
+     "hohey": {
+      "n": 64,
+      "good": 49,
+      "ok": 12,
+      "bad": 3,
+      "none": 0
+     }
+    },
+    "content": {
+     "full": {
+      "n": 160,
+      "good": 150,
+      "ok": 6,
+      "bad": 4,
+      "none": 0
+     },
+     "partial": {
+      "n": 64,
+      "good": 57,
+      "ok": 1,
+      "bad": 6,
+      "none": 0
+     },
+     "wrong": {
+      "n": 64,
+      "good": 57,
+      "ok": 6,
+      "bad": 1,
+      "none": 0
+     }
+    },
+    "start": {
+     "good": {
+      "n": 144,
+      "good": 133,
+      "ok": 7,
+      "bad": 4,
+      "none": 0
+     },
+     "bad": {
+      "n": 144,
+      "good": 131,
+      "ok": 6,
+      "bad": 7,
+      "none": 0
+     }
+    }
+   },
+   "+wide start": {
+    "clock": {
+     "steady": {
+      "n": 96,
+      "good": 94,
+      "ok": 0,
+      "bad": 2,
+      "none": 0
+     },
+     "slow3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "fast3": {
+      "n": 32,
+      "good": 32,
+      "ok": 0,
+      "bad": 0,
+      "none": 0
+     },
+     "step": {
+      "n": 64,
+      "good": 57,
+      "ok": 1,
+      "bad": 6,
+      "none": 0
+     },
+     "hohey": {
+      "n": 64,
+      "good": 49,
+      "ok": 12,
+      "bad": 3,
+      "none": 0
+     }
+    },
+    "content": {
+     "full": {
+      "n": 160,
+      "good": 150,
+      "ok": 6,
+      "bad": 4,
+      "none": 0
+     },
+     "partial": {
+      "n": 64,
+      "good": 57,
+      "ok": 1,
+      "bad": 6,
+      "none": 0
+     },
+     "wrong": {
+      "n": 64,
+      "good": 57,
+      "ok": 6,
+      "bad": 1,
+      "none": 0
+     }
+    },
+    "start": {
+     "good": {
+      "n": 144,
+      "good": 133,
+      "ok": 7,
+      "bad": 4,
+      "none": 0
+     },
+     "bad": {
+      "n": 144,
+      "good": 131,
+      "ok": 6,
+      "bad": 7,
+      "none": 0
+     },
+     "far": {
+      "n": 144,
+      "good": 128,
+      "ok": 6,
+      "bad": 10,
+      "none": 0
+     }
+    }
+   }
+  },
+  "worst": [
+   {
+    "song": "0218",
+    "clock": "step",
+    "content": "full",
+    "start": "far",
+    "worst": 22341,
+    "step": "+wide start"
+   },
+   {
+    "song": "0001",
+    "clock": "step",
+    "content": "full",
+    "start": "far",
+    "worst": 15686,
+    "step": "+wide start"
+   },
+   {
+    "song": "0105",
+    "clock": "steady",
+    "content": "partial",
+    "start": "bad",
+    "worst": 420,
+    "step": "+wide start"
+   },
+   {
+    "song": "0105",
+    "clock": "steady",
+    "content": "partial",
+    "start": "far",
+    "worst": 375,
+    "step": "+wide start"
+   },
+   {
+    "song": "0105",
+    "clock": "steady",
+    "content": "partial",
+    "start": "good",
+    "worst": 372,
+    "step": "+wide start"
+   },
+   {
+    "song": "0105",
+    "clock": "step",
+    "content": "partial",
+    "start": "bad",
+    "worst": 301,
+    "step": "+wide start"
+   },
+   {
+    "song": "0105",
+    "clock": "step",
+    "content": "partial",
+    "start": "far",
+    "worst": 285,
+    "step": "+wide start"
+   },
+   {
+    "song": "0236",
+    "clock": "step",
+    "content": "partial",
+    "start": "far",
+    "worst": 280,
+    "step": "+wide start"
+   },
+   {
+    "song": "0262",
+    "clock": "step",
+    "content": "full",
+    "start": "far",
+    "worst": 274,
+    "step": "+wide start"
+   },
+   {
+    "song": "0046",
+    "clock": "hohey",
+    "content": "full",
+    "start": "bad",
+    "worst": 261,
+    "step": "+wide start"
+   }
+  ],
+  "real": [
+   {
+    "name": "Avicii - Wake Me Up",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 21,
+    "drift": 21,
+    "first": 0.985,
+    "backup": false
+   },
+   {
+    "name": "Bastille - Pompeii",
+    "before": "PASS",
+    "now": "PASS",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.869,
+    "backup": false
+   },
+   {
+    "name": "Bethel Music - Champion",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 36,
+    "drift": 36,
+    "first": 0.0,
+    "backup": false
+   },
+   {
+    "name": "Bruno Mars - Count On Me",
+    "before": "LISTEN",
+    "now": "LISTEN",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.282,
+    "backup": false
+   },
+   {
+    "name": "Chris Tomlin - Here I Am To Worship",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 13,
+    "drift": 13,
+    "first": 10.387,
+    "backup": false
+   },
+   {
+    "name": "Chris Tomlin - How Great Is Our God",
+    "before": "LISTEN",
+    "now": "LISTEN",
+    "drift_before": 40,
+    "drift": 40,
+    "first": 8.053,
+    "backup": false
+   },
+   {
+    "name": "Coldplay - Viva La Vida",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.518,
+    "backup": false
+   },
+   {
+    "name": "Elevation Worship - Trust In God",
+    "before": "LISTEN",
+    "now": "LISTEN",
+    "drift_before": 4,
+    "drift": 4,
+    "first": 1.518,
+    "backup": false
+   },
+   {
+    "name": "Foster the People - Pumped Up Kicks",
+    "before": "FAIL",
+    "now": "PASS",
+    "drift_before": 4,
+    "drift": 0,
+    "first": 0.265,
+    "backup": true
+   },
+   {
+    "name": "Imagine Dragons - Believer",
+    "before": "LISTEN",
+    "now": "LISTEN",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.235,
+    "backup": false
+   },
+   {
+    "name": "Jon Bellion - Stupid Deep",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 18,
+    "drift": 18,
+    "first": 0.031,
+    "backup": false
+   },
+   {
+    "name": "Lynyrd Skynyrd - Sweet Home Alabama",
+    "before": "FAIL",
+    "now": "LISTEN",
+    "drift_before": 42,
+    "drift": 8,
+    "first": 3.386,
+    "backup": true
+   },
+   {
+    "name": "Matt Redman - 10000 Reasons Bless The Lord",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 16,
+    "drift": 16,
+    "first": 0.0,
+    "backup": false
+   },
+   {
+    "name": "Phil Wickham - Battle Belongs",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 56,
+    "drift": 56,
+    "first": 3.525,
+    "backup": false
+   },
+   {
+    "name": "Relient K - Be My Escape",
+    "before": "PASS",
+    "now": "PASS",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.168,
+    "backup": false
+   },
+   {
+    "name": "The Lumineers - Ho Hey",
+    "before": "FAIL",
+    "now": "PASS",
+    "drift_before": 11,
+    "drift": 0,
+    "first": 0.0,
+    "backup": true
+   },
+   {
+    "name": "Train - Hey Soul Sister",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 30,
+    "drift": 30,
+    "first": 0.0,
+    "backup": false
+   },
+   {
+    "name": "twenty one pilots - Stressed Out",
+    "before": "FAIL",
+    "now": "LISTEN",
+    "drift_before": 24,
+    "drift": 0,
+    "first": 0.453,
+    "backup": true
+   },
+   {
+    "name": "Vance Joy - Riptide",
+    "before": "FAIL",
+    "now": "FAIL",
+    "drift_before": 24,
+    "drift": 16,
+    "first": 0.609,
+    "backup": true
+   },
+   {
+    "name": "WALK THE MOON - Shut Up And Dance",
+    "before": "PASS",
+    "now": "PASS",
+    "drift_before": 0,
+    "drift": 0,
+    "first": 0.566,
+    "backup": false
+   }
+  ]
  }
 ]
