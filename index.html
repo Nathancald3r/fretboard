@@ -965,6 +965,8 @@
 
   <!-- PRACTICE -->
   <main id="view-practice" class="view" hidden>
+    <!-- the main view: the categories are the buttons (#practice) -->
+    <div id="pr-home" class="pr-page">
     <section class="panel pr-top">
       <div class="row spread"><h2>Practice</h2><a class="button small ghost" href="#log">Full practice log</a></div>
       <div class="goal" id="pr-goal">
@@ -979,17 +981,27 @@
         <p class="muted small-text cal-key">Less <i class="cal-day l0"></i><i class="cal-day l1"></i><i class="cal-day l2"></i><i class="cal-day l3"></i><i class="cal-day l4"></i> More · time in songs and in the exercises below counts</p>
       </details>
     </section>
-    <section class="panel">
-      <div class="row spread"><h2>Today’s warm-up</h2><button id="pr-routine-go" class="primary">Start</button></div>
-      <p id="pr-routine-sum" class="muted small-text"></p>
-      <ol id="pr-routine" class="rt-list"></ol>
+    <section class="panel pr-routine">
+      <div class="row spread"><div><h2>Today’s warm-up</h2><p id="pr-routine-sum" class="muted small-text"></p></div><button id="pr-routine-go" class="primary">Start</button></div>
+      <details class="rt-details"><summary>The steps</summary><ol id="pr-routine" class="rt-list"></ol></details>
     </section>
-    <div id="pr-foundations"></div>
+    <h2 class="pr-h">Pick what to work on</h2>
+    <nav id="pr-cats" class="pr-cats" aria-label="Practice categories"></nav>
     <section class="panel" id="pr-mine" hidden>
       <h2>Your own exercises</h2>
       <p class="muted small-text">Scales and backing tracks you made yourself.</p>
       <div id="pr-exercises" class="cards"></div>
     </section>
+    </div>
+    <!-- one category's page (#practice/<slug>): back to the main view, the other categories, its cards -->
+    <div id="pr-cat" class="pr-page" hidden>
+      <section class="panel fd-cat">
+        <div class="pr-cat-head"><a id="pr-back" class="button ghost pr-back" href="#practice">‹ Practice</a><h2 id="pr-cat-title"></h2></div>
+        <nav id="pr-tabs" class="pr-tabs" aria-label="Practice categories"></nav>
+        <p id="pr-cat-blurb" class="muted small-text"></p>
+        <div id="pr-cat-cards" class="cards"></div>
+      </section>
+    </div>
   </main>
 
   <!-- STRUM TIMING -->

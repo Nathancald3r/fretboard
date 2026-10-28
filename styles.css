@@ -2546,6 +2546,34 @@ body.focus .playbar-end > :not(.track-chip) { display: none; }
 .fd-cat > h2 { margin-bottom: .1rem; }
 .fd-cat > p { margin: 0 0 .7rem; }
 @media (max-width: 640px) { .rt-step { padding: .5rem .65rem; } .rt-check { width: 2.2rem; height: 2.2rem; } }
+/* Practice: the categories are big buttons (#practice); each opens its own page (#practice/<slug>) */
+.pr-page { display: grid; gap: 1rem; min-width: 0; }
+.pr-h { margin: .2rem 0 -.4rem; font-size: 1.05rem; }
+.pr-routine .row { align-items: flex-start; flex-wrap: nowrap; }
+.pr-routine h2 { margin-bottom: .1rem; }
+.pr-routine p { margin: 0; }
+.pr-routine #pr-routine-go { min-height: 2.75rem; min-width: 6rem; flex: none; }
+.rt-details > summary { padding: .45rem 0 .1rem; min-height: 2.75rem; display: flex; align-items: center; color: var(--muted); }
+.rt-details[open] > summary { margin-bottom: 0; }
+.rt-details .rt-list { margin-top: .2rem; }
+.pr-cats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.pr-cat { display: grid; align-content: space-between; gap: .45rem; min-height: 9rem; padding: 1rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); color: var(--text); text-decoration: none; transition: border-color .15s var(--ease), background-color .15s var(--ease), transform .15s var(--ease); }
+.pr-cat:hover, .pr-cat:focus-visible { border-color: var(--accent); background: var(--panel-2); outline: none; }
+.pr-cat:active { transform: scale(.985); }
+.pr-cat-name { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-size: 1.15rem; font-weight: 800; line-height: 1.2; }
+.pr-cat-name i { font-style: normal; color: var(--accent); font-size: 1.4rem; line-height: 1; }
+.pr-cat-blurb { color: var(--muted); font-size: .88rem; }
+.pr-cat-foot { display: grid; gap: .35rem; font-size: .8rem; color: var(--muted); }
+.pr-cat-bar { height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+.pr-cat-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.pr-cat-head { display: flex; align-items: center; gap: .7rem; margin-bottom: .7rem; }
+.pr-cat-head h2 { margin: 0; font-size: 1.3rem; }
+.pr-back { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1rem; text-decoration: none; color: var(--text); flex: none; }
+.pr-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .7rem; }
+.pr-tab { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); text-decoration: none; font-weight: 600; }
+.pr-tab:hover { color: var(--text); border-color: var(--muted); }
+.pr-tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+@media (max-width: 640px) { .pr-cats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; } .pr-cat { min-height: 8.5rem; padding: .85rem; } .pr-cat-name { font-size: 1.05rem; } .pr-tab { padding: 0 .85rem; } }
 /* chord sheet, redesigned: one slim bar, then the song on the whole screen. The site header is gone here (the ☰ opens the library). */
 body.in-text .topbar { display: none; }
 #view-text { max-width: none; padding: 0; gap: 0; }

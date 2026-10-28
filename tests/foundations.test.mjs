@@ -1,6 +1,6 @@
 // Run: node tests/foundations.test.mjs
 import assert from 'node:assert/strict';
-import { EXERCISES, FOUNDATIONS, ROUTINE, routineMinutes, stepsDone, nextStep, stepKey, dayKey } from '../js/foundations.js';
+import { EXERCISES, FOUNDATIONS, ROUTINE, routineMinutes, stepsDone, nextStep, stepKey, dayKey, categoryBySlug, categoryProgress, progressText } from '../js/foundations.js';
 import { DEMOS } from '../js/demos.js';
 import { chartType } from '../js/songmeta.js';
 
@@ -67,6 +67,34 @@ for (const cat of FOUNDATIONS) {
 }
 assert.deepEqual([...shown].sort(), Object.keys(EXERCISES).sort(), 'every exercise is on the page, once');
 assert.deepEqual(FOUNDATIONS.map((c) => c.id), ['warmup', 'scales', 'chords', 'rhythm', 'technique', 'ear']);
+
+// Each category has its own page, #practice/<slug>: the id is the slug, unique and safe in an address.
+assert.equal(new Set(FOUNDATIONS.map((c) => c.id)).size, FOUNDATIONS.length, 'slugs are unique');
+for (const c of FOUNDATIONS) {
+  assert.match(c.id, /^[a-z]+$/, `${c.id}: slug`);
+  assert.ok(c.short && c.short.length <= 10, `${c.id}: short label for the category row`);
+  assert.equal(categoryBySlug(c.id), c);
+}
+assert.equal(categoryBySlug(''), null);
+assert.equal(categoryBySlug('nope'), null);
+assert.equal(categoryBySlug(undefined), null);
+
+// The progress hint on a category button: this week's practised exercises (by title) and drills (by id).
+const now0 = new Date(2026, 9, 28, 12).getTime();
+const scalesCat = categoryBySlug('scales');
+assert.deepEqual(categoryProgress(scalesCat, { now: now0 }), { done: 0, total: 7 });
+const weekSessions = [
+  { songId: 3, title: EXERCISES.pent1.title, start: now0 - 6 * 86400000 + 3600000 }, // 6 days ago, inside the week
+  { songId: 3, title: EXERCISES.pent1.title, start: now0 - 3600000 }, // the same exercise twice counts once
+  { songId: 4, title: EXERCISES.blues.title, start: now0 - 7 * 86400000 }, // 7 days ago, outside
+  { songId: 'drill:scales', title: 'Scales', start: now0 - 86400000 },
+  { songId: 5, title: EXERCISES.open1.title, start: now0 }, // another category's exercise
+];
+assert.deepEqual(categoryProgress(scalesCat, { now: now0, sessions: weekSessions }), { done: 2, total: 7 });
+assert.deepEqual(categoryProgress(categoryBySlug('chords'), { now: now0, sessions: weekSessions }), { done: 1, total: 3 });
+assert.deepEqual(categoryProgress(categoryBySlug('ear'), { now: now0 }), { done: 0, total: 1 }, 'the link tile "Know the neck" is not counted');
+assert.equal(progressText({ done: 0, total: 7 }), 'Not yet this week');
+assert.equal(progressText({ done: 2, total: 7 }), '2 of 7 this week');
 
 // The routine: about ten minutes, in order, and it knows what was done today.
 assert.equal(routineMinutes(), 10);

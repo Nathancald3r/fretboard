@@ -93,15 +93,39 @@ export const EXERCISES = {
 };
 for (const [id, e] of Object.entries(EXERCISES)) e.id = id;
 
-/** The Practice page, top to bottom. An item is an exercise id, `{ drill }` (a drill page, see practicehub.js) or `{ href, title, blurb }`. */
+/**
+ * The Practice page's categories, in order: a big button each on the main view, and a page of its own at
+ * `#practice/<id>` (the id is the slug). `short` is the label on the category row of that page. An item is an
+ * exercise id, `{ drill }` (a drill page, see practicehub.js) or `{ href, title, blurb }`.
+ */
 export const FOUNDATIONS = [
-  { id: 'warmup', title: 'Warm-ups', blurb: 'Loosen up first. Slow and clean beats fast and sloppy.', items: ['chromatic', 'spider', 'picking', 'legato'] },
-  { id: 'scales', title: 'Scales', blurb: 'The notes every solo and melody is made of.', items: ['pent1', 'pent2', 'majpent', 'major', 'minor', 'blues', { drill: 'scales' }] },
-  { id: 'chords', title: 'Chords and changes', blurb: 'Clean chords first, then clean changes between them.', items: ['open1', 'open2', { drill: 'keys' }] },
-  { id: 'rhythm', title: 'Rhythm and timing', blurb: 'Play in time with a click, and hear how early or late you are.', items: ['counting', { drill: 'strum' }, { drill: 'tools' }] },
-  { id: 'technique', title: 'Technique', blurb: 'The moves that make a part sound like a guitarist played it.', items: ['slides', 'bends', 'vibrato'] },
-  { id: 'ear', title: 'Ear and theory', blurb: 'Know the neck, know the keys, hear the notes.', items: [{ href: '#keys', title: 'Know the neck', blurb: 'Name the notes on the fretboard, the circle of fifths and the chord finder.' }, { drill: 'vocal' }] },
+  { id: 'warmup', title: 'Warm-ups', short: 'Warm-ups', blurb: 'Loosen up first. Slow and clean beats fast and sloppy.', items: ['chromatic', 'spider', 'picking', 'legato'] },
+  { id: 'scales', title: 'Scales', short: 'Scales', blurb: 'The notes every solo and melody is made of.', items: ['pent1', 'pent2', 'majpent', 'major', 'minor', 'blues', { drill: 'scales' }] },
+  { id: 'chords', title: 'Chords and changes', short: 'Chords', blurb: 'Clean chords first, then clean changes between them.', items: ['open1', 'open2', { drill: 'keys' }] },
+  { id: 'rhythm', title: 'Rhythm and timing', short: 'Rhythm', blurb: 'Play in time with a click, and hear how early or late you are.', items: ['counting', { drill: 'strum' }, { drill: 'tools' }] },
+  { id: 'technique', title: 'Technique', short: 'Technique', blurb: 'The moves that make a part sound like a guitarist played it.', items: ['slides', 'bends', 'vibrato'] },
+  { id: 'ear', title: 'Ear and theory', short: 'Ear', blurb: 'Know the neck, know the keys, hear the notes.', items: [{ href: '#keys', title: 'Know the neck', blurb: 'Name the notes on the fretboard, the circle of fifths and the chord finder.' }, { drill: 'vocal' }] },
 ];
+
+/** The category at `#practice/<slug>`, or null (no slug, or one that isn't a category: the main view shows). */
+export const categoryBySlug = (slug) => FOUNDATIONS.find((c) => c.id === slug) || null;
+
+/**
+ * How much of a category was practised in the last 7 days (today included): an exercise counts by its title,
+ * a drill by its id, like `stepsDone`. Link tiles ("Know the neck") have no practice time and are not counted.
+ * sessions: { songId, title, start }.
+ * @returns {{ done: number, total: number }}
+ */
+export function categoryProgress(cat, { sessions = [], now = Date.now(), drillId = (d) => `drill:${d}` } = {}) {
+  const from = new Date(new Date(now).toDateString()).getTime() - 6 * 86400000;
+  const week = sessions.filter((s) => s.start >= from);
+  const counted = cat.items.filter((it) => typeof it === 'string' || it.drill);
+  const done = counted.filter((it) => (typeof it === 'string' ? week.some((s) => s.title === EXERCISES[it].title) : week.some((s) => s.songId === drillId(it.drill))));
+  return { done: done.length, total: counted.length };
+}
+
+/** "2 of 4 this week", or "Not yet this week". */
+export const progressText = ({ done, total }) => (done ? `${done} of ${total} this week` : 'Not yet this week');
 
 /** Today's warm-up: about ten minutes, in this order. A step is an exercise id or a drill. */
 export const ROUTINE = [

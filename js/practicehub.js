@@ -1,12 +1,14 @@
-// The Practice page: the foundations (warm-ups, scales, chords, rhythm, technique, ear and theory: exercises
-// and drills, js/foundations.js), a short daily routine, and a calendar of the days you practised. Songs are not
-// here (they live in the library). Time spent in a drill page is logged as a session like a song's.
+// The Practice page: a short daily routine and the foundations (warm-ups, scales, chords, rhythm, technique, ear
+// and theory: exercises and drills, js/foundations.js) as big category buttons (#practice). A category opens its own
+// page (#practice/<slug>) with its cards and a row to jump to another category. Also a calendar of the days you
+// practised. Songs are not here (they live in the library). Time spent in a drill page is logged as a session
+// like a song's.
 import { listSessions, addSession, listSongs, putSong, updateSong } from './db.js';
 import { formatDuration } from './practice.js';
 import { streak } from './log.js';
 import { chartType } from './songmeta.js';
 import { DEMOS } from './demos.js';
-import { EXERCISES, FOUNDATIONS, ROUTINE, routineMinutes, stepsDone, nextStep, stepKey, dayKey } from './foundations.js';
+import { EXERCISES, FOUNDATIONS, ROUTINE, routineMinutes, stepsDone, nextStep, stepKey, dayKey, categoryBySlug, categoryProgress, progressText } from './foundations.js';
 
 const $ = (id) => document.getElementById(id);
 const DAY = 86400000;
@@ -143,6 +145,33 @@ function routineHtml(done) {
   }).join('');
 }
 
+/** The category's slug in the address (#practice/<slug>), or ''. */
+const slugNow = () => { const [name, arg] = location.hash.slice(1).split('/'); return name === 'practice' ? arg || '' : ''; };
+
+const catButton = (cat, sessions) => {
+  const p = categoryProgress(cat, { sessions, drillId: (k) => DRILLS[k].id });
+  return `<a class="pr-cat" href="#practice/${cat.id}" data-cat="${cat.id}"><span class="pr-cat-name">${escape(cat.title)}<i aria-hidden="true">›</i></span>
+      <span class="pr-cat-blurb">${escape(cat.blurb)}</span>
+      <span class="pr-cat-foot"><span class="pr-cat-bar" aria-hidden="true"><i style="width:${p.total ? Math.round((p.done / p.total) * 100) : 0}%"></i></span>${progressText(p)}</span></a>`;
+};
+
+const catTab = (c, now) => `<a class="pr-tab${c.id === now.id ? ' on' : ''}" href="#practice/${c.id}" data-cat="${c.id}"${c.id === now.id ? ' aria-current="page"' : ''}>${escape(c.short)}</a>`;
+
+const itemCard = (it, sessions, saved, today) => (typeof it === 'string' ? exerciseCard(it, saved)
+  : it.drill ? drillCard(sessions, it.drill, today)
+    : `<a class="card drill" href="${escape(it.href)}"><div class="title">${escape(it.title)}</div><div class="meta">${escape(it.blurb)}</div></a>`);
+
+/**
+ * Open a category from the main view (a new history entry, marked so the page's Back is the browser's Back and
+ * the main view never piles up behind it), or from another category (replaces the entry: Back still leaves for the main view).
+ */
+function openCategory(slug) {
+  const fromHome = !categoryBySlug(slugNow());
+  const marked = fromHome || !!history.state?.prHome;
+  if (fromHome) location.hash = `#practice/${slug}`; else location.replace(`#practice/${slug}`);
+  try { history.replaceState({ ...(history.state || {}), prHome: marked }, ''); } catch { /* fine */ }
+}
+
 function wire() {
   wired = true;
   $('pr-goal-minus').addEventListener('click', () => setGoal(goalMin() - 5));
@@ -150,6 +179,10 @@ function wire() {
   $('view-practice').addEventListener('click', (ev) => {
     const tick = ev.target.closest('[data-tick]');
     if (tick) { toggleTick(tick.dataset.tick); renderPractice(); return; }
+    const cat = ev.target.closest('a[data-cat]');
+    if (cat && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && ev.button === 0) { ev.preventDefault(); openCategory(cat.dataset.cat); return; }
+    const back = ev.target.closest('#pr-back');
+    if (back && history.state?.prHome) { ev.preventDefault(); history.back(); return; }
     const ex = ev.target.closest('[data-ex]');
     if (ex) { ev.preventDefault(); openExercise(ex.dataset.ex); }
   });
@@ -161,8 +194,22 @@ function wire() {
 
 export async function renderPractice() {
   if (!wired) wire();
+  const cat = categoryBySlug(slugNow()); // a category's page, or the main view
+  $('pr-home').hidden = !!cat;
+  $('pr-cat').hidden = !cat;
   const sessions = await listSessions();
   const today = startOfDay(Date.now());
+  const exercises = (await listSongs()).filter((s) => chartType(s) === 'exercise'); // never a song: those are in the library
+  const saved = new Map(exercises.map((s) => [s.title, s]));
+
+  if (cat) {
+    $('pr-cat-title').textContent = cat.title;
+    $('pr-cat-blurb').textContent = cat.blurb;
+    $('pr-tabs').innerHTML = FOUNDATIONS.map((c) => catTab(c, cat)).join('');
+    $('pr-cat-cards').innerHTML = cat.items.map((it) => itemCard(it, sessions, saved, today)).join('');
+    return;
+  }
+
   const sum = (list) => list.reduce((n, s) => n + s.seconds, 0);
   const week = sum(sessions.filter((s) => s.start >= today - 6 * DAY));
   $('pr-stats').innerHTML = [
@@ -179,9 +226,6 @@ export async function renderPractice() {
   $('pr-goal').classList.toggle('done', pct >= 100);
   $('pr-calendar').innerHTML = calendarHtml(sessions);
 
-  const exercises = (await listSongs()).filter((s) => chartType(s) === 'exercise'); // never a song: those are in the library
-  const saved = new Map(exercises.map((s) => [s.title, s]));
-
   const done = stepsDone({ sessions, ticks: readTicks(), drillId: (k) => DRILLS[k].id });
   const left = ROUTINE.filter((s) => !done.has(stepKey(s))).reduce((n, s) => n + s.minutes, 0);
   $('pr-routine').innerHTML = routineHtml(done);
@@ -191,12 +235,7 @@ export async function renderPractice() {
   $('pr-routine-go').textContent = left ? (done.size ? 'Continue' : 'Start') : 'Done today ✓';
   $('pr-routine-go').disabled = !left;
 
-  $('pr-foundations').innerHTML = FOUNDATIONS.map((cat) => `<section class="panel fd-cat">
-      <h2>${escape(cat.title)}</h2><p class="muted small-text">${escape(cat.blurb)}</p>
-      <div class="cards">${cat.items.map((it) => (typeof it === 'string' ? exerciseCard(it, saved)
-        : it.drill ? drillCard(sessions, it.drill, today)
-          : `<a class="card drill" href="${escape(it.href)}"><div class="title">${escape(it.title)}</div><div class="meta">${escape(it.blurb)}</div></a>`)).join('')}</div>
-    </section>`).join('');
+  $('pr-cats').innerHTML = FOUNDATIONS.map((c) => catButton(c, sessions)).join('');
 
   // Exercises you made yourself (a scale from the Scales page, a backing track), kept apart from the ready-made ones.
   const ready = new Set([...Object.values(EXERCISES), ...DEMOS].map((e) => e.title)); // the first launch's two demos are in the list above too
