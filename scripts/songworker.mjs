@@ -131,10 +131,12 @@ export function candidates(found, { title, artist }) {
 }
 
 /** The real runner: find the videos, try them in order until one lines up (PASS), else report the best try. */
-export function pipelineRunner({ python = 'python', log = () => {} } = {}) {
-  return async ({ title, artist, sync = true }) => {
+export function pipelineRunner({ python = 'python', log: defaultLog = () => {} } = {}) {
+  // ug: the official tab's link when the caller knows it (a song the UG helper saved: fromlink then finds its PDFs and skips UG);
+  // log: this call's own log (the app's background line-up shows each step)
+  return async ({ title, artist, sync = true, ug = '', log = defaultLog }) => {
     if (!sync) { // the user chose no video when asking: the official tab alone, nothing to line up
-      const r = await exec(python, ['tests/yt2gp5/fromlink.py', '--tab-only', '--title', title, ...(artist ? ['--artist', artist] : [])], { log });
+      const r = await exec(python, ['tests/yt2gp5/fromlink.py', '--tab-only', '--title', title, ...(artist ? ['--artist', artist] : []), ...(ug ? ['--ug', ug] : [])], { log });
       const file = /^Done: (.+)$/m.exec(r.text)?.[1]?.trim();
       if (r.code === 0 && file) return { verdict: 'PASS', file };
       return { verdict: 'ERROR', reason: /no Official tab/i.test(r.text) ? 'no official tab on Ultimate Guitar' : lastLine(r.text) };
@@ -147,7 +149,7 @@ export function pipelineRunner({ python = 'python', log = () => {} } = {}) {
     let best = null;
     for (const c of list) {
       log(`  trying ${c.title} (${c.author})`);
-      const r = await exec(python, ['tests/yt2gp5/fromlink.py', `https://www.youtube.com/watch?v=${c.id}`, ...(title ? ['--title', title] : []), ...(artist ? ['--artist', artist] : [])], { log });
+      const r = await exec(python, ['tests/yt2gp5/fromlink.py', `https://www.youtube.com/watch?v=${c.id}`, ...(title ? ['--title', title] : []), ...(artist ? ['--artist', artist] : []), ...(ug ? ['--ug', ug] : [])], { log });
       const file = /^Done: (.+)$/m.exec(r.text)?.[1]?.trim();
       const verdict = { 0: 'PASS', 2: 'LISTEN', 3: 'FAIL', 4: 'LISTEN' }[r.code] || 'ERROR';
       if (verdict === 'PASS' && file) return { verdict, file, video: c.id };

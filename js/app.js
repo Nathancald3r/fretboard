@@ -16,6 +16,7 @@ import { loadFolders, moveSong, rateSong, addFolder, renameFolder, deleteFolder 
 import { recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
 import { initScales, renderScales } from './scales.js';
+import { initAutoSync } from './autosync.js';
 import { initQuickImport, watchDownloads, showReady, ugHelper, openInCollector, watchRuns, helperPossible, startHelper, showStatus, setupUG, TAB_FILE } from './quickimport.js';
 import { sourceUrl } from './tabsources.js';
 import { initKeys, renderKeys } from './keys.js';
@@ -1257,6 +1258,7 @@ async function main() {
     location.hash = `song/${id}`;
     if (playAlong) openPlayAlongSheet();
   } });
+  initAutoSync({ importFiles, toast });
   // The Android app's tab browser hands over each tab file it downloads (base64) to add here.
   window.fretboardImport = async (name, base64, url, pageTitle) => {
     const bin = atob(base64);

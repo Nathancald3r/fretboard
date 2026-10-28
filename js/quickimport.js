@@ -3,6 +3,7 @@
 import { getValue, setValue, getSong, updateSong } from './db.js';
 import { bestMatch, matchScore } from './tabsources.js';
 import { popMenu } from './menu.js';
+import { requestAutoSync } from './autosync.js';
 
 const $ = (id) => document.getElementById(id);
 export const TAB_FILE = /\.(gp|gp3|gp4|gp5|gpx|gp7|gp8|xml|musicxml|mxl|mid|midi|kar|rmi|ptb|txt|pdf|cho|chordpro|chopro|crd|fretboard)$/i;
@@ -141,7 +142,7 @@ export async function readyRuns(dir) {
       // id, not key: key is the song's key (G), and it overwrote this, so a song was never marked taken
       // and was added again every 4 s (Rest On Us, 8 times)
       runs.push({ id: key, dir: entry, song: String(m.song || entry.name) + (what ? ` (${what})` : ''), tracks, finished: String(m.finished || ''),
-        title: String(m.song || ''), artist: String(m.artist || ''), key: String(m.key || ''), replace: m.replace === true, missing, held: missing.length > 0,
+        title: String(m.song || ''), artist: String(m.artist || ''), key: String(m.key || ''), url: typeof m.url === 'string' ? m.url.split(/[?#]/)[0] : '', replace: m.replace === true, missing, held: missing.length > 0,
         chords: typeof m.chords === 'string' ? m.chords : '', strum: Array.isArray(m.strum) ? m.strum : [], video: /^[\w-]{11}$/.test(m.video || '') ? m.video : '' });
     }
   }
@@ -253,9 +254,19 @@ async function importRun(r, auto = false, batch = null) {
   // replace: "Replace the old files" in the UG helper, so the song already in the library is updated, not added again
   const { ids } = await ctx.importFiles(files, { quietIfEmpty: true, replace: r.replace, batch, ...(auto ? { auto: { title: r.title, artist: r.artist, key: r.key } } : {}) });
   if (ids?.length && !auto) await markRun(r.id); // cancelled: it stays offered
-  if (ids?.length) await addExtras(r, ids[0]);
+  if (ids?.length) { await addExtras(r, ids[0]); lineUpInBackground(r, ids[0]); }
   showReady();
   return ids?.[0] ?? null;
+}
+
+// An official song the helper saved: the computer finds its video and lines it up in the background (js/autosync.js),
+// unless the song is lined up already. Only where this page's own server can do it; elsewhere nothing happens.
+async function lineUpInBackground(r, id) {
+  try {
+    if (!/\.pdf$/i.test(r.tracks[0]?.file || '') || !/-official-\d+$/.test(r.url)) return;
+    const song = await getSong(id);
+    if (song && !song.syncPoints?.length) await requestAutoSync(song);
+  } catch (err) { console.warn('Line-up not started', err); }
 }
 
 // The song's chord sheet (lined up with the words in the player), UG's linked video and a chords
@@ -266,7 +277,9 @@ async function addExtras(r, id) {
     if (r.chords) {
       try { changes.chordSheet = await (await (await r.dir.getFileHandle(r.chords)).getFile()).text(); } catch { /* not there: chords are guessed */ }
     }
-    const song = r.video || r.strum.length ? await getSong(id) : null;
+    const official = /-official-\d+$/.test(r.url);
+    const song = r.video || r.strum.length || official ? await getSong(id) : null;
+    if (song && official && !song.sourceUrl) changes.sourceUrl = r.url; // where the tab came from (the line-up and "Pick not synced" use it)
     if (song && r.video && !song.recording) changes.recording = { kind: 'youtube', id: r.video, title: '', author: '' };
     if (song && r.strum.length) changes.strum = r.strum;
     if (Object.keys(changes).length) await updateSong(id, changes);

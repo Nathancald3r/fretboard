@@ -9,6 +9,7 @@ import { parseSource } from './tabinfo.js';
 import { btDelay, onBtChange, bindBtControls } from './btdelay.js';
 import { clickTrackBuffer } from './click.js';
 import { loadYouTubeApi } from './ytapi.js';
+import { autoSyncAvailable, requestAutoSync } from './autosync.js';
 import { bpmFromTaps, foldBpm, tempoCompare, guessTempoFromDurations, syncSummary, stashSync, restoreSync } from './videosync.js';
 
 const $ = (id) => document.getElementById(id);
@@ -994,7 +995,9 @@ function paintSyncStatus() {
   box.className = `sync-status ${state}`;
   box.innerHTML = `<b>${state === 'synced' ? 'Synced with the video' : state === 'none' ? 'No video yet' : 'Sync in progress'}</b>
     <ol>${SYNC_STEPS.map((t, i) => `<li class="${steps[i] ? 'ok' : ''}">${t}</li>`).join('')}</ol>
-    ${steps[2] ? `<button id="pa-sync-done" class="small ${song.syncDone ? 'ghost' : 'primary'}" type="button">${song.syncDone ? 'Mark as still in progress' : 'Mark as synced ✓'}</button>` : ''}`;
+    ${steps[2] ? `<button id="pa-sync-done" class="small ${song.syncDone ? 'ghost' : 'primary'}" type="button">${song.syncDone ? 'Mark as still in progress' : 'Mark as synced ✓'}</button>` : ''}
+    ${state === 'synced' ? '' : '<button id="pa-autosync" class="small primary" type="button" hidden title="The computer finds the song’s video, lines the tab up with it and checks it. You can keep practicing.">Find the video and sync it</button>'}`;
+  if (state !== 'synced') autoSyncAvailable().then((ok) => { const b = $('pa-autosync'); if (b) b.hidden = !ok; });
 }
 
 // The video moment you last linked to the music start, to jump back to while you are pinning.
@@ -1491,7 +1494,13 @@ export function initPlayAlong(h) {
     $('pa-link-here').textContent = bar === null ? 'Music starts here' : `Music starts at bar ${bar + 1}`;
   });
   $('pl-sync').addEventListener('click', () => document.querySelector('[data-sheet-btn=playalong]')?.click());
-  $('pa-sync-status').addEventListener('click', (e) => {
+  $('pa-sync-status').addEventListener('click', async (e) => {
+    if (e.target.closest('#pa-autosync') && song) {
+      const b = e.target.closest('#pa-autosync');
+      b.disabled = true;
+      if (await requestAutoSync(song)) b.textContent = 'Syncing… (see the header)'; else b.disabled = false;
+      return;
+    }
     if (!e.target.closest('#pa-sync-done') || !song) return;
     song.syncDone = !song.syncDone;
     updateSong(song.id, { syncDone: song.syncDone });
