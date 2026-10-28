@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
 const die = (msg) => { console.error(`STOP: ${msg}`); process.exit(1); };
-const CO = 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>';
+const CO = 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>';
 
 const args = process.argv.slice(2);
 const check = args.includes('--check');
@@ -20,13 +20,19 @@ let msg = null;
 const files = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '-m') msg = args[++i];
-  else if (args[i] !== '--check') files.push(args[i].replace(/\\/g, '/'));
+  else if (args[i] !== '--check' && args[i] !== '--no-numbers') files.push(args[i].replace(/\\/g, '/'));
 }
 if (!files.length) die('name the files to commit');
 if (!check && !msg) die('give a message with -m');
 
 const banned = (f) => /(^|\/)out\//.test(f) || /\.apk$/i.test(f) || /^_[^/]+\//.test(f) || /(^|\/)(marks|truth)\//.test(f);
 for (const f of files) if (banned(f)) die(`${f} is never committed (out/, APKs, _test folders, marks/, truth/)`);
+
+// A change to the sync code needs its numbers (the user: "always update numbers when you make a change to song"):
+// run syncreport.py --save "what changed" and ship the history files with it. --no-numbers skips this for an edit that can't move a number.
+const SYNC_CODE = /^tests\/yt2gp5\/(wavefit|qa|syncqa|fixsync|listen|fromlink|ladder|truthbench|drumclock|startcal)\.py$/;
+if (!args.includes('--no-numbers') && files.some((f) => SYNC_CODE.test(f)) && !files.includes('tests/yt2gp5/history/sync-history.json'))
+  die('this changes the sync code, so save its numbers: python tests/yt2gp5/syncreport.py --save "what changed", then ship tests/yt2gp5/history/sync-history.json and dashboard.html with it (--no-numbers if nothing can move)');
 
 const style = (text) => {
   const crlf = (text.match(/\r\n/g) || []).length;

@@ -15,6 +15,7 @@ Open bugs and to-dos live in `TODO.md`, not here.
 
 ## Run, test, ship
 
+- **Always update the numbers when a song's sync or the sync code changes** (the user, 2026-10-28): after writing a song's sync (wavefit, aligner save, fromlink, a `.fretboard` fixed by hand) or changing `wavefit.py`, `qa.py`, `syncqa.py`, `fixsync.py`, `listen.py`, `fromlink.py`, `ladder.py` or `truthbench.py`, run `python tests/yt2gp5/syncreport.py --save "what changed"` (reads what is stored, judges only the changed songs again, ~100 s the first time; a benchmark change needs `truthbench.py run` first) and commit `tests/yt2gp5/history/sync-history.json` + `dashboard.html`. `ship.mjs` refuses a sync-code commit without `sync-history.json` (`--no-numbers` when nothing can move). Say the new numbers in the answer. Last snapshot: 2 (2026-10-28: 5 PASS / 5 LISTEN / 10 FAIL of 20 songs; benchmark best try 392 good / 19 ok / 21 bad of 432).
 - **Repeated jobs are scripts: run them, don't redo them by hand** (the user asked, 2026-10-24). When a job comes up a second time, make it a script.
   - `node scripts/test.mjs` runs every test (`--round` adds the round-trip test).
   - `node scripts/ship.mjs -m "message" file1 file2 …` checks and fixes flipped line endings, refuses out/, APKs and `_xxx/` folders, commits only the named files with the Co-Authored-By line, and pushes to main. `--check` only checks.
