@@ -2551,18 +2551,22 @@ body.in-text .topbar { display: none; }
 #view-text { max-width: none; padding: 0; gap: 0; }
 .tx-top { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: .3rem .6rem; padding: .3rem .6rem; background: #101216; border-bottom: 1px solid var(--line); }
 .tx-top .icon-btn { flex: none; margin-left: -.3rem; }
-.tx-top button.small { min-height: 1.9rem; padding: .2rem .6rem; flex: none; }
+.tx-top { user-select: none; -webkit-user-select: none; }
+.tx-top button.small { min-height: 2.4rem; min-width: 2.4rem; padding: 0 .85rem; flex: none; border-radius: 12px; border: 1px solid var(--line); background: #1a1d24; color: #aab3c5; font-size: .95rem; font-weight: 600; line-height: 1; cursor: pointer; transition: background .15s var(--ease), color .15s var(--ease); }
+.tx-top button.small:hover { color: #fff; background: #232733; }
 .tx-id { flex: 1 1 6rem; min-width: 0; display: flex; align-items: baseline; gap: .6rem; white-space: nowrap; overflow: hidden; }
 .tx-id b { font-size: 1.02rem; overflow: hidden; text-overflow: ellipsis; }
 .tx-id .muted { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; }
 .tx-tools2 { display: contents; }
-.tx-keychip { flex: none; font-size: .85rem; color: var(--muted); white-space: nowrap; }
+.tx-keychip { flex: none; display: inline-flex; align-items: center; gap: .3em; height: 2.4rem; padding: 0 .85rem; border-radius: 12px; border: 1px solid var(--line); background: #1a1d24; font-size: .95rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .tx-keychip:empty { display: none; }
 .tx-keychip b { color: var(--text); }
 .tx-keychip small { font-size: .9em; }
-.tx-grp { display: inline-flex; align-items: center; gap: .1rem; flex: none; }
-.tx-grp button.small { padding: .2rem .5rem; }
-.tx-val { min-width: 4.4em; text-align: center; font-variant-numeric: tabular-nums; font-size: .88rem; white-space: nowrap; }
+.tx-grp { display: inline-flex; align-items: center; gap: .15rem; flex: none; padding: .2rem; border-radius: 15px; background: #ffffff0a; border: 1px solid var(--line); }
+.tx-top .tx-grp button.small { min-height: 2rem; min-width: 2rem; padding: 0; border-radius: 10px; font-size: 1.15rem; }
+.tx-val { min-width: 4.4em; text-align: center; font-variant-numeric: tabular-nums; font-size: .92rem; font-weight: 600; color: var(--text); white-space: nowrap; }
+.tx-valbtn { min-height: 2rem; padding: 0 .3rem; border: 0; border-radius: 10px; background: none; font-family: inherit; cursor: pointer; }
+.tx-valbtn:hover { background: #ffffff12; }
 .tx-menu { position: fixed; right: .5rem; top: 48px; z-index: 40; width: min(340px, calc(100vw - 1rem)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); overflow: auto; display: grid; gap: .55rem; padding: .7rem .8rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; }
 .tx-menu[hidden] { display: none; }
 .tx-menu .tx-facts:empty { display: none; }
@@ -2612,8 +2616,12 @@ body.performing #tx-lib, body.performing #tx-edit, body.performing #tx-more { di
 @media (max-width: 700px) {
   .tx-top { flex-wrap: wrap; padding: .25rem .5rem; }
   .tx-tools2 { display: flex; order: 5; flex: 1 0 100%; align-items: center; justify-content: space-between; gap: .2rem; }
-  .tx-val { min-width: 3.4em; font-size: .82rem; }
-  .tx-grp button.small { padding: .2rem .45rem; }
+  .tx-top button.small, .tx-keychip { min-height: 2.2rem; height: 2.2rem; }
+  .tx-top button.small { min-width: 2.2rem; padding: 0 .7rem; }
+  .tx-val { min-width: 2.8em; font-size: .8rem; }
+  .tx-valbtn { padding: 0 .1rem; }
+  .tx-top .tx-grp button.small { min-width: 1.85rem; min-height: 1.85rem; padding: 0; }
+  .tx-grp { padding: .15rem; gap: .05rem; }
   .tx-keychip small { display: none; }
   .tx-id { flex-wrap: wrap; row-gap: 0; }
 }
@@ -2730,3 +2738,23 @@ body.timing .chordview [data-i] { cursor: pointer; outline: 1px dashed #ffffff26
 body.timing .chordview [data-i]:hover { outline-color: var(--accent); }
 body.timing .chordview .next { outline: 2px solid var(--accent); }
 #view-text:not(.has-vid) .tx-tile.vidonly { display: none; }
+/* quick start settings: count-in, tempo, scroll speed */
+.tx-quick { position: fixed; z-index: 45; width: min(300px, calc(100vw - var(--tools-w, 0px) - 1.2rem)); display: grid; gap: .65rem; padding: .7rem .8rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px #0008; user-select: none; -webkit-user-select: none; }
+.tx-quick[hidden] { display: none; }
+.tx-q-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.tx-q-head button { min-height: 2rem; min-width: 2rem; padding: 0; border-radius: 10px; }
+.tx-q-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.tx-q-row > span:first-child { color: var(--muted); font-size: .9rem; }
+.tx-q-row.tx-chk { justify-content: flex-start; }
+.tx-q-row.tx-chk span { color: var(--text); }
+.tx-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.tx-seg button, .tx-step button { min-height: 2.3rem; min-width: 2.3rem; padding: 0 .7rem; border: 0; background: #1a1d24; color: #aab3c5; font-size: .95rem; font-weight: 600; line-height: 1; cursor: pointer; transition: background .15s var(--ease), color .15s var(--ease); }
+.tx-seg button + button { border-left: 1px solid var(--line); }
+.tx-seg button:hover, .tx-step button:hover { color: #fff; background: #232733; }
+.tx-seg button[aria-pressed=true] { background: var(--accent); color: #fff; }
+.tx-step { display: inline-flex; align-items: center; gap: .3rem; }
+.tx-step button { border: 1px solid var(--line); border-radius: 10px; }
+.tx-step input, .tx-step output { width: 3.3em; min-height: 2.3rem; padding: 0; text-align: center; font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); display: inline-grid; place-items: center; }
+.tx-step input { background: #14161b; border: 1px solid var(--line); border-radius: 10px; -moz-appearance: textfield; appearance: textfield; }
+.tx-step input::-webkit-outer-spin-button, .tx-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tx-tile.mini svg { width: 1.2rem; height: 1.2rem; }

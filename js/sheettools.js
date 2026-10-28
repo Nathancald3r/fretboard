@@ -72,3 +72,33 @@ export function backingChords(names, lookup, max = 64) {
   }
   return out;
 }
+
+/* ---------- tempo and the quick start settings ---------- */
+
+export const BPM_MIN = 30;
+export const BPM_MAX = 260;
+export const clampBpm = (n) => Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(Number(n)) || 100));
+
+// the tempo from the times (ms) of taps, newest last: the last few taps since a pause of over 2 s; null with fewer than two
+export function tapTempo(taps, gapMax = 2000, keep = 6) {
+  const t = (Array.isArray(taps) ? taps : []).filter(Number.isFinite);
+  let from = 0;
+  for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] > gapMax) from = i;
+  const run = t.slice(from).slice(-keep);
+  if (run.length < 2) return null;
+  return clampBpm(60000 * (run.length - 1) / (run[run.length - 1] - run[0]));
+}
+
+// what the ⚡ does: a count-in of 0, 1 or 2 bars (4/4), going back to the top first, the click going on with the scroll
+export const QUICK_DEFAULTS = { count: 1, top: true, click: false };
+export function readQuick(raw) {
+  let o = raw;
+  if (typeof raw === 'string') { try { o = JSON.parse(raw); } catch { o = null; } }
+  const q = o && typeof o === 'object' ? o : {};
+  return {
+    count: [0, 1, 2].includes(q.count) ? q.count : QUICK_DEFAULTS.count,
+    top: typeof q.top === 'boolean' ? q.top : QUICK_DEFAULTS.top,
+    click: typeof q.click === 'boolean' ? q.click : QUICK_DEFAULTS.click,
+  };
+}
+export const quickLabel = (q) => (q.count ? `${q.count} bar${q.count > 1 ? 's' : ''} count-in` : 'no count-in');

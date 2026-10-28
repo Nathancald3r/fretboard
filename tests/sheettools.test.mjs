@@ -1,7 +1,7 @@
 // Run: node tests/sheettools.test.mjs
 import assert from 'node:assert/strict';
 import { readSections, foldRepeats, viewHtml, lineHash, sectionHash } from '../js/chordsheetview.js';
-import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords, idOfLine } from '../js/sheettools.js';
+import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords, idOfLine, clampBpm, tapTempo, readQuick, quickLabel, QUICK_DEFAULTS } from '../js/sheettools.js';
 import { shapesFor } from '../js/chordshapes.js';
 
 /* ---------- scroll speed ---------- */
@@ -72,5 +72,29 @@ assert.deepEqual(bars.map((b) => b.name), ['G', 'C', 'Em', 'D/F#', 'G'], 'repeat
 assert.ok(bars.every((b) => Number.isInteger(b.root) && typeof b.type === 'string'));
 assert.equal(backingChords(['G', 'C', 'G', 'C', 'G', 'C'], lookup, 3).length, 3, 'at most max bars');
 assert.deepEqual(backingChords([], lookup), []);
+
+
+/* ---------- tempo and the quick start settings ---------- */
+assert.equal(clampBpm(10), 30);
+assert.equal(clampBpm(999), 260);
+assert.equal(clampBpm('94'), 94);
+assert.equal(clampBpm(undefined), 100, 'nothing → the default');
+assert.equal(tapTempo([]), null);
+assert.equal(tapTempo([1000]), null, 'one tap is no tempo');
+assert.equal(tapTempo([0, 500]), 120);
+assert.equal(tapTempo([0, 500, 1000, 1500]), 120);
+assert.equal(tapTempo([0, 600, 1200, 1800, 2400]), 100);
+assert.equal(tapTempo([0, 500, 1000, 9000, 9750, 10500]), 80, 'a pause of over 2 s starts the count again');
+assert.equal(tapTempo([0, 500, 1000, 9000]), null, 'after a pause one tap is not enough');
+assert.equal(tapTempo([0, 1000, 2000, 2500, 3000, 3500, 4000, 4500, 5000]), 120, 'only the last six taps count');
+assert.equal(tapTempo([5, 5]), 260, 'taps at one instant do not divide by zero');
+assert.deepEqual(readQuick(null), QUICK_DEFAULTS);
+assert.deepEqual(readQuick('not json'), QUICK_DEFAULTS);
+assert.deepEqual(readQuick('{"count":2,"top":false,"click":true}'), { count: 2, top: false, click: true });
+assert.deepEqual(readQuick({ count: 7, top: 'yes' }), QUICK_DEFAULTS, 'values out of range fall back');
+assert.equal(readQuick({ count: 0 }).count, 0, 'no count-in is allowed');
+assert.equal(quickLabel({ count: 0 }), 'no count-in');
+assert.equal(quickLabel({ count: 1 }), '1 bar count-in');
+assert.equal(quickLabel({ count: 2 }), '2 bars count-in');
 
 console.log('ok sheettools');

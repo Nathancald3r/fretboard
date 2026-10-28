@@ -13,7 +13,7 @@ import { shiftChordName } from './transpose.js';
 import { findRecording } from './ytsearch.js';
 import { playStrum, stopStrum } from './strumplay.js';
 import { CHORD, TAB_LINE, chordTokens, cleanTabText, readSections, foldRepeats, viewHtml, capoPlan, chordsOf } from './chordsheetview.js';
-import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords } from './sheettools.js';
+import { clampSpeed, pxPerSecond, notesMap, setNote, dropNote, orphanNotes, backingChords, clampBpm, tapTempo, readQuick, quickLabel } from './sheettools.js';
 import { startClick, stopClick, setClickBpm, clicking, countIn, cancelCount, counting } from './sheetclick.js';
 import { initVideoBar } from './sheetvideo.js';
 import { numberUnits, displayTargets, setMark, dropMark, chainOf, marksMap, nextUnit } from './sheetsync.js';
@@ -583,8 +583,86 @@ function setScrolling(on) {
 /* ---------- the floating tools: quick start, video, zoom, notes, metronome, scroll ---------- */
 
 const speedNow = () => clampSpeed($('tx-speed').value);
-const drawSpeed = () => { $('tx-t-speed').textContent = String(speedNow()); };
-const drawBpm = () => { $('tx-t-bpm').textContent = String(tempo); };
+const drawSpeed = () => { $('tx-t-speed').textContent = String(speedNow()); $('tx-q-sp').textContent = String(speedNow()); };
+const drawBpm = () => {
+  $('tx-t-bpm').textContent = String(tempo);
+  $('tx-bpm').textContent = `${tempo} BPM`;
+  if (document.activeElement !== $('tx-q-bpm')) $('tx-q-bpm').value = tempo;
+};
+
+// the tempo: set at once (the click follows), saved a moment after the last change so a held button doesn't write each step
+let tempoTimer = 0;
+let pendingTempo = null; // { id, bpm }
+function setTempo(v) {
+  tempo = clampBpm(v);
+  $('tx-tempo').value = tempo;
+  setClickBpm(tempo);
+  drawBpm();
+  pendingTempo = { id: song?.id, bpm: tempo };
+  clearTimeout(tempoTimer);
+  tempoTimer = setTimeout(commitTempo, 500);
+}
+
+async function commitTempo() {
+  clearTimeout(tempoTimer);
+  tempoTimer = 0;
+  const p = pendingTempo;
+  pendingTempo = null;
+  if (!p || p.id == null) return;
+  const saved = await updateSong(p.id, { tempo: p.bpm });
+  if (song?.id === p.id) { song = saved; render(); }
+}
+
+// a button that repeats while it is held: one step at once, then faster
+function holdStep(btn, step) {
+  let wait = 0, run = 0;
+  const stop = () => { clearTimeout(wait); clearInterval(run); wait = run = 0; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button) return;
+    stop();
+    step();
+    wait = setTimeout(() => { run = setInterval(step, 90); }, 450);
+  });
+  for (const t of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(t, stop);
+  btn.addEventListener('click', (e) => { if (e.detail === 0) step(); }); // the keyboard
+  btn.addEventListener('contextmenu', (e) => e.preventDefault()); // a long press on a phone
+}
+
+// what the ⚡ does, kept on this device
+let quick = readQuick(null);
+try { quick = readQuick(localStorage.getItem('fretboard-tx-quick')); } catch { /* ignore */ }
+const taps = [];
+
+function paintQuick() {
+  for (const b of $('tx-q-count').querySelectorAll('button')) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === quick.count));
+  $('tx-q-top').checked = quick.top;
+  $('tx-q-click').checked = quick.click;
+  $('tx-t-quick').title = `Quick start: ${quickLabel(quick)}, then the song scrolls (the settings button under it changes this)`;
+}
+
+function setQuick(patch) {
+  quick = { ...quick, ...patch };
+  try { localStorage.setItem('fretboard-tx-quick', JSON.stringify(quick)); } catch { /* ignore */ }
+  paintQuick();
+}
+
+function showQuick(on) {
+  const box = $('tx-quick');
+  if (box.hidden === !on) return;
+  box.hidden = !on;
+  $('tx-t-qset').setAttribute('aria-expanded', String(on));
+  if (!on) return;
+  paintQuick();
+  drawBpm();
+  drawSpeed();
+  // beside the tools column, level with its tile; the bar's BPM opens it under the bar when the column is folded
+  const tile = $('tx-t-qset').getBoundingClientRect();
+  const col = $('tx-tools').getBoundingClientRect();
+  const beside = !toolsFolded && tile.width > 0;
+  box.style.right = `${beside ? Math.round(innerWidth - col.left + 8) : 8}px`;
+  const top = beside ? tile.top : $('tx-top').getBoundingClientRect().bottom + 4;
+  box.style.top = `${Math.max(4, Math.min(top, innerHeight - box.offsetHeight - 8))}px`;
+}
 
 // the column folds to a handle; the choice is kept
 let toolsFolded = false;
@@ -595,6 +673,7 @@ function paintToolsFold() {
   b.setAttribute('aria-expanded', String(!toolsFolded));
   b.setAttribute('aria-label', toolsFolded ? 'Show the tools' : 'Fold the tools');
   b.title = toolsFolded ? 'Show the tools' : 'Fold the tools away';
+  if (toolsFolded) showQuick(false);
   layoutTools();
 }
 
@@ -617,20 +696,23 @@ function toggleClick() {
   $('tx-t-click').setAttribute('aria-pressed', String(clicking()));
 }
 
-// one tap: back to the top, a bar of count-in at the song's tempo, then the song scrolls (and the click goes on if it was on)
+// one tap: back to the top, a count-in at the song's tempo, then the song scrolls (and the click goes on if it was on); the settings are in the quick start popover
 async function quickStart() {
   const tile = $('tx-t-quick');
   if (counting()) { cancelCount(); return; }
   setScrolling(false);
   hideNote();
-  window.scrollTo(0, 0);
+  if (quick.top) window.scrollTo(0, 0);
   const wasClicking = clicking();
   stopClick();
-  tile.setAttribute('aria-pressed', 'true');
-  const done = await countIn(tempo, 4, (n) => { $('tx-t-quick-txt').textContent = String(n); });
-  tile.setAttribute('aria-pressed', 'false');
-  $('tx-t-quick-txt').textContent = '';
-  if (wasClicking) startClick(tempo);
+  let done = true;
+  if (quick.count) {
+    tile.setAttribute('aria-pressed', 'true');
+    done = await countIn(tempo, quick.count * 4, (n) => { $('tx-t-quick-txt').textContent = String(n); });
+    tile.setAttribute('aria-pressed', 'false');
+    $('tx-t-quick-txt').textContent = '';
+  }
+  if (wasClicking || (quick.click && done)) startClick(tempo);
   if (done && song) setScrolling(true);
   $('tx-t-click').setAttribute('aria-pressed', String(clicking()));
 }
@@ -798,6 +880,28 @@ function initTools() {
     fit();
   });
   tap('tx-t-quick', quickStart);
+  tap('tx-t-qset', () => showQuick($('tx-quick').hidden));
+  tap('tx-bpm', () => showQuick($('tx-quick').hidden));
+  tap('tx-q-close', () => showQuick(false));
+  $('tx-q-count').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setQuick({ count: Number(b.dataset.v) }); });
+  $('tx-q-top').addEventListener('change', (e) => setQuick({ top: e.target.checked }));
+  $('tx-q-click').addEventListener('change', (e) => setQuick({ click: e.target.checked }));
+  holdStep($('tx-bpm-down'), () => setTempo(tempo - 1));
+  holdStep($('tx-bpm-up'), () => setTempo(tempo + 1));
+  holdStep($('tx-q-bpm-dn'), () => setTempo(tempo - 1));
+  holdStep($('tx-q-bpm-up'), () => setTempo(tempo + 1));
+  $('tx-q-bpm').addEventListener('change', (e) => setTempo(e.target.value));
+  $('tx-q-bpm').addEventListener('keydown', (e) => { if (e.key === 'Enter') { setTempo(e.target.value); e.target.blur(); } });
+  tap('tx-q-tap', () => {
+    taps.push(performance.now());
+    if (taps.length > 8) taps.shift();
+    const b = tapTempo(taps);
+    if (b) setTempo(b);
+  });
+  tap('tx-q-sp-dn', () => bumpSpeed(-1));
+  tap('tx-q-sp-up', () => bumpSpeed(1));
+  document.addEventListener('pointerdown', (e) => { if (!$('tx-quick').hidden && !e.target.closest('#tx-quick, #tx-t-qset, #tx-bpm-grp')) showQuick(false); });
+  paintQuick();
   tap('tx-t-video', () => {
     if (!$('tx-vid').hidden) { showVideo(false); return; }
     pickVideo($('tx-vidpick').hidden);
@@ -845,6 +949,8 @@ function initTools() {
 }
 
 export function openText(s) {
+  commitTempo(); // a tempo set a moment ago still goes to the song it was set on
+  showQuick(false);
   song = s;
   $('tx-title').textContent = s.title.replace(/\s*\((chords|tabs?|chord chart)\)\s*$/i, '');
   $('tx-artist').textContent = s.artist || '';
@@ -876,6 +982,8 @@ export function openText(s) {
 
 export function closeText() {
   hidePop();
+  commitTempo();
+  showQuick(false);
   menu(false);
   stopStrumPlay();
   stopClick();
@@ -934,14 +1042,7 @@ export function initText({ onEdit }) {
   $('tx-menu').addEventListener('click', (e) => { if (e.target.closest('.tx-btns button, .tx-nav a')) menu(false); });
   $('tx-speed').addEventListener('change', (e) => { if (song) updateSong(song.id, { scrollSpeed: speedNow() }); drawSpeed(); });
   $('tx-edit').addEventListener('click', () => song && onEdit(song));
-  $('tx-tempo').addEventListener('change', async (e) => {
-    tempo = Math.max(30, Math.min(260, Number(e.target.value) || 100));
-    setClickBpm(tempo);
-    drawBpm();
-    if (!song) return;
-    song = await updateSong(song.id, { tempo });
-    render();
-  });
+  $('tx-tempo').addEventListener('change', (e) => setTempo(e.target.value));
   const transpose = async (n) => {
     if (!song) return;
     const t = (song.transpose || 0) + n;
@@ -966,6 +1067,7 @@ export function initText({ onEdit }) {
   $('tx-play').addEventListener('click', () => { if (song) location.hash = `song/${song.id}/play`; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('tx-note').hidden) { hideNote(); return; }
+    if (e.key === 'Escape' && !$('tx-quick').hidden) { showQuick(false); return; }
     if (e.key === 'Escape' && timing) { setTiming(false); return; }
     if (e.key === 'Escape' && pop) { hidePop(); return; }
     if (e.key === 'Escape' && !$('tx-menu').hidden) { menu(false); return; }

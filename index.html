@@ -718,6 +718,11 @@
           <span id="tx-capo" class="tx-val">Capo 0</span>
           <button id="tx-capo-up" class="ghost small" aria-label="Capo up">+</button>
         </span>
+        <span class="tx-grp" id="tx-bpm-grp" title="Tempo: how fast the click and the count-in go. Hold − or + to run; tap the number for the quick start settings">
+          <button id="tx-bpm-down" class="ghost small" aria-label="Slower">−</button>
+          <button id="tx-bpm" class="tx-val tx-valbtn" aria-label="Tempo: open the quick start settings" aria-haspopup="true">100 BPM</button>
+          <button id="tx-bpm-up" class="ghost small" aria-label="Faster">+</button>
+        </span>
       </div>
       <button id="tx-edit" class="ghost small" title="Edit the chords and words as ChordPro">Edit</button>
       <button id="tx-more" class="ghost small" aria-haspopup="true" aria-expanded="false" aria-label="More" title="More">⋯</button>
@@ -749,9 +754,14 @@
       <button id="tx-t-fold" class="tx-tile tx-fold" title="Fold the tools away" aria-label="Fold the tools" aria-expanded="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <button id="tx-t-quick" class="tx-tile" title="Quick start: a one-bar count-in, then the song scrolls" aria-label="Quick start">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.8z" fill="currentColor"/></svg><small id="tx-t-quick-txt"></small>
-      </button>
+      <div class="tx-tgrp">
+        <button id="tx-t-quick" class="tx-tile" title="Quick start: a one-bar count-in, then the song scrolls" aria-label="Quick start">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.8z" fill="currentColor"/></svg><small id="tx-t-quick-txt"></small>
+        </button>
+        <button id="tx-t-qset" class="tx-tile mini" title="Quick start settings: count-in, tempo, scroll speed" aria-label="Quick start settings" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+      </div>
       <button id="tx-t-video" class="tx-tile" title="Play along: the song's video, or a backing track from its chords" aria-label="Video or backing track" aria-haspopup="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg>
       </button>
@@ -771,7 +781,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/><path d="M3.5 12h17" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg>
       </button>
       <div class="tx-tgrp">
-        <button id="tx-t-click" class="tx-tile" title="Metronome at the song's tempo (change the tempo in ⋯)" aria-label="Metronome" aria-pressed="false">
+        <button id="tx-t-click" class="tx-tile" title="Metronome at the song's tempo (change it with the BPM in the bar above)" aria-label="Metronome" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3h7l3 18h-13z M12 16.5 15.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="12.6" cy="14" r="1.4" fill="currentColor"/></svg><small id="tx-t-bpm"></small>
         </button>
         <button id="tx-t-fast" class="tx-tile mini" title="Scroll faster" aria-label="Scroll faster">+</button>
@@ -784,6 +794,24 @@
     <div id="tx-vidpick" class="tx-pick" hidden>
       <button id="tx-pick-video" class="ghost small">▶ Video</button>
       <button id="tx-pick-backing" class="ghost small" title="Drums, bass and guitar playing this song's chords, one bar each, in the player">♫ Backing track</button>
+    </div>
+    <div id="tx-quick" class="tx-quick" role="dialog" aria-label="Quick start settings" hidden>
+      <div class="tx-q-head"><b>Quick start</b><button id="tx-q-close" class="ghost small" aria-label="Close">✕</button></div>
+      <div class="tx-q-row"><span>Count-in</span>
+        <span class="tx-seg" id="tx-q-count" role="group" aria-label="Count-in">
+          <button data-v="0" aria-pressed="false">Off</button><button data-v="1" aria-pressed="false">1 bar</button><button data-v="2" aria-pressed="false">2 bars</button>
+        </span>
+      </div>
+      <div class="tx-q-row"><span>Tempo</span>
+        <span class="tx-step">
+          <button id="tx-q-bpm-dn" aria-label="Slower">−</button><input id="tx-q-bpm" type="number" min="30" max="260" inputmode="numeric" aria-label="Beats per minute"><button id="tx-q-bpm-up" aria-label="Faster">+</button><button id="tx-q-tap" title="Tap the beat and the tempo follows">Tap</button>
+        </span>
+      </div>
+      <div class="tx-q-row"><span>Scroll speed</span>
+        <span class="tx-step"><button id="tx-q-sp-dn" aria-label="Slower">−</button><output id="tx-q-sp">5</output><button id="tx-q-sp-up" aria-label="Faster">+</button></span>
+      </div>
+      <label class="tx-q-row tx-chk"><input id="tx-q-top" type="checkbox"> <span>Start from the top</span></label>
+      <label class="tx-q-row tx-chk"><input id="tx-q-click" type="checkbox"> <span>Click while it scrolls</span></label>
     </div>
     <div id="tx-hint" class="tx-hint" hidden>Tap a line to write on it</div>
     <div id="tx-note" class="tx-note" hidden>
