@@ -300,6 +300,8 @@ def locate(sync, look, part=None, most=0.6, wide=None):
 STEADY_MS = 40  # a stretch within this of 0: it lines up (a song played to a click stays there all through)
 STRETCH = 4     # bars per stretch
 CLEAR = 0.05    # a stretch counts as off only when its best lag lines up this much better than 0
+SPOT_MS = 75    # one stretch this far off, with the stretches either side on time, is a part played a little early or
+                # late, not a drift (Ho Hey bars 37-40, 61 ms: the user hears the song as perfectly synced)
 
 
 def steadiness(sync, bars, tab_env, env, look=None):
@@ -326,6 +328,10 @@ def steadiness(sync, bars, tab_env, env, look=None):
         kind = ("ok" if abs(off) <= STEADY_MS or gain < CLEAR else
                 "half" if abs(abs(off) - half) <= STEADY_MS else "drift")
         out.append({"bars": [p + 1, q], "video": round(float(sync(x[p])), 1), "off_ms": round(off), "kind": kind})
+    for i, s in enumerate(out):  # an isolated small one is not a drift: the stretches round it are on time, so the tempo is steady
+        near = [out[j]["kind"] for j in (i - 1, i + 1) if 0 <= j < len(out)]
+        if s["kind"] == "drift" and abs(s["off_ms"]) <= SPOT_MS and near and all(k == "ok" for k in near):
+            s["kind"] = "spot"
     return {"stretches": out, "steady": not any(s["kind"] == "drift" for s in out),
             "half_beat_bars": [s["bars"] for s in out if s["kind"] == "half"],
             "drift_bars": [s["bars"] for s in out if s["kind"] == "drift"]}
