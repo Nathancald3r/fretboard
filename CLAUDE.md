@@ -164,6 +164,12 @@ Open bugs and to-dos live in `TODO.md`, not here.
 - **Check the result:** `window.fretboardPlayer.api.score` has the master bar count, time signature and tempo. Check that each track's bar beats add up to `masterBars[i].calculateDuration()`.
 - **Python PDF checks:** render pages with `fitz` (PyMuPDF), e.g. `page.get_pixmap(dpi=60)`, to look at them.
 
+## Library cleanup: "Pick not synced" (2026-10-27, asked by the user)
+
+- In the library's **Select** mode the bar has **Pick not synced**: it ticks every listed song that isn't *official Ultimate Guitar tab + linked YouTube video + Synced* (`officialGaps` in `js/songmeta.js`, tested in `tests/songmeta.test.mjs`). Each row says why in orange ("tab not official · no video · not synced"). Nothing goes until the user unticks what to keep and presses **Delete**.
+- **The user's "GitHub library" is the private repo the app syncs to** (`fretboard/library.json` + one file per song, `js/sync.js`), not the code repo `Nathancald3r/fretboard`, which holds no songs. A song deleted in the app leaves that repo on the next sync, so the cleanup has to be done in the app on a device with sync on. Claude can't reach the user's browser storage or token.
+- "Official tab" = `song.sourceUrl` parses (`parseSource`) as an UG `-official-` link; songs imported before `sourceUrl` was kept look unofficial and get ticked, which is why the user reviews the list.
+
 ## Android Back and the history (`js/layers.js`)
 
 - Each open layer (the ☰ drawer, a sheet, the ⚙ menu, the tempo or video pop-up, full screen) adds one history entry, so Android Back closes it first. Layers are found from body classes and `.sheet[hidden]` by a MutationObserver.

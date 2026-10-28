@@ -21,6 +21,15 @@ assert.deepEqual(filterSongs(songs, { folder: '' }).map((s) => s.id), [2]);
 assert.deepEqual(filterSongs(songs, { text: 'y' }).map((s) => s.id), [2]);
 assert.deepEqual([...songs].sort(SORTS.rating).map((s) => s.id), [2, 1, 3]);
 assert.deepEqual(folderNames(songs, ['Empty']), ['Empty', 'Worship']);
+// official tab + its video + synced
+import { officialGaps } from '../js/songmeta.js';
+const good = { kind: 'gp', sourceUrl: 'https://tabs.ultimate-guitar.com/tab/the-lumineers/ho-hey-official-2422311', recording: { kind: 'youtube', id: 'SuZytYa71lk' }, autoSync: {}, syncPoints: [[0, 2467], [4, 9000]], syncDone: true };
+assert.deepEqual(officialGaps(good), []);
+assert.deepEqual(officialGaps({ ...good, sourceUrl: 'https://tabs.ultimate-guitar.com/tab/the-lumineers/ho-hey-guitar-pro-1234567' }), ['tab not official']);
+assert.deepEqual(officialGaps({ ...good, sourceUrl: undefined }), ['tab not official']);
+assert.deepEqual(officialGaps({ ...good, recording: { kind: 'file' }, syncDone: false }), ['no video', 'not synced']);
+assert.deepEqual(officialGaps({ ...good, syncDone: false }), ['not synced']);
+assert.deepEqual(officialGaps({ kind: 'text', data: 'G D' }), ['tab not official', 'no video', 'not synced']);
 console.log('songmeta ok');
 
 import { syncState } from '../js/songmeta.js';

@@ -6,6 +6,7 @@ import { listSongs, getSong, deleteSong, updateSong, getValue, setValue } from '
 import { loadFolders, addFolder } from './folders.js';
 import { popMenu } from './menu.js';
 import { pitchClass, noteName } from './theory.js';
+import { officialGaps } from './songmeta.js';
 
 const $ = (id) => document.getElementById(id);
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -50,7 +51,8 @@ export function drawBar() {
   const n = picked.size;
   const all = shown.length && n === shown.length;
   bar.innerHTML = `<div class="bulk-top"><b>${n ? `${n} selected` : 'Tap songs to select them'}</b>
-    <button class="ghost small" data-bulk="${all ? 'none' : 'all'}">${all ? 'Select none' : `Select all ${shown.length}`}</button></div>
+    <span class="row"><button class="ghost small" data-bulk="unsynced" title="Pick every song shown that is not an official Ultimate Guitar tab with its video, synced. Nothing is deleted until you press Delete.">Pick not synced</button>
+    <button class="ghost small" data-bulk="${all ? 'none' : 'all'}">${all ? 'Select none' : `Select all ${shown.length}`}</button></span></div>
     <div class="bulk-acts">
       <button class="small" data-bulk="setlist" ${n ? '' : 'disabled'}>＋ Setlist</button>
       <button class="small" data-bulk="folder" ${n ? '' : 'disabled'}>📁 Folder</button>
@@ -71,11 +73,24 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 async function act(k, button) {
   if (k === 'all') { hooks.shown().forEach((s) => picked.add(s.id)); hooks.redraw(); return; }
   if (k === 'none') { picked.clear(); hooks.redraw(); return; }
+  if (k === 'unsynced') return pickUnsynced();
   if (k === 'setlist') return setlistMenu(button);
   if (k === 'folder') return folderMenu(button);
   if (k === 'key') return keyDialog();
   if (k === 'share') return share();
   if (k === 'delete') return remove();
+}
+
+/* ---------- pick the songs that are not "official tab + its video + synced" ---------- */
+
+// Ticks them so they can be looked over (each row says why), unticked to keep, then deleted with Delete.
+function pickUnsynced() {
+  const shown = hooks.shown();
+  picked.clear();
+  for (const s of shown) if (officialGaps(s).length) picked.add(s.id);
+  const n = picked.size;
+  toast(n ? `Picked ${plural(n, 'song')} that aren’t official tab + video + synced; ${shown.length - n} kept. Untick any to keep, then Delete.` : 'Every song shown is an official tab with its video, synced.');
+  hooks.redraw();
 }
 
 /* ---------- delete ---------- */

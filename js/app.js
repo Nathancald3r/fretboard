@@ -11,7 +11,7 @@ import { renderLog } from './log.js';
 import { renderPractice, trackDrill } from './practicehub.js';
 import { initVocal, stopVocal } from './vocal.js';
 import { initStrum, stopStrum } from './strumtime.js';
-import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, splitGroups } from './songmeta.js';
+import { chartType, CHART_LABEL, SORTS, filterSongs, folderNames, splitGroups, officialGaps } from './songmeta.js';
 import { loadFolders, moveSong, rateSong, addFolder, renameFolder, deleteFolder } from './folders.js';
 import { recoverPendingSessions } from './practice.js';
 import { DEMOS } from './demos.js';
@@ -145,7 +145,7 @@ async function renderLibrary() {
     const mine = keyNote(s);
     return `${head}<li class="lib-row${s.id === cur ? ' current' : ''}${isPicked(s.id) ? ' picked' : ''}" data-id="${escape(s.id)}" data-type="${type}"${s.parts?.length ? ' data-parts="1"' : ''}>
       ${selecting() ? `<input type="checkbox" class="lib-check" tabindex="-1" aria-label="Select ${escape(s.title)}"${isPicked(s.id) ? ' checked' : ''}>` : ''}
-      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}</a>
+      <a href="#song/${escape(s.id)}"><b>${escape(s.title)}</b><span>${s.artist ? escape(s.artist) + ' · ' : ''}${escape(CHART_LABEL[type])}${s.chordSheet && type !== 'chords' ? ' + chords' : ''}</span>${mine ? `<span class="lib-mykey">♪ ${escape(mine)}</span>` : ''}${selecting() && officialGaps(s).length ? `<span class="lib-why">${escape(officialGaps(s).join(' · '))}</span>` : ''}</a>
       ${s.rating ? `<span class="lib-stars" title="Your ranking">★${s.rating}</span>` : ''}
       <button class="icon-btn small lib-more" data-act="menu" aria-label="More for ${escape(s.title)}" aria-haspopup="menu">⋮</button></li>`;
   }).join('') || `<li class="lib-empty">${q

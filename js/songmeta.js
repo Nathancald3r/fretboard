@@ -1,4 +1,5 @@
 // How a song is classified and ordered in the library: pro tab vs chord chart, ratings, folders.
+import { parseSource } from './tabinfo.js';
 
 /** 'pro' (Guitar Pro / MusicXML), 'sheet' (a PDF shown as pages), 'tab' (typed tab lines), 'chords' (chords over lyrics), 'exercise'. */
 export function chartType(song) {
@@ -50,6 +51,19 @@ export function syncState(song) {
   const state = !linked ? 'none' : done ? 'synced' : 'progress';
   const label = { none: 'No video', progress: `Syncing ${count - 1}/3`, synced: 'Synced' }[state];
   return { state, steps, label };
+}
+
+/**
+ * What keeps a song from being "the official tab, its video, synced": the short reasons, [] when it is all three.
+ * The tab is official when its source link is an Ultimate Guitar official tab (…-official-123456); the video is a
+ * linked YouTube video; synced is the "Synced" state above (you or the computer marked it done).
+ */
+export function officialGaps(song) {
+  const gaps = [];
+  if (parseSource(song.sourceUrl || '')?.type !== 'Official') gaps.push('tab not official');
+  if (song.recording?.kind !== 'youtube') gaps.push('no video');
+  if (syncState(song).state !== 'synced') gaps.push('not synced');
+  return gaps;
 }
 
 /** "Studio original", "Live", "Cover · Artist" or "Live cover · Artist"; '' when no version is set. */

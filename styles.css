@@ -2446,6 +2446,7 @@ body.performing .tx-bar { position: sticky; top: 0; z-index: 10; background: var
 .lib-list.picking .lib-row.picked { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .lib-list.picking .lib-more, .lib-list.picking .lib-stars { display: none; }
 .lib-mykey { font-size: .78rem; color: var(--accent); }
+.lib-why { font-size: .76rem; color: #e0a24a; }
 .bulk-bar { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: .45rem; padding: .6rem .2rem calc(.6rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel); }
 .bulk-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .bulk-acts { display: grid; grid-template-columns: repeat(5, 1fr); gap: .35rem; }
