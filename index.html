@@ -863,7 +863,7 @@
 
   <!-- PRACTICE -->
   <main id="view-practice" class="view" hidden>
-    <section class="panel">
+    <section class="panel pr-top">
       <div class="row spread"><h2>Practice</h2><a class="button small ghost" href="#log">Full practice log</a></div>
       <div class="goal" id="pr-goal">
         <div class="row spread"><b id="pr-goal-text">Today</b>
@@ -871,17 +871,21 @@
         <div class="goal-bar" role="progressbar" aria-label="Today's practice goal"><i id="pr-goal-fill"></i></div>
       </div>
       <div id="pr-stats" class="stats"></div>
-      <h3 class="dr-title">Days you practised</h3>
-      <div id="pr-calendar" class="calendar" role="img" aria-label="Calendar of practice days, darker is more time"></div>
-      <p class="muted small-text cal-key">Less <i class="cal-day l0"></i><i class="cal-day l1"></i><i class="cal-day l2"></i><i class="cal-day l3"></i><i class="cal-day l4"></i> More · time in songs and in the drills below counts</p>
+      <details class="cal-details">
+        <summary>Days you practised</summary>
+        <div id="pr-calendar" class="calendar" role="img" aria-label="Calendar of practice days, darker is more time"></div>
+        <p class="muted small-text cal-key">Less <i class="cal-day l0"></i><i class="cal-day l1"></i><i class="cal-day l2"></i><i class="cal-day l3"></i><i class="cal-day l4"></i> More · time in songs and in the exercises below counts</p>
+      </details>
     </section>
     <section class="panel">
-      <h2>Drills</h2>
-      <div id="pr-drills" class="cards"></div>
+      <div class="row spread"><h2>Today’s warm-up</h2><button id="pr-routine-go" class="primary">Start</button></div>
+      <p id="pr-routine-sum" class="muted small-text"></p>
+      <ol id="pr-routine" class="rt-list"></ol>
     </section>
-    <section class="panel">
-      <h2>Exercises</h2>
-      <p class="muted small-text">Warm-ups and technique patterns you can play along with, kept apart from your songs.</p>
+    <div id="pr-foundations"></div>
+    <section class="panel" id="pr-mine" hidden>
+      <h2>Your own exercises</h2>
+      <p class="muted small-text">Scales and backing tracks you made yourself.</p>
       <div id="pr-exercises" class="cards"></div>
     </section>
   </main>

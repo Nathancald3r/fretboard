@@ -182,6 +182,13 @@ The user wants the APK on the phone **only once sync results are consistent** (A
 - **Gate calibrated by ear (2026-10-27):** the user hears Ho Hey (the aligner-saved file) as perfectly synced, but the gate failed it on one isolated stretch, bars 37-40, 61 ms off. `syncqa.steadiness` now calls a stretch **`spot`**, not drift, when it is off by ≤ `SPOT_MS` (75) and both neighbouring stretches are on time (a part played a little early or late; the tempo is steady). Ho Hey now PASSes; `qa.py --selftest` still 72 of 72 (every broken sync fails). Keep ear-confirmed songs as the calibration cases; loosen further only from what the user hears.
 - Trap seen in the preview: a `<dialog>` `close` event can arrive late in the unfocused browser pane, so a test that clicks OK and reads state at once sees nothing; dispatch `close` by hand or wait.
 
+## Practice tab = foundations, no songs (2026-10-27, asked by the user)
+
+- The Practice page teaches the basics: **Warm-ups, Scales, Chords and changes, Rhythm and timing, Technique, Ear and theory**, plus a 10-minute **Today's warm-up** routine (a checklist). Data and exercise text are in `js/foundations.js` (`EXERCISES`, `FOUNDATIONS`, `ROUTINE`; pure, no page code), the page is `js/practicehub.js`. `tests/foundations.test.mjs` parses every exercise with alphaTab (4/4 full bars, real frets, effects present, every exercise on the page once, titles unique).
+- **Why songs showed up there:** the page listed every `kind: 'tex'` song, and imported PDF tabs are `tex` too. It now lists only `chartType(s) === 'exercise'` (the rule that already hides exercises from the library). Exercises you made yourself (a scale from the Scales page, a backing track) sit in a small "Your own exercises" panel; the two seeded demos are not repeated there.
+- A card saves the exercise as a library entry (found again by **title**, so its practice time adds up and nothing is saved twice) and opens the player. A routine step ticks itself from today's sessions (an exercise by its title, a drill by its id), or by hand (`fretboard-routine` in localStorage, with the day, so it resets by itself).
+- To add an exercise: put it in `EXERCISES` (title, tempo, level, tip, `tex()`) and in a category of `FOUNDATIONS`; run `node scripts/test.mjs`. Strings in the text count 6 (low E) to 1.
+
 ## Android Back and the history (`js/layers.js`)
 
 - Each open layer (the ☰ drawer, a sheet, the ⚙ menu, the tempo or video pop-up, full screen) adds one history entry, so Android Back closes it first. Layers are found from body classes and `.sheet[hidden]` by a MutationObserver.

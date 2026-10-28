@@ -2550,3 +2550,25 @@ body.performing #view-text .tx-bar { top: 0; }
 .st-result .stats div { display: grid; padding: .6rem .75rem; border-radius: var(--radius); background: var(--panel-2); }
 .st-result .stats b { font-size: 1.35rem; }
 .st-result .stats span { color: var(--muted); font-size: .8rem; }
+
+
+/* Practice: foundations, the daily routine */
+.pr-top .stats { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.pr-top .stat { padding: .55rem .8rem; }
+.pr-top .stat b { font-size: 1.4rem; }
+.pr-top .goal { margin-bottom: .6rem; }
+.cal-details > summary { cursor: pointer; font-weight: 600; margin: .8rem 0 .2rem; }
+.rt-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.rt-step { display: flex; align-items: center; gap: .65rem; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .65rem; }
+.rt-step a { flex: 1; color: inherit; text-decoration: none; font-weight: 600; }
+.rt-step a:hover { color: var(--accent); }
+.rt-step.done a { color: var(--muted); text-decoration: line-through; }
+.rt-check { width: 1.8rem; height: 1.8rem; min-height: 0; padding: 0; border-radius: 50%; line-height: 1; font-weight: 700; flex: none; }
+.rt-step.done .rt-check { background: var(--good); border-color: var(--good); color: #0b1a10; }
+.fd { text-decoration: none; color: inherit; display: grid; gap: .35rem; align-content: start; }
+.fd-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.fd-level { font-size: .72rem; border-radius: 999px; padding: .05rem .55rem; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+.fd-tip { font-size: .88rem; color: var(--muted); }
+.fd-cat > h2 { margin-bottom: .1rem; }
+.fd-cat > p { margin: 0 0 .7rem; }
+@media (max-width: 640px) { .rt-step { padding: .5rem .65rem; } .rt-check { width: 2.2rem; height: 2.2rem; } }
