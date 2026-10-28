@@ -198,7 +198,7 @@ The user wants the APK on the phone **only once sync results are consistent** (A
 - `js/chordsheetview.js` (pure) builds the view: `readSections`, `foldRepeats`, `capoPlan`, `viewHtml`. `tests/chordsheetview.test.mjs` covers it, the `{G}` reading and the sheet → ChordPro → sheet round trip.
 - **Repeats:** the first occurrence is shown in full; an identical later section (≥ 2 lines, or the same name) becomes `↻ Chorus ×N`. `song.fold === false` shows everything.
 - **Capo:** `song.capo` is the capo fret (null = the sheet's own). Shapes shown = written chords + transpose + sheet capo − capo; the key chip moves only with transpose.
-- **Fit:** `fit()` picks the biggest text (24 down to 12) with the fewest columns (1–3) so the whole song fits the screen height and tab lines fit across; else one column that scrolls. `song.textSize` set by A−/A+ is kept; null = auto. The video docks beside (≥ 1000 px) or under the song; it never floats over the chords.
+- **Fit:** `fit()` first tries **two columns** (on any screen wide enough for two) at the biggest text (24 down to 12) that fits the whole song on screen (the user asked, 2026-10-27); if two can't hold it (or tab lines don't fit across), the biggest text with the fewest columns (1–3); else one column that scrolls. `song.textSize` set by A−/A+ is kept; null = auto. The video docks beside (≥ 1000 px) or under the song; it never floats over the chords.
 - **Trap:** the Edit tool turns `styles.css` (mixed endings, CRLF majority) into all CRLF; give unchanged lines their HEAD endings back (or let `ship.mjs` flag it) before committing.
 
 ## Android Back and the history (`js/layers.js`)

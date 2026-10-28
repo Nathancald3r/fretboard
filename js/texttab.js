@@ -233,7 +233,8 @@ function tuckChords() {
 const SIZES = [11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28]; // the A− / A+ steps
 const AUTO = [24, 22, 20, 19, 18, 17, 16, 15, 14, 13, 12]; // tried in turn, biggest first, until the song fits the screen
 
-// The biggest text (and the fewest columns) with which the whole song fits on the screen. A song that
+// On a screen wide enough for two columns: two columns, as big as the whole song still fits. Otherwise
+// (a phone, or a song too long for two) the biggest text with the fewest columns that fits. A song that
 // can't fit at any size stays one column, at a size that reads well, and scrolls. A size you picked
 // (A− / A+) is kept; only the columns follow the screen.
 function fit() {
@@ -254,8 +255,14 @@ function fit() {
   const wide = [...body.querySelectorAll('.pre')]; // tab lines keep their spacing: they must fit the column too
   body.classList.toggle('tabs', wide.length > 0); // and a single column with tabs is wider
   const fits = () => body.offsetHeight <= room && !wide.some((p) => p.scrollWidth > p.clientWidth + 1);
+  const sizes = manual ? [manual] : AUTO;
   let pick = null;
-  for (const size of manual ? [manual] : AUTO) {
+  for (const size of sizes) { // a computer: two columns whenever the whole song fits in two
+    if (across(size) < 2) continue;
+    apply(size, 2);
+    if (fits()) { pick = { size, cols: 2 }; break; }
+  }
+  for (const size of pick ? [] : sizes) {
     for (let cols = 1; cols <= across(size) && !pick; cols++) {
       apply(size, cols);
       if (fits()) pick = { size, cols };
